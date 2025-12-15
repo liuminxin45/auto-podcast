@@ -330,7 +330,7 @@ sources:
           enabled: false
 
 pipeline:
-  max_items: 50
+  max_items: 1
   pick_items: 5
 
 filter:

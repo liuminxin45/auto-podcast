@@ -180,6 +180,93 @@ def _archive_fetch_result(
     return out_path
 
 
+def _episode_archive_dir(archive_base_dir: Path, episode_date: str) -> Path:
+    try:
+        d = dt.date.fromisoformat(episode_date)
+    except Exception:
+        d = dt.date.today()
+    return archive_base_dir / f"{d.year:04d}" / f"{d.month:02d}" / f"{d.day:02d}"
+
+
+def _find_latest_archive(archive_base_dir: Path, episode_date: str, prefix: str) -> Path | None:
+    d = _episode_archive_dir(archive_base_dir, episode_date)
+    if not d.exists():
+        return None
+    cands = sorted(d.glob(f"{prefix}_*.json"))
+    return cands[-1] if cands else None
+
+
+def _extract_metaso_clean_payload(metaso: dict) -> dict | None:
+    if not isinstance(metaso, dict):
+        return None
+
+    def _extract(resp: dict) -> tuple[str | None, list | None, str | None]:
+        content: str | None = None
+        citations: list | None = None
+        model: str | None = None
+
+        m = resp.get("model")
+        if isinstance(m, str) and m.strip():
+            model = m.strip()
+
+        choices = resp.get("choices")
+        if isinstance(choices, list) and choices:
+            msg = (choices[0] or {}).get("message")
+            if isinstance(msg, dict):
+                c = msg.get("content")
+                if isinstance(c, str) and c.strip():
+                    content = c
+
+                cites = msg.get("citations")
+                if isinstance(cites, list):
+                    citations = cites
+
+        return content, citations, model
+
+    content: str | None = None
+    citations: list | None = None
+    model: str | None = None
+
+    resp_json = metaso.get("response_json")
+    if isinstance(resp_json, dict):
+        try:
+            content, citations, model = _extract(resp_json)
+        except Exception:
+            pass
+
+    if content is None:
+        resp_text = metaso.get("response_text")
+        if isinstance(resp_text, str) and resp_text.strip():
+            try:
+                parsed = json.loads(resp_text)
+                if isinstance(parsed, dict):
+                    content, citations, model = _extract(parsed)
+            except Exception:
+                pass
+
+    if content is None:
+        return None
+
+    model2 = None
+    m2 = metaso.get("model")
+    if isinstance(m2, str) and m2.strip():
+        model2 = m2.strip()
+    elif isinstance(model, str) and model.strip():
+        model2 = model.strip()
+
+    if citations is None:
+        citations = []
+
+    return {
+        "content": content,
+        "citations": citations,
+        "meta": {
+            "provider": "metaso",
+            "model": model2,
+        },
+    }
+
+
 def step_fetch(store: Store, cfg: dict, episode_id: str, timeout_s: int, force_fetch: bool) -> None:
     log = logging.getLogger("step.fetch")
 
@@ -755,6 +842,23 @@ def step_fetch(store: Store, cfg: dict, episode_id: str, timeout_s: int, force_f
                             ok=bool(r.get("ok")),
                             status=(r.get("status")),
                         )
+
+                        clean_payload = _extract_metaso_clean_payload(r)
+                        if clean_payload is not None:
+                            content_path = _archive_fetch_result(
+                                archive_base_dir=fetch_archives_dir,
+                                episode_date=ep["episode_date"],
+                                prefix="rss_research_content",
+                                payload=clean_payload,
+                            )
+                            log.info("fetch research content saved: %s", content_path)
+                            _log_event(
+                                log,
+                                "fetch_research_content",
+                                run_id=int(run_id),
+                                research_path=str(research_path),
+                                content_path=str(content_path),
+                            )
                 except Exception as e:  # noqa: BLE001
                     log.warning("metaso research failed: %s", e)
             except Exception as e:  # noqa: BLE001
@@ -1079,7 +1183,7 @@ def step_list_newsnow_sources(cfg: dict, timeout_s: int, base_url: str | None, l
     log.info("newsnow sources shown=%d ok=%d", shown, ok_total)
 
 
-def step_script(store: Store, cfg: dict, episode_id: str, timeout_s: int) -> None:
+def step_script(store: Store, cfg: dict, episode_id: str, timeout_s: int, script_input: str) -> None:
     log = logging.getLogger("step.script")
 
     ep = store.get_episode(episode_id)
@@ -1089,6 +1193,30 @@ def step_script(store: Store, cfg: dict, episode_id: str, timeout_s: int) -> Non
 
     pick_items = int((cfg.get("pipeline") or {}).get("pick_items") or 5)
     channel = cfg.get("channel") or {}
+
+    out_cfg = cfg.get("output") or {}
+    fetch_archives_dir = Path(out_cfg.get("fetch_archives_dir") or "./out/fetch_archives")
+
+    research_content_path = _find_latest_archive(fetch_archives_dir, ep["episode_date"], "rss_research_content")
+    use_research = False
+    if script_input == "research":
+        use_research = True
+    elif script_input == "auto" and research_content_path is not None:
+        use_research = True
+
+    research_content = ""
+    research_citations: list[dict] = []
+    if use_research:
+        if research_content_path is None:
+            raise RuntimeError("script_input=research but rss_research_content archive not found")
+        obj = json.loads(research_content_path.read_text(encoding="utf-8"))
+        content = obj.get("content") if isinstance(obj, dict) else None
+        if not isinstance(content, str) or not content.strip():
+            raise RuntimeError("rss_research_content archive missing content")
+        research_content = content
+        cites = obj.get("citations") if isinstance(obj, dict) else None
+        if isinstance(cites, list):
+            research_citations = [c for c in cites if isinstance(c, dict)]
 
     items = store.pick_items_for_episode(episode_id=episode_id, limit=pick_items)
     if not items:
@@ -1106,16 +1234,49 @@ def step_script(store: Store, cfg: dict, episode_id: str, timeout_s: int) -> Non
         for row in items
     ]
 
-    base_url = os.environ.get("DEEPSEEK_BASE_URL", "").strip()
-    api_key = os.environ.get("DEEPSEEK_API_KEY", "").strip()
-    model = os.environ.get("DEEPSEEK_MODEL", "deepseek-chat").strip()
-    if not base_url or not api_key:
-        raise RuntimeError("DeepSeek not configured: set DEEPSEEK_BASE_URL and DEEPSEEK_API_KEY")
-
+    provider = (os.environ.get("LLM_PROVIDER") or "moonshot").strip().lower()
     temperature = float((cfg.get("deepseek") or {}).get("temperature") or 0.7)
 
-    client = DeepSeekClient(base_url=base_url, api_key=api_key, model=model, timeout_seconds=timeout_s)
-    out: ScriptOutput = client.generate(channel=channel, items=input_items, temperature=temperature)
+    if provider == "moonshot":
+        from src.script.moonshot import MoonshotClient
+
+        base_url = os.environ.get("MOONSHOT_BASE_URL", "https://api.moonshot.cn/v1").strip()
+        api_key = os.environ.get("MOONSHOT_API_KEY", "").strip()
+        model = os.environ.get("MOONSHOT_MODEL", "kimi-k2-turbo-preview").strip()
+        if not api_key:
+            raise RuntimeError("Moonshot not configured: set MOONSHOT_API_KEY")
+
+        client2 = MoonshotClient(base_url=base_url, api_key=api_key, model=model, timeout_seconds=timeout_s)
+        if use_research:
+            log.info("script input=research path=%s", str(research_content_path))
+            out: ScriptOutput = client2.generate_from_research(
+                channel=channel,
+                items=input_items,
+                research_content=research_content,
+                citations=research_citations,
+                temperature=temperature,
+            )
+        else:
+            out = client2.generate(channel=channel, items=input_items, temperature=temperature)
+    else:
+        base_url = os.environ.get("DEEPSEEK_BASE_URL", "").strip()
+        api_key = os.environ.get("DEEPSEEK_API_KEY", "").strip()
+        model = os.environ.get("DEEPSEEK_MODEL", "deepseek-chat").strip()
+        if not base_url or not api_key:
+            raise RuntimeError("DeepSeek not configured: set DEEPSEEK_BASE_URL and DEEPSEEK_API_KEY")
+
+        client = DeepSeekClient(base_url=base_url, api_key=api_key, model=model, timeout_seconds=timeout_s)
+        if use_research:
+            log.info("script input=research path=%s", str(research_content_path))
+            out = client.generate_from_research(
+                channel=channel,
+                items=input_items,
+                research_content=research_content,
+                citations=research_citations,
+                temperature=temperature,
+            )
+        else:
+            out = client.generate(channel=channel, items=input_items, temperature=temperature)
 
     store.set_episode_script(
         episode_id=episode_id,
@@ -1277,6 +1438,8 @@ def main() -> int:
         ],
     )
     parser.add_argument("--force-fetch", action="store_true")
+    parser.add_argument("--max-items", type=int, default=None)
+    parser.add_argument("--script-input", choices=["auto", "items", "research"], default="auto")
     parser.add_argument("--items-limit", type=int, default=10)
     parser.add_argument("--items-source", default=None)
     parser.add_argument("--items-show-content", action="store_true")
@@ -1291,6 +1454,12 @@ def main() -> int:
     load_dotenv(override=False)
 
     cfg = _load_yaml(Path(args.config))
+    if args.max_items is not None:
+        pipeline_cfg = cfg.get("pipeline")
+        if not isinstance(pipeline_cfg, dict):
+            pipeline_cfg = {}
+            cfg["pipeline"] = pipeline_cfg
+        pipeline_cfg["max_items"] = int(args.max_items)
     episode_date = args.date or _today_str()
 
     out_cfg = cfg.get("output") or {}
@@ -1348,7 +1517,7 @@ def main() -> int:
                 limit=int(args.newsnow_limit),
             )
         if args.step in {"all", "script"}:
-            step_script(store=store, cfg=cfg, episode_id=episode_id, timeout_s=timeout_s)
+            step_script(store=store, cfg=cfg, episode_id=episode_id, timeout_s=timeout_s, script_input=str(args.script_input))
         if args.step in {"all", "tts"}:
             step_tts(store=store, cfg=cfg, episode_id=episode_id, timeout_s=timeout_s)
         if args.step in {"all", "render"}:

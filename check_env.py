@@ -31,8 +31,8 @@ def test_deepseek(timeout_s: int) -> None:
 
     print(f"[DeepSeek] base_url={base_url} model={model} api_key={_mask(api_key)}")
 
-    # Prefer /v1/models to validate auth quickly; fallback to a minimal chat completion.
-    models_url = f"{base_url}/v1/models"
+    # Prefer /models to validate auth quickly; fallback to a minimal chat completion.
+    models_url = f"{base_url}/models"
     headers = {"Authorization": f"Bearer {api_key}"}
 
     try:
@@ -40,13 +40,13 @@ def test_deepseek(timeout_s: int) -> None:
         if r.status_code == 200:
             data: Any = r.json()
             count = len(data.get("data") or []) if isinstance(data, dict) else None
-            print(f"[DeepSeek] /v1/models OK (models={count})")
+            print(f"[DeepSeek] /models OK (models={count})")
             return
-        print(f"[DeepSeek] /v1/models returned {r.status_code}, fallback to chat...")
+        print(f"[DeepSeek] /models returned {r.status_code}, fallback to chat...")
     except Exception as e:  # noqa: BLE001
-        print(f"[DeepSeek] /v1/models request failed: {e}; fallback to chat...")
+        print(f"[DeepSeek] /models request failed: {e}; fallback to chat...")
 
-    chat_url = f"{base_url}/v1/chat/completions"
+    chat_url = f"{base_url}/chat/completions"
     payload = {
         "model": model,
         "temperature": 0,

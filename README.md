@@ -54,8 +54,18 @@ IDE/Pyright 的导入提示通常依赖于项目虚拟环境；本项目已在 `
 - `DEEPSEEK_BASE_URL`
 - `DEEPSEEK_API_KEY`
 - `DEEPSEEK_MODEL`
+- `LLM_PROVIDER`（默认 `moonshot`；如需使用 DeepSeek，设为 `deepseek` 并填写 `DEEPSEEK_API_KEY`）
+- `MOONSHOT_BASE_URL`（可选，默认 `https://api.moonshot.cn/v1`）
+- `MOONSHOT_API_KEY`（当 `LLM_PROVIDER=moonshot` 时必填）
+- `MOONSHOT_MODEL`（可选，默认 `kimi-k2-turbo-preview`）
 - 豆包 TTS 相关变量（如果你暂时不跑 TTS，可先留空）
 - Metaso 网络调查相关变量（可选）
+
+Kimi/Moonshot 使用 OpenAI-compatible 接口（`/chat/completions`）。安装依赖后，可用以下命令快速验证（会产生一次 API 调用）：
+
+```bash
+python -c "import os, json, requests; url=os.environ.get('MOONSHOT_BASE_URL','https://api.moonshot.cn/v1').rstrip('/')+'/chat/completions'; key=os.environ.get('MOONSHOT_API_KEY'); model=os.environ.get('MOONSHOT_MODEL','kimi-k2-turbo-preview'); payload={'model':model,'temperature':0,'messages':[{'role':'user','content':'你好，返回一个 JSON: {\\"ok\\":true}'}]}; r=requests.post(url, headers={'Authorization':f'Bearer {key}','Content-Type':'application/json'}, data=json.dumps(payload, ensure_ascii=False).encode('utf-8'), timeout=(10,60)); r.raise_for_status(); print(r.json()['choices'][0]['message']['content'])"
+```
 
 注意：本项目内的 `src/tts/doubao.py` 是“工程骨架”，已经按 **submit() + poll()** 的异步模式把参数、异常、重试/超时边界设计好，但你需要根据自己账号开通的豆包/火山引擎 TTS 接口版本补齐真实 endpoint 与签名。
 
@@ -137,6 +147,23 @@ python run.py --step render
 python run.py --step publish
 ```
 
+### 用网络调查结果生成脚本（script-input）
+
+脚本生成阶段支持选择输入来源：
+
+- `--script-input auto`（默认）：如果当天存在 `rss_research_content_*.json`，优先用网络调查结果；否则回退为 items
+- `--script-input items`：只用 items（不依赖网络调查结果）
+- `--script-input research`：强制使用网络调查结果（要求当天存在 `rss_research_content_*.json`）
+
+LLM 默认使用 Kimi/Moonshot（见 `.env` 的 `LLM_PROVIDER`）；如需切换到 DeepSeek，设置 `LLM_PROVIDER=deepseek`。
+
+示例：先抓取+网络调查，再用调查结果生成播客文案：
+
+```bash
+python run.py --step fetch --force-fetch
+python run.py --step script --script-input research
+```
+
 ### RSS 多实例自动切换（urls）
 
 `sources.rss` 每条源除了 `url` 以外，也支持 `urls`（列表）。抓取时会按顺序尝试，**第一个成功的会被使用**，其余跳过。
@@ -183,6 +210,14 @@ sources:
 python run.py --step fetch --force-fetch
 ```
 
+### 临时限制抓取条数（max-items）
+
+运行时覆盖 `settings.yaml` 里的 `pipeline.max_items`，用于调试或快速验证：
+
+```bash
+python run.py --step fetch --force-fetch --max-items 1
+```
+
 ### 抓取内容归档到文件（fetch archives）
 
 每次执行 `fetch` 时，程序会把本次抓取到的条目（包含去重前与去重后）保存为一个文件：
@@ -190,6 +225,11 @@ python run.py --step fetch --force-fetch
 - 文件名：`rss_YYYYMMDD_HHMMSS.json`
 - 目录结构：按 `年/月/日` 自动分层
 - 文件内容：JSON（UTF-8，便于后续检索/回放/调试）
+
+如果你配置并启用了 Metaso 网络调查（见上文环境变量与说明），`fetch` 还会额外产出：
+
+- `rss_research_YYYYMMDD_HHMMSS.json`：网络调查的完整结果（包含请求与原始返回 JSON 等元信息）
+- `rss_research_content_YYYYMMDD_HHMMSS.json`：从网络调查返回中提取出的“干净版” JSON，包含 `content`、`citations`、`meta`（provider/model）
 
 目录可在 `settings.yaml` 中配置：
 

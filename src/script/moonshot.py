@@ -1,38 +1,23 @@
 from __future__ import annotations
 
-import os
 import json
 import logging
+import os
 import time
 from typing import Any
 
 import requests
-from pydantic import BaseModel, Field
+
+from src.script.deepseek import ScriptInputItem, ScriptOutput
 
 
-class ScriptInputItem(BaseModel):
-    id: str
-    title: str
-    summary: str = ""
-    content: str = ""
-    url: str
-    published_at: str | None = None
-
-
-class ScriptOutput(BaseModel):
-    title: str
-    ssml: str
-    shownotes: str
-    tags: list[str] = Field(default_factory=list)
-
-
-class DeepSeekClient:
+class MoonshotClient:
     def __init__(self, base_url: str, api_key: str, model: str, timeout_seconds: int):
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.model = model
         self.timeout_seconds = timeout_seconds
-        self.log = logging.getLogger("script.deepseek")
+        self.log = logging.getLogger("script.moonshot")
 
     def _endpoint(self) -> str:
         return f"{self.base_url}/chat/completions"
@@ -48,7 +33,10 @@ class DeepSeekClient:
             try:
                 resp = requests.post(
                     self._endpoint(),
-                    headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
+                    headers={
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json",
+                    },
                     data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
                     timeout=self._timeout(),
                 )
@@ -144,35 +132,36 @@ class DeepSeekClient:
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
-            "response_format": {"type": "json_object"},
         }
 
         data = self._post_json(payload)
-
-        content = ((((data.get("choices") or [])[0] or {}).get("message") or {}).get("content") or "")
+        content = (
+            (((data.get("choices") or [])[0] or {}).get("message") or {}).get("content")
+            or ""
+        )
 
         try:
             obj = json.loads(content)
         except json.JSONDecodeError as e:
             self.log.error("LLM returned non-JSON: %s", content)
-            raise RuntimeError("DeepSeek output is not valid JSON") from e
+            raise RuntimeError("Moonshot output is not valid JSON") from e
 
         try:
             return ScriptOutput.model_validate(obj)
         except Exception as e:  # noqa: BLE001
             self.log.error("LLM JSON schema invalid: %s", content)
-            raise RuntimeError("DeepSeek output JSON schema invalid") from e
+            raise RuntimeError("Moonshot output JSON schema invalid") from e
 
     def generate(self, channel: dict, items: list[ScriptInputItem], temperature: float) -> ScriptOutput:
+        max_items = int(os.environ.get("SCRIPT_PROMPT_MAX_ITEMS", "8"))
+
         style = (channel.get("style") or {}) if isinstance(channel, dict) else {}
         tone = style.get("tone") or "口语化、生动、像朋友聊天"
         audience = style.get("audience") or "普通听众"
 
         item_lines = []
-        for i, it in enumerate(items, start=1):
-            item_lines.append(
-                f"{i}. 标题: {it.title}\n摘要: {it.summary}\n链接: {it.url}\n发布时间: {it.published_at or ''}"  # noqa: E501
-            )
+        for i, it in enumerate((items or [])[:max_items], start=1):
+            item_lines.append(f"{i}. {it.title}\n{it.url}".strip())
 
         system = (
             "你是一名中文播客脚本作者。"
@@ -197,7 +186,7 @@ class DeepSeekClient:
 - shownotes 用 Markdown，列出每条新闻的要点与链接
 - tags 3~8 个中文标签
 
-新闻素材：
+新闻素材（已做精简）：
 {chr(10).join(item_lines)}
 
 现在输出 JSON：
@@ -210,11 +199,9 @@ class DeepSeekClient:
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
-            "response_format": {"type": "json_object"},
         }
 
         data = self._post_json(payload)
-
         content = (
             (((data.get("choices") or [])[0] or {}).get("message") or {}).get("content")
             or ""
@@ -224,10 +211,10 @@ class DeepSeekClient:
             obj = json.loads(content)
         except json.JSONDecodeError as e:
             self.log.error("LLM returned non-JSON: %s", content)
-            raise RuntimeError("DeepSeek output is not valid JSON") from e
+            raise RuntimeError("Moonshot output is not valid JSON") from e
 
         try:
             return ScriptOutput.model_validate(obj)
         except Exception as e:  # noqa: BLE001
             self.log.error("LLM JSON schema invalid: %s", content)
-            raise RuntimeError("DeepSeek output JSON schema invalid") from e
+            raise RuntimeError("Moonshot output JSON schema invalid") from e
