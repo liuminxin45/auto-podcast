@@ -1,0 +1,9 @@
+{
+  "venvPath": ".",
+  "venv": ".venv",
+  "include": [
+    "run.py",
+    "check_env.py",
+    "src"
+  ]
+}
