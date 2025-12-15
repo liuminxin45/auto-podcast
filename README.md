@@ -55,8 +55,19 @@ IDE/Pyright 的导入提示通常依赖于项目虚拟环境；本项目已在 `
 - `DEEPSEEK_API_KEY`
 - `DEEPSEEK_MODEL`
 - 豆包 TTS 相关变量（如果你暂时不跑 TTS，可先留空）
+- Metaso 网络调查相关变量（可选）
 
 注意：本项目内的 `src/tts/doubao.py` 是“工程骨架”，已经按 **submit() + poll()** 的异步模式把参数、异常、重试/超时边界设计好，但你需要根据自己账号开通的豆包/火山引擎 TTS 接口版本补齐真实 endpoint 与签名。
+
+Metaso 网络调查：设置 `METASO_API_KEY` 后，`fetch` 会在生成 `rss_filtered_*.json` 后调用 `metaso.cn/api/v1/chat/completions` 并产出 `rss_research_*.json`。
+
+Metaso `MODEL` 可选值：
+
+- **fast**（默认）
+- **fast_thinking**
+- **ds-r1**
+
+可通过环境变量 `METASO_MODEL` 切换。
 
 ### 3) 修改 RSS
 

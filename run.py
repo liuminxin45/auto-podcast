@@ -21,6 +21,7 @@ from src.script.deepseek import DeepSeekClient, ScriptInputItem, ScriptOutput
 from src.store.db import Store
 from src.publish.local import publish_local
 from src.filter import filter_fetch_archive_payload
+from src.research.metaso import metaso_research_items
 
 
 class _JsonFormatter(logging.Formatter):
@@ -713,6 +714,49 @@ def step_fetch(store: Store, cfg: dict, episode_id: str, timeout_s: int, force_f
                     filtered_path=str(filtered_path),
                     fields=(filter_fields2 if filter_fields2 is not None else ["title"]),
                 )
+
+                try:
+                    items2 = filtered_payload.get("items")
+                    items3 = items2 if isinstance(items2, list) else []
+                    research_cfg = cfg.get("research") or {}
+                    metaso_cfg = research_cfg.get("metaso") if isinstance(research_cfg, dict) else None
+                    metaso_cfg2 = metaso_cfg if isinstance(metaso_cfg, dict) else {}
+
+                    r = metaso_research_items(
+                        items=items3,
+                        timeout_seconds=timeout_s,
+                        model=(metaso_cfg2.get("model") if isinstance(metaso_cfg2.get("model"), str) else None),
+                        max_items=(metaso_cfg2.get("max_items") if isinstance(metaso_cfg2.get("max_items"), int) else None),
+                    )
+                    if r is not None:
+                        research_payload = {
+                            "episode_id": episode_id,
+                            "episode_date": ep["episode_date"],
+                            "run_id": run_id,
+                            "created_at": dt.datetime.now(tz=dt.timezone.utc).isoformat(),
+                            "filtered_path": str(filtered_path),
+                            "raw_items_count": int(filtered_payload.get("raw_items_count") or 0),
+                            "filtered_items_count": int(filtered_payload.get("filtered_items_count") or 0),
+                            "metaso": r,
+                        }
+                        research_path = _archive_fetch_result(
+                            archive_base_dir=fetch_archives_dir,
+                            episode_date=ep["episode_date"],
+                            prefix="rss_research",
+                            payload=research_payload,
+                        )
+                        log.info("fetch research archive saved: %s", research_path)
+                        _log_event(
+                            log,
+                            "fetch_research",
+                            run_id=int(run_id),
+                            filtered_path=str(filtered_path),
+                            research_path=str(research_path),
+                            ok=bool(r.get("ok")),
+                            status=(r.get("status")),
+                        )
+                except Exception as e:  # noqa: BLE001
+                    log.warning("metaso research failed: %s", e)
             except Exception as e:  # noqa: BLE001
                 log.warning("fetch filter failed: %s", e)
         except Exception as e:  # noqa: BLE001

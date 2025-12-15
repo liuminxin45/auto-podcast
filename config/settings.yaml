@@ -8,10 +8,11 @@ channel:
     length_minutes: 6
 
 sources:
-  newsnow_force_enable_all: true
+  newsnow_force_enable_all: false
   rss:
     - name: "示例RSS"
       url: "https://www.zhihu.com/rss"
+      enabled: false
 
     - name: "60s-每天60秒读懂世界(RSS)"
       enabled: true
@@ -32,7 +33,7 @@ sources:
       id: "zhihu"
       base_url: "https://newsnow.busiyi.world"
       count: 10
-      enabled: true
+      enabled: false
 
     - name: "NewsNow-微博"
       id: "weibo"
@@ -310,7 +311,7 @@ sources:
           value: "https://zhuanlan.zhihu.com/dingxiangyisheng"
 
     - group: "others"
-      enabled: true
+      enabled: false
       items:
         - name: "LilyRSS-知乎动态-简单心理"
           kind: "zhihu"

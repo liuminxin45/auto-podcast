@@ -1,0 +1,124 @@
+from __future__ import annotations
+
+import http.client
+import json
+import logging
+import os
+from typing import Any
+
+
+def _build_prompt(items: list[dict], max_items: int) -> str:
+    max_items2 = max(0, int(max_items))
+    groups: dict[str, list[dict]] = {}
+    for it in items[:max_items2]:
+        if not isinstance(it, dict):
+            continue
+        src = (it.get("source") or "").strip() or "<unknown>"
+        groups.setdefault(src, []).append(it)
+
+    parts: list[str] = []
+    idx = 1
+    for src in sorted(groups.keys()):
+        parts.append(f"\n## 来源：{src} (count={len(groups[src])})")
+        for it in groups[src]:
+            title = (it.get("title") or "").strip()
+            url = (it.get("url") or "").strip()
+            if not title and not url:
+                continue
+            if url:
+                parts.append(f"{idx}. {title}\n   {url}")
+            else:
+                parts.append(f"{idx}. {title}")
+            idx += 1
+
+    joined = "\n".join([p for p in parts if p.strip()]).strip()
+    if not joined:
+        joined = "(no items)"
+
+    return (
+        "请基于以下新闻条目（按来源分组，包含标题+链接）进行一次网络调查：\n"
+        "1) 请按【来源】分组输出调查结果；\n"
+        "2) 每条新闻补充关键背景与事实要点；\n"
+        "3) 若能从链接/公开信息验证或澄清，请给出引用来源；\n"
+        "4) 最后给出一个跨来源的【汇总】（用 5-10 条要点）。\n\n"
+        "新闻条目：\n"
+        f"{joined}\n"
+    )
+
+
+def metaso_research_items(
+    *,
+    items: list[dict],
+    timeout_seconds: int,
+    model: str | None = None,
+    max_items: int | None = None,
+) -> dict[str, Any] | None:
+    log = logging.getLogger("research.metaso")
+
+    api_key = (os.environ.get("METASO_API_KEY") or "").strip()
+    if not api_key:
+        log.warning("METASO_API_KEY not set; skip metaso research")
+        return None
+
+    model2 = (model or os.environ.get("METASO_MODEL") or "fast").strip() or "fast"
+    max_items2 = int(max_items or os.environ.get("METASO_MAX_ITEMS") or 10)
+
+    input_sources: dict[str, int] = {}
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        src = (it.get("source") or "").strip() or "<unknown>"
+        input_sources[src] = input_sources.get(src, 0) + 1
+
+    prompt = _build_prompt(items, max_items=max_items2)
+    payload = {
+        "model": model2,
+        "messages": [
+            {
+                "role": "user",
+                "content": prompt,
+            }
+        ],
+    }
+
+    body = json.dumps(payload, ensure_ascii=False)
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+    }
+
+    conn = http.client.HTTPSConnection("metaso.cn", timeout=timeout_seconds)
+    try:
+        conn.request("POST", "/api/v1/chat/completions", body=body.encode("utf-8"), headers=headers)
+        res = conn.getresponse()
+        raw_bytes = res.read() or b""
+        raw_text = raw_bytes.decode("utf-8", errors="replace")
+
+        ok = 200 <= int(res.status) < 300
+        if not ok:
+            log.warning("metaso request failed: status=%s body=%s", res.status, raw_text[:500])
+
+        data: Any
+        try:
+            data = json.loads(raw_text) if raw_text.strip() else None
+        except Exception:
+            data = None
+
+        return {
+            "ok": bool(ok),
+            "status": int(res.status),
+            "model": model2,
+            "max_items": int(max_items2),
+            "input_items_count": int(len(items)),
+            "input_sources": input_sources,
+            "used_items_count": int(min(len(items), max_items2)),
+            "request": payload,
+            "response_text": raw_text,
+            "response_json": data,
+        }
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
