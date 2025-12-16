@@ -1667,7 +1667,7 @@ def step_tts(store: Store, cfg: dict, episode_id: str, timeout_s: int) -> None:
         ssml_est_tokens=int(ssml_tokens),
     )
 
-    from src.tts.doubao import DoubaoTTSClient
+    from src.tts.doubao import DoubaoPodcastClient, DoubaoTTSClient
 
     out_dir = Path((cfg.get("output") or {}).get("out_dir") or "./out")
     episodes_dir = Path((cfg.get("output") or {}).get("episodes_dir") or "./out/episodes")
@@ -1679,16 +1679,23 @@ def step_tts(store: Store, cfg: dict, episode_id: str, timeout_s: int) -> None:
     tts_path = episodes_dir / f"{ep['episode_date']}.tts.mp3"
     wrote_file = False
     try:
-        client = DoubaoTTSClient(timeout_seconds=timeout_s)
-        try:
-            task_id = client.submit(ssml=ep["ssml"], voice=voice)
-            audio_bytes = client.poll(task_id=task_id)
-        except Exception as e:  # noqa: BLE001
-            if "text too long for single doubao websocket request" in str(e):
-                task_id = "chunked"
-                audio_bytes = client.synthesize(ssml=ep["ssml"], voice=voice)
-            else:
-                raise
+        doubao_mode = (os.environ.get("DOUBAO_MODE") or "tts").strip().lower()
+        if doubao_mode == "podcast":
+            client = DoubaoPodcastClient(timeout_seconds=timeout_s)
+            task_id = "podcast"
+            text = _strip_angle_tags(ep["ssml"])
+            audio_bytes = client.generate_mp3(input_text=text)
+        else:
+            client = DoubaoTTSClient(timeout_seconds=timeout_s)
+            try:
+                task_id = client.submit(ssml=ep["ssml"], voice=voice)
+                audio_bytes = client.poll(task_id=task_id)
+            except Exception as e:  # noqa: BLE001
+                if "text too long for single doubao websocket request" in str(e):
+                    task_id = "chunked"
+                    audio_bytes = client.synthesize(ssml=ep["ssml"], voice=voice)
+                else:
+                    raise
     except BaseException as e:  # noqa: BLE001
         if isinstance(e, (KeyboardInterrupt, SystemExit)):
             raise
