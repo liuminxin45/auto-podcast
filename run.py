@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import time
+import uuid
 from pathlib import Path
 
 from dotenv import dotenv_values, load_dotenv
@@ -112,6 +113,89 @@ def _setup_logging(log_dir: Path, episode_date: str) -> None:
     root.handlers.clear()
     root.addHandler(sh)
     root.addHandler(fh)
+
+
+def _normalize_doubao_mode(raw: str) -> str:
+    s = (raw or "").strip().lower()
+    if s in {"tts", "tts_v3_http", "tts_v3_ws"}:
+        return s
+    if s in {"podcast", "voiceclone_http"}:
+        return s
+    return s
+
+
+def _doubao_mode_group(mode: str) -> str:
+    m = _normalize_doubao_mode(mode)
+    if m in {"tts", "tts_v3_http", "tts_v3_ws"}:
+        return "tts"
+    if m in {"podcast"}:
+        return "podcast"
+    if m in {"voiceclone_http"}:
+        return "voiceclone_http"
+    return ""
+
+
+def _apply_doubao_mode_env() -> None:
+    mode = _normalize_doubao_mode(os.environ.get("DOUBAO_MODE") or "")
+    grp = _doubao_mode_group(mode)
+    if not grp:
+        return
+
+    keep_keys = {
+        "DOUBAO_MODE",
+        "DOTENV_OVERRIDE",
+        "HTTP_TIMEOUT_SECONDS",
+        "LOG_FORMAT",
+        "PODCAST_DB_PATH",
+        "DOUBAO_APP_ID",
+        "DOUBAO_ACCESS_KEY",
+        "DOUBAO_SECRET_KEY",
+        "DOUBAO_REGION",
+        "DOUBAO_TTS_DISABLE_FALLBACK",
+        "DOUBAO_TTS_FORCE",
+    }
+
+    candidates: list[str] = []
+    candidates.append(f".env.{mode}")
+    candidates.append(f".env.{grp}")
+    seen: set[str] = set()
+    for cand in candidates:
+        if cand in seen:
+            continue
+        seen.add(cand)
+        p = Path(cand)
+        if p.exists() and p.is_file():
+            load_dotenv(dotenv_path=p, override=True)
+
+    clear_prefixes: list[str]
+    clear_keys: set[str]
+    if grp == "voiceclone_http":
+        clear_prefixes = ["DOUBAO_TTS_", "DOUBAO_PODCAST_", "DOUBAO_WS_"]
+        clear_keys = {"DOUBAO_RESOURCE_ID"}
+    elif grp == "podcast":
+        clear_prefixes = ["DOUBAO_TTS_", "DOUBAO_VOICECLONE_"]
+        clear_keys = {
+            "DOUBAO_TTS_VOICE",
+            "DOUBAO_TTS_RESOURCE_ID",
+            "DOUBAO_TTS_V3_RESOURCE_ID",
+            "DOUBAO_TTS_V3_URL",
+            "DOUBAO_TTS_V3_WS_URL",
+        }
+    else:
+        # tts group
+        clear_prefixes = ["DOUBAO_VOICECLONE_", "DOUBAO_PODCAST_", "DOUBAO_WS_"]
+        clear_keys = {"DOUBAO_RESOURCE_ID"}
+
+    for k in list(os.environ.keys()):
+        if k in keep_keys:
+            continue
+        if k in clear_keys:
+            os.environ.pop(k, None)
+            continue
+        for pref in clear_prefixes:
+            if k.startswith(pref):
+                os.environ.pop(k, None)
+                break
 
 
 def _today_str() -> str:
@@ -450,6 +534,8 @@ def step_fetch(
 
     out_cfg = cfg.get("output") or {}
     fetch_archives_dir = Path(out_cfg.get("fetch_archives_dir") or "./out/fetch_archives")
+    script_dir = Path(out_cfg.get("script_dir") or "./out/script")
+    script_dir.mkdir(parents=True, exist_ok=True)
 
     filter_cfg = cfg.get("filter") or {}
     filter_fields = filter_cfg.get("fields")
@@ -1515,6 +1601,8 @@ def step_script(store: Store, cfg: dict, episode_id: str, timeout_s: int, script
 
     out_cfg = cfg.get("output") or {}
     fetch_archives_dir = Path(out_cfg.get("fetch_archives_dir") or "./out/fetch_archives")
+    script_dir = Path(out_cfg.get("script_dir") or "./out/script")
+    script_dir.mkdir(parents=True, exist_ok=True)
 
     research_content_path = _find_latest_archive(fetch_archives_dir, ep["episode_date"], "rss_research_content")
     use_research = False
@@ -1632,6 +1720,13 @@ def step_script(store: Store, cfg: dict, episode_id: str, timeout_s: int, script
         script_json=json.dumps(out.model_dump(), ensure_ascii=False),
     )
 
+    script_json_path = script_dir / f"{ep['episode_date']}.script.json"
+    ssml_path = script_dir / f"{ep['episode_date']}.ssml.txt"
+    shownotes_path = script_dir / f"{ep['episode_date']}.shownotes.md"
+    script_json_path.write_text(json.dumps(out.model_dump(), ensure_ascii=False, indent=2), encoding="utf-8")
+    ssml_path.write_text(out.ssml or "", encoding="utf-8")
+    shownotes_path.write_text(out.shownotes or "", encoding="utf-8")
+
     title_chars, title_tokens = _text_stats(out.title)
     ssml_chars, ssml_tokens = _text_stats(out.ssml)
     shownotes_chars, shownotes_tokens = _text_stats(out.shownotes)
@@ -1690,9 +1785,9 @@ def step_tts(store: Store, cfg: dict, episode_id: str, timeout_s: int) -> None:
     )
 
     out_dir = Path((cfg.get("output") or {}).get("out_dir") or "./out")
-    episodes_dir = Path((cfg.get("output") or {}).get("episodes_dir") or "./out/episodes")
+    tts_dir = Path((cfg.get("output") or {}).get("tts_dir") or "./out/tts")
     out_dir.mkdir(parents=True, exist_ok=True)
-    episodes_dir.mkdir(parents=True, exist_ok=True)
+    tts_dir.mkdir(parents=True, exist_ok=True)
 
     voice = ((cfg.get("tts") or {}).get("voice") or "").strip()
 
@@ -1700,7 +1795,7 @@ def step_tts(store: Store, cfg: dict, episode_id: str, timeout_s: int) -> None:
     poll_interval_s = int(os.environ.get("DOUBAO_TTS_POLL_INTERVAL_SECONDS", "1"))
     disable_fallback = (os.environ.get("DOUBAO_TTS_DISABLE_FALLBACK") or "0").strip().lower() in {"1", "true", "yes", "on"}
 
-    tts_path = episodes_dir / f"{ep['episode_date']}.tts.mp3"
+    tts_path = tts_dir / f"{ep['episode_date']}.tts.mp3"
     wrote_file = False
     try:
         from src.tts.doubao import DoubaoPodcastClient, DoubaoTTSClient
@@ -1720,18 +1815,49 @@ def step_tts(store: Store, cfg: dict, episode_id: str, timeout_s: int) -> None:
             task_id = "podcast"
             text = _strip_angle_tags(ep["ssml"])
             audio_bytes = client.generate_mp3(input_text=text)
+        elif doubao_mode == "voiceclone_http":
+            client = DoubaoPodcastClient(timeout_seconds=timeout_s)
+            task_id = "voiceclone_http"
+            text = ep["ssml"]
+            speaker_id = (os.environ.get("DOUBAO_VOICECLONE_SPEAKER_ID") or "").strip()
+            log.info(
+                "doubao voiceclone start: mode=%s url=%s speaker_id=%s cluster=%s",
+                doubao_mode,
+                (os.environ.get("DOUBAO_VOICECLONE_URL") or "https://openspeech.bytedance.com/api/v1/tts").strip(),
+                speaker_id,
+                (os.environ.get("DOUBAO_VOICECLONE_CLUSTER") or "volcano_icl").strip() or "volcano_icl",
+            )
+            audio_bytes = client.generate_mp3_voiceclone_http(input_text=text, speaker_id=speaker_id)
         elif doubao_mode in {"tts", "tts_v3_http"}:
             client = DoubaoPodcastClient(timeout_seconds=timeout_s)
             task_id = "tts_v3_http" if doubao_mode == "tts_v3_http" else "tts"
-            text = _strip_angle_tags(ep["ssml"])
+            text = ep["ssml"]
+            tts_version = (os.environ.get("DOUBAO_TTS_VERSION") or "1").strip() or "1"
+            rid = (os.environ.get("DOUBAO_TTS_V3_RESOURCE_ID") or "").strip()
+            if not rid:
+                if tts_version == "2":
+                    rid = (os.environ.get("DOUBAO_TTS_V2_RESOURCE_ID") or "seed-tts-2.0").strip() or "seed-tts-2.0"
+                else:
+                    rid = (os.environ.get("DOUBAO_TTS_V1_RESOURCE_ID") or "seed-tts-1.0").strip() or "seed-tts-1.0"
+
+            voice_effective = voice
+            if tts_version == "2":
+                v2 = (os.environ.get("DOUBAO_TTS_V2_VOICE") or "").strip()
+                if v2:
+                    voice_effective = v2
+            else:
+                v1 = (os.environ.get("DOUBAO_TTS_V1_VOICE") or "").strip()
+                if v1:
+                    voice_effective = v1
             log.info(
-                "doubao tts start: mode=%s task_id=%s url=%s resource_id=%s",
+                "doubao tts start: mode=%s task_id=%s url=%s resource_id=%s tts_version=%s",
                 doubao_mode,
                 task_id,
                 (os.environ.get("DOUBAO_TTS_V3_URL") or "https://openspeech.bytedance.com/api/v3/tts/unidirectional").strip(),
-                (os.environ.get("DOUBAO_TTS_V3_RESOURCE_ID") or os.environ.get("DOUBAO_RESOURCE_ID") or "").strip(),
+                rid,
+                tts_version,
             )
-            audio_bytes = client.generate_mp3_v3_unidirectional_http(input_text=text, speaker=voice)
+            audio_bytes = client.generate_mp3_v3_unidirectional_http(input_text=text, speaker=voice_effective)
         elif doubao_mode == "tts_v3_ws":
             client = DoubaoTTSClient(timeout_seconds=timeout_s)
             try:
@@ -1755,7 +1881,9 @@ def step_tts(store: Store, cfg: dict, episode_id: str, timeout_s: int) -> None:
                 else:
                     raise
         else:
-            raise RuntimeError(f"Unknown DOUBAO_MODE={doubao_mode}. Use podcast / tts (http) / tts_v3_http / tts_v3_ws")
+            raise RuntimeError(
+                f"Unknown DOUBAO_MODE={doubao_mode}. Use podcast / tts (http) / tts_v3_http / tts_v3_ws / voiceclone_http"
+            )
     except BaseException as e:  # noqa: BLE001
         if isinstance(e, (KeyboardInterrupt, SystemExit)):
             raise
@@ -1811,10 +1939,10 @@ def step_render(store: Store, cfg: dict, episode_id: str, timeout_s: int) -> Non
     bgm = assets_dir / (audio_cfg.get("bgm") or "bgm.mp3")
     bgm_volume = float(audio_cfg.get("bgm_volume") or 0.18)
 
-    episodes_dir = Path((cfg.get("output") or {}).get("episodes_dir") or "./out/episodes")
-    episodes_dir.mkdir(parents=True, exist_ok=True)
+    render_dir = Path((cfg.get("output") or {}).get("render_dir") or "./out/render")
+    render_dir.mkdir(parents=True, exist_ok=True)
 
-    rendered_path = episodes_dir / f"{ep['episode_date']}.final.mp3"
+    rendered_path = render_dir / f"{ep['episode_date']}.final.mp3"
 
     if shutil.which("ffmpeg") is None:
         log.warning("ffmpeg not found; fallback to copy tts audio as rendered output")
@@ -1930,8 +2058,8 @@ def step_publish(store: Store, cfg: dict, episode_id: str) -> None:
     if ep["status"] != "rendered":
         raise RuntimeError(f"publish requires rendered episode; current={ep['status']}")
 
-    episodes_dir = Path((cfg.get("output") or {}).get("episodes_dir") or "./out/episodes")
-    episodes_dir.mkdir(parents=True, exist_ok=True)
+    publish_dir = Path((cfg.get("output") or {}).get("publish_dir") or "./out/publish")
+    publish_dir.mkdir(parents=True, exist_ok=True)
 
     tags_list = [t for t in (ep["tags"] or "").split(",") if t] if ep.get("tags") else []
 
@@ -1950,7 +2078,7 @@ def step_publish(store: Store, cfg: dict, episode_id: str) -> None:
 
     published_path = publish_local(
         rendered_audio_path=Path(ep["rendered_audio_path"]),
-        episodes_dir=episodes_dir,
+        episodes_dir=publish_dir,
         episode_date=ep["episode_date"],
         title=ep["title"] or "",
         shownotes=ep["shownotes"] or "",
@@ -1960,8 +2088,8 @@ def step_publish(store: Store, cfg: dict, episode_id: str) -> None:
     store.set_episode_published(episode_id=episode_id, published_path=str(published_path))
     store.set_episode_status(episode_id, "published")
 
-    meta_path = episodes_dir / f"{ep['episode_date']}.metadata.json"
-    notes_path = episodes_dir / f"{ep['episode_date']}.shownotes.md"
+    meta_path = publish_dir / f"{ep['episode_date']}.metadata.json"
+    notes_path = publish_dir / f"{ep['episode_date']}.shownotes.md"
     _log_event(
         log,
         "step_stats",
@@ -1982,6 +2110,8 @@ def main() -> int:
     parser.add_argument("--config", default="./config/settings.yaml")
     parser.add_argument("--date", default=None)
     parser.add_argument("--timeout-seconds", type=int, default=None)
+    parser.add_argument("--run-id", default=None)
+    parser.add_argument("--run-dir", default=None)
     parser.add_argument(
         "--step",
         default="all",
@@ -2013,9 +2143,19 @@ def main() -> int:
     parser.add_argument("--newsnow-limit", type=int, default=80)
     args = parser.parse_args()
 
-    dotenv_override = (os.environ.get("DOTENV_OVERRIDE") or "0").strip().lower() in {"1", "true", "yes", "on"}
-    load_dotenv(override=dotenv_override)
+    pre_mode = os.environ.get("DOUBAO_MODE")
+
     dotenv_cfg = dotenv_values(".env")
+    dotenv_override_raw = os.environ.get("DOTENV_OVERRIDE")
+    if isinstance(dotenv_cfg, dict) and (not dotenv_override_raw or not str(dotenv_override_raw).strip()):
+        dotenv_override_raw = str(dotenv_cfg.get("DOTENV_OVERRIDE") or "")
+    dotenv_override = (str(dotenv_override_raw or "0").strip().lower() in {"1", "true", "yes", "on"})
+    load_dotenv(override=dotenv_override)
+
+    if pre_mode is not None and str(pre_mode).strip():
+        os.environ["DOUBAO_MODE"] = str(pre_mode).strip()
+
+    _apply_doubao_mode_env()
 
     cfg = _load_yaml(Path(args.config))
     if args.max_items is not None:
@@ -2027,8 +2167,46 @@ def main() -> int:
     episode_date = args.date or _today_str()
 
     out_cfg = cfg.get("output") or {}
-    logs_dir = Path(out_cfg.get("logs_dir") or "./out/logs")
-    _setup_logging(logs_dir, episode_date)
+
+    runs_root = Path(out_cfg.get("runs_dir") or "./out/runs")
+    run_dir: Path
+    if args.run_dir:
+        run_dir = Path(args.run_dir)
+    else:
+        run_id = (str(args.run_id).strip() if args.run_id else "")
+        if not run_id:
+            run_id = dt.datetime.now().strftime("%H%M%S") + "_" + uuid.uuid4().hex[:6]
+
+        run_dir = runs_root / episode_date / run_id
+        if args.step in {"script", "tts", "render", "publish"} and not run_dir.exists():
+            date_dir = runs_root / episode_date
+            if date_dir.exists():
+                existing = sorted([p for p in date_dir.iterdir() if p.is_dir()], key=lambda p: p.name)
+                if existing:
+                    run_dir = existing[-1]
+
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "logs").mkdir(parents=True, exist_ok=True)
+    (run_dir / "fetch").mkdir(parents=True, exist_ok=True)
+    (run_dir / "script").mkdir(parents=True, exist_ok=True)
+    (run_dir / "tts").mkdir(parents=True, exist_ok=True)
+    (run_dir / "render").mkdir(parents=True, exist_ok=True)
+    (run_dir / "publish").mkdir(parents=True, exist_ok=True)
+
+    output_cfg = cfg.get("output")
+    if not isinstance(output_cfg, dict):
+        output_cfg = {}
+        cfg["output"] = output_cfg
+    output_cfg["runs_dir"] = str(runs_root)
+    output_cfg["out_dir"] = str(run_dir)
+    output_cfg["logs_dir"] = str(run_dir / "logs")
+    output_cfg["fetch_archives_dir"] = str(run_dir / "fetch")
+    output_cfg["script_dir"] = str(run_dir / "script")
+    output_cfg["tts_dir"] = str(run_dir / "tts")
+    output_cfg["render_dir"] = str(run_dir / "render")
+    output_cfg["publish_dir"] = str(run_dir / "publish")
+
+    _setup_logging(Path(output_cfg["logs_dir"]), episode_date)
 
     if args.timeout_seconds is not None:
         timeout_s = int(args.timeout_seconds)

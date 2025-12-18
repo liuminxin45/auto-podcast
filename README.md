@@ -74,33 +74,118 @@ python -c "import os, json, requests; url=os.environ.get('MOONSHOT_BASE_URL','ht
 - **podcast**：PodcastTTS（多 speaker/生成式播客），使用 `wss://openspeech.bytedance.com/api/v3/sami/podcasttts`，资源 `volc.service_type.10050`
 - **tts_v3_http**：单人朗读 TTS（官方 HTTP 单向流式：`https://openspeech.bytedance.com/api/v3/tts/unidirectional`），需要你在控制台开通的 **TTS 资源 ID**（不要用 10050）
 - **tts_v3_ws**：单人朗读 TTS（WebSocket 单向流式：`wss://openspeech.bytedance.com/api/v3/tts/unidirectional/stream`），需要你在控制台开通的 **TTS 资源 ID**（不要用 10050）
+- **voiceclone_http**：声音复刻（SpeakerID 音色）TTS（HTTP：`https://openspeech.bytedance.com/api/v1/tts`），使用 `X-Api-Key` + `S_` 开头的 `SpeakerID`
 - **tts**：单人朗读默认模式，等同于 **tts_v3_http**
+
+互斥与优先级规则：
+
+- **模式互斥**：同一时刻只应启用一种 `DOUBAO_MODE`（`podcast` / `tts`/`tts_v3_http` / `tts_v3_ws` / `voiceclone_http`）。
+- **资源 ID 互斥**：`volc.service_type.10050` 仅用于 `podcast`；单音色（TTS1.0/2.0）必须使用 `seed-tts-*` 或 `volc.service_type.10029/10048` 等。
+- **语气提示优先级**：如果 `DOUBAO_TTS_V3_CONTEXT_TEXT` 非空，则忽略 `DOUBAO_TTS_V3_CONTEXT_TEXTS`；否则解析 `..._TEXTS` 并仅取第一条。
+
+SSML（Universal SSML）规则与限制（来自官方文档）：
+
+- **必须**：请求参数选择 `text_type=ssml`
+- **必须**：所有文本放在唯一的 `<speak>...</speak>` 根元素内
+- **不支持**：双向流式 API 目前不支持 SSML（因此不应使用双向相关 namespace）
+- **长度建议**：使用 SSML 时（包含标签本身）建议不超过 150 字符，超过会显著提高 badcase 概率
+- **标签支持差异**：不同模型/音色支持标签不同
+- **特别注意**：`<break>` 仅适用于豆包语音合成模型 **1.0** 的音色，不适用于 **2.0** 音色（如 `seed-tts-2.0`）
 
 最小配置（写进 `.env`）：
 
 ```bash
 # 建议：让 .env 覆盖当前 shell 的环境变量（避免旧变量影响本次运行）
+# 注意：如果你在 PowerShell 里显式设置了 DOUBAO_MODE，本项目会优先使用 PowerShell 的值（用于临时切换模式）。
 DOTENV_OVERRIDE=1
 
-# PodcastTTS
-DOUBAO_MODE=podcast
-DOUBAO_WS_URL=wss://openspeech.bytedance.com/api/v3/sami/podcasttts
-DOUBAO_RESOURCE_ID=volc.service_type.10050
-DOUBAO_WS_APP_KEY=aGjiRDfUWi
-DOUBAO_WS_SEQUENCE=1
-
-# 单人TTS
-# DOUBAO_MODE=tts
-# DOUBAO_TTS_V3_URL=https://openspeech.bytedance.com/api/v3/tts/unidirectional
-# DOUBAO_TTS_V3_RESOURCE_ID=seed-tts-2.0
+# =============================
+# 一键切换 TTS 模式
+# =============================
+# 只需修改这一行，即可切换 TTS 模式：
+# - tts / tts_v3_http → 单音色 HTTP
+# - tts_v3_ws        → 单音色 WebSocket
+# - voiceclone_http  → 声音复刻（SpeakerID）
+# - podcast          → 多人播客
 #
-# 或 WebSocket:
+# 模式专属配置会自动从以下文件加载（如果存在）：
+# - .env.tts
+# - .env.tts_v3_ws
+# - .env.voiceclone_http
+# - .env.podcast
+# =============================
+DOUBAO_MODE=tts
+
+# =============================
+# 各模式配置示例（可选：拆分到独立文件）
+# =============================
+
+# [示例] 单音色 HTTP（默认走 TTS1.0，可切换到 2.0）
+# 推荐：将以下配置写入 .env.tts 文件
+DOUBAO_TTS_V3_URL=https://openspeech.bytedance.com/api/v3/tts/unidirectional
+# 版本切换（新增链路）：默认走 1.0
+DOUBAO_TTS_VERSION=1
+DOUBAO_TTS_V1_RESOURCE_ID=seed-tts-1.0
+DOUBAO_TTS_V2_RESOURCE_ID=seed-tts-2.0
+
+# 可选：按版本分别设置音色（避免 1.0/2.0 音色混用导致 resource mismatch）
+# DOUBAO_TTS_V1_VOICE=...
+# DOUBAO_TTS_V2_VOICE=...
+
+# 如果你显式设置了 DOUBAO_TTS_V3_RESOURCE_ID（非空），会覆盖上面的 DOUBAO_TTS_VERSION 选择
+# DOUBAO_TTS_V3_RESOURCE_ID=
+# 如果你的脚本是 SSML（含 <speak> / <break> 等标签），可设置为 1 来强制按 SSML 处理
+DOUBAO_TTS_V3_FORCE_SSML=1
+# 官方要求：text_type=ssml（必须是字符串 ssml）
+DOUBAO_TTS_V3_TEXT_TYPE_SSML=ssml
+# [推荐：TTS1.0] 通过专用字段发送 SSML，避免网关把标签当普通文本朗读
+DOUBAO_TTS_V3_SEND_SSML_FIELD=1
+
+# 注意：<break> 不适用于 TTS2.0 音色；如需 <break> 停顿，请保持 DOUBAO_TTS_VERSION=1 或显式切换到 TTS1.0 资源
+
+# 可选：语气/风格
+# DOUBAO_TTS_V3_CONTEXT_TEXT=你的语气更欢乐一点，像播客主播一样自然
+# DOUBAO_TTS_V3_EMOTION=happy
+# DOUBAO_TTS_V3_EMOTION_SCALE=4
+
+# 或 WebSocket 单音色（需要切换 DOUBAO_MODE）
 # DOUBAO_MODE=tts_v3_ws
 # DOUBAO_TTS_V3_WS_URL=wss://openspeech.bytedance.com/api/v3/tts/unidirectional/stream
 # DOUBAO_TTS_V3_RESOURCE_ID=seed-tts-2.0
 # DOUBAO_TTS_V3_WS_APP_KEY=aGjiRDfUWi
 
-# 共享
+# 或 声音复刻（SpeakerID 音色，HTTP /api/v1/tts）
+# 推荐：将以下配置写入 .env.voiceclone_http 文件
+# 注意：请不要把你的真实 DOUBAO_VOICECLONE_API_KEY 提交到仓库；.env.* 文件已在 .gitignore 中排除。
+ # DOUBAO_MODE=voiceclone_http
+ # DOUBAO_VOICECLONE_URL=https://openspeech.bytedance.com/api/v1/tts
+ # DOUBAO_VOICECLONE_API_KEY=...
+ # DOUBAO_VOICECLONE_SPEAKER_ID=S_yiQKtNFN1
+ # DOUBAO_VOICECLONE_CLUSTER=volcano_icl  # 或 volcano_icl_concurr
+ # DOUBAO_VOICECLONE_STRIP_SSML=1
+ # # Runtime controls (recommended defaults for ICL1.0)
+ # DOUBAO_VOICECLONE_SPEED_RATIO=0.95
+ # DOUBAO_VOICECLONE_RATE=24000
+ # DOUBAO_VOICECLONE_LOUDNESS_RATIO=
+ # DOUBAO_VOICECLONE_EXPLICIT_LANGUAGE=zh
+ # DOUBAO_VOICECLONE_CONTEXT_LANGUAGE=
+ # DOUBAO_VOICECLONE_SPLIT_SENTENCE=1
+ # DOUBAO_VOICECLONE_EXTRA_PARAM=
+ # # Chunking / retry tuning (to mitigate server RPC timeout code=3031)
+ # DOUBAO_VOICECLONE_MAX_BYTES=300
+ # DOUBAO_VOICECLONE_MIN_BYTES=80
+ # DOUBAO_VOICECLONE_RETRIES=1
+ # DOUBAO_VOICECLONE_RETRY_BACKOFF_SECONDS=1.0
+
+# 或 PodcastTTS
+# 推荐：将以下配置写入 .env.podcast 文件
+# DOUBAO_MODE=podcast
+# DOUBAO_WS_URL=wss://openspeech.bytedance.com/api/v3/sami/podcasttts
+# DOUBAO_RESOURCE_ID=volc.service_type.10050
+# DOUBAO_WS_APP_KEY=aGjiRDfUWi
+# DOUBAO_WS_SEQUENCE=1
+
+# 共享（单音色模式用）
 DOUBAO_TTS_VOICE=zh_male_m191_uranus_bigtts
 
 # 调试开关
@@ -118,6 +203,41 @@ $env:DOUBAO_TTS_DISABLE_FALLBACK="1"
 $env:DOUBAO_TTS_FORCE="1"
 python run.py --max-items 1
 ```
+
+#### 配置文件管理工具
+
+项目提供了配置文件备份和恢复工具，方便迁移或管理多套配置：
+
+**合并所有配置到单个备份文件：**
+```bash
+# 合并到 .env.backup
+python scripts/merge_env.py
+
+# 指定输出文件
+python scripts/merge_env.py -o backups/env-20251218.backup
+
+# 预览合并结果（不写入文件）
+python scripts/merge_env.py --dry-run
+```
+
+**从备份恢复配置文件：**
+```bash
+# 恢复所有 .env* 文件
+python scripts/split_env.py .env.backup
+
+# 指定输出目录
+python scripts/split_env.py .env.backup --output-dir /path/to/restore
+
+# 预览拆分结果（不写入文件）
+python scripts/split_env.py .env.backup --dry-run
+```
+
+**使用场景：**
+- **迁移到新机器**：`merge` → 复制备份文件 → `split`
+- **定期备份**：定期运行 `merge_env.py` 保存配置快照
+- **快速切换环境**：保存多个 `.env.backup.*` 文件（如 dev/prod），随时切换
+
+详细说明见 `scripts/README.md`。
 
 Metaso 网络调查：设置 `METASO_API_KEY` 后，`fetch` 会在生成 `rss_filtered_*.json` 后调用 `metaso.cn/api/v1/chat/completions` 并产出 `rss_research_*.json`。
 
@@ -149,7 +269,25 @@ Metaso `MODEL` 可选值：
 python run.py
 ```
 
-日志在 `out/logs/`，产物在 `out/episodes/`。
+日志和各步骤产物会按“每次运行”落盘到独立目录，便于审阅：
+
+```
+out/runs/<episode_date>/<run_id>/
+  logs/
+  fetch/
+  script/
+  tts/
+  render/
+  publish/
+```
+
+默认情况下，`script/tts/render/publish` 会自动复用同一天最近一次的 run 目录（如果你没有显式指定）。你也可以手动指定：
+
+```bash
+python run.py --run-id myrun
+# 或者
+python run.py --run-dir ./out/runs/2025-12-17/myrun
+```
 
 ---
 
@@ -417,6 +555,23 @@ podcast-bot/
 │  └─ store/
 ├─ assets/
 └─ out/
-   ├─ episodes/
-   └─ logs/
+   └─ runs/
+      └─ <episode_date>/
+         └─ <run_id>/
+            ├─ fetch/
+            ├─ script/
+            ├─ tts/
+            ├─ render/
+            ├─ publish/
+            └─ logs/
+```
+
+每次运行 `run.py` 时，会在 `out/runs/<episode_date>/<run_id>` 下生成一个新的目录，包含本次运行的所有中间结果和日志。可以通过 `--run-id` 和 `--run-dir` 参数指定运行 ID 和目录。
+
+例如：
+
+```bash
+python run.py --step fetch --force-fetch --run-id my_run
+# 或者直接指定完整 run 目录
+python run.py --step fetch --force-fetch --run-dir ./out/runs/2025-12-17/my_run
 ```
