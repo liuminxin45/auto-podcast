@@ -48,7 +48,7 @@ class RetrievalV2Executor:
         self.history_searcher = history_searcher or HistoryPodcastSearcher()
         self.max_concurrent = max_concurrent
         self.timeout_seconds = timeout_seconds
-        self.logger = logging.getLogger("research.retrieval_v2")
+        self.logger = logging.getLogger("research.retrieval.retrieval_v2")
     
     def execute(self, retrieval_plan: RetrievalPlan) -> RetrievalBundle:
         """

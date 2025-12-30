@@ -14,10 +14,10 @@ from src.app.pipelines.steps import (
     ClusterStep,
     SelectionStep,
     ResearchStep,
-    ScriptStep,
-    AudioStep,
     PublishStep,
 )
+from src.app.pipelines.steps.script_step_segmented import ScriptStepSegmented
+from src.app.pipelines.steps.audio_step_segmented import AudioStepSegmented
 
 if TYPE_CHECKING:
     from src.app.context import EpisodeContext
@@ -35,8 +35,8 @@ class EpisodePipeline:
             ClusterStep(),
             SelectionStep(),
             ResearchStep(),
-            ScriptStep(),
-            AudioStep(),
+            ScriptStepSegmented(),  # 使用分段版本
+            AudioStepSegmented(),   # 使用分段版本
             PublishStep(),
         ]
     
@@ -52,25 +52,55 @@ class EpisodePipeline:
         Raises:
             Exception: 任何步骤执行失败
         """
-        self.logger.info("=" * 80)
-        self.logger.info(f"开始执行 Episode Pipeline: {ctx.episode_id}")
-        self.logger.info("=" * 80)
+        from src.utils.logging_config import log_operation
+        from datetime import datetime
+        
+        start_time = datetime.now()
+        
+        log_operation(
+            self.logger,
+            step="Pipeline",
+            operation="start",
+            result=f"episode_id={ctx.episode_id}, {len(self.steps)} steps"
+        )
         
         try:
             # 按顺序执行所有步骤
-            for step in self.steps:
+            for i, step in enumerate(self.steps, 1):
+                step_name = step.__class__.__name__
+                log_operation(
+                    self.logger,
+                    step="Pipeline",
+                    operation="execute_step",
+                    result=f"[{i}/{len(self.steps)}] {step_name}"
+                )
                 step.run(ctx)
             
             # 标记完成
             ctx.mark_completed()
-            self.logger.info("=" * 80)
-            self.logger.info(f"Episode Pipeline 执行完成: {ctx.episode_id}")
-            self.logger.info("=" * 80)
+            
+            duration = (datetime.now() - start_time).total_seconds()
+            log_operation(
+                self.logger,
+                step="Pipeline",
+                operation="completed",
+                result=f"episode_id={ctx.episode_id}, duration={duration:.1f}s"
+            )
             
         except Exception as e:
             # 标记失败
             ctx.mark_failed(str(e))
-            self.logger.error(f"Episode Pipeline 执行失败: {e}")
+            duration = (datetime.now() - start_time).total_seconds()
+            self.logger.error(
+                f"Episode Pipeline 执行失败: {e}",
+                extra={
+                    'step': 'Pipeline',
+                    'operation': 'failed',
+                    'episode_id': ctx.episode_id,
+                    'duration': duration,
+                    'error': str(e)
+                }
+            )
             raise
         
         return ctx

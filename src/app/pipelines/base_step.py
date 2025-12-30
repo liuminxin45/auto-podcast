@@ -34,12 +34,17 @@ class BaseStep(ABC):
     
     def run(self, ctx: EpisodeContext) -> None:
         """运行步骤（带日志）"""
+        from src.utils.logging_config import log_step_start, log_step_end
+        
         step_name = self.__class__.__name__
-        self.logger.info(f">>> 开始执行: {step_name}")
+        log_step_start(self.logger, step_name)
         
         try:
             self.execute(ctx)
-            self.logger.info(f"<<< 完成执行: {step_name}")
+            log_step_end(self.logger, step_name)
         except Exception as e:
-            self.logger.error(f"<<< 执行失败: {step_name} - {e}")
+            self.logger.error(
+                f"<<< 执行失败: {step_name} - {e}",
+                extra={'step': step_name, 'operation': 'failed', 'error': str(e)}
+            )
             raise

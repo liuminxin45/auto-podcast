@@ -21,12 +21,19 @@ class PublishStep(BaseStep):
     
     def execute(self, ctx: EpisodeContext) -> None:
         """执行 Publish 步骤"""
+        from src.utils.logging_config import log_operation
+        
         if not ctx.audio_paths or "rendered" not in ctx.audio_paths:
             self.logger.warning("没有渲染音频，跳过发布")
             ctx.publish_result = {}
             return
         
-        self.logger.info("开始发布...")
+        log_operation(
+            self.logger,
+            step="Publish",
+            operation="start",
+            result="preparing to publish"
+        )
         
         # 获取渲染音频路径
         rendered_path = Path(ctx.audio_paths["rendered"])
@@ -34,7 +41,7 @@ class PublishStep(BaseStep):
             raise RuntimeError(f"渲染音频不存在: {rendered_path}")
         
         # 准备发布目录
-        publish_dir = ctx.run_dir / "5_publish"
+        publish_dir = ctx.run_dir / "6_publish"
         publish_dir.mkdir(parents=True, exist_ok=True)
         
         # 获取脚本输出信息
@@ -42,6 +49,13 @@ class PublishStep(BaseStep):
         title = script_output.get("title", "")
         shownotes = script_output.get("shownotes", "")
         tags = script_output.get("tags", [])
+        
+        log_operation(
+            self.logger,
+            step="Publish",
+            operation="publish_local",
+            result=f"title={title}, tags={len(tags)}"
+        )
         
         # 发布到本地
         published_path = publish_local(
@@ -59,7 +73,12 @@ class PublishStep(BaseStep):
             "tags": tags,
         }
         
-        self.logger.info(f"发布完成: {published_path}")
+        log_operation(
+            self.logger,
+            step="Publish",
+            operation="completed",
+            result=f"published to {published_path}"
+        )
         ctx.add_event("published",
                      published_path=str(published_path),
                      title=title)

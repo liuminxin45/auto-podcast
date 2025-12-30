@@ -36,6 +36,8 @@ def run_episode(
     Raises:
         Exception: Pipeline 执行失败
     """
+    from src.utils.logging_config import setup_logging, log_operation
+    
     logger = logging.getLogger("app.orchestrator")
     
     # 生成 run_id
@@ -45,9 +47,31 @@ def run_episode(
     run_dir = output_dir / "runs" / episode_date.replace("-", "") / f"{run_id}_{episode_id.split(':')[0][:6]}"
     run_dir.mkdir(parents=True, exist_ok=True)
     
-    logger.info(f"创建 Episode Context: {episode_id}")
-    logger.info(f"Run ID: {run_id}")
-    logger.info(f"Run Dir: {run_dir}")
+    # 初始化日志系统（保存到run_dir）
+    verbose = config.get("logging", {}).get("verbose", False)
+    console_level = config.get("logging", {}).get("console_level", "INFO")
+    file_level = config.get("logging", {}).get("file_level", "DEBUG")
+    
+    setup_logging(
+        run_dir=run_dir,
+        console_level=console_level,
+        file_level=file_level,
+        verbose=verbose
+    )
+    
+    log_operation(
+        logger,
+        step="Orchestrator",
+        operation="init",
+        result=f"episode_id={episode_id}, run_id={run_id}, verbose={verbose}"
+    )
+    
+    log_operation(
+        logger,
+        step="Orchestrator",
+        operation="create_run_dir",
+        result=f"{run_dir}"
+    )
     
     # 加载 Track
     track_cfg = config.get("track", {})
@@ -56,12 +80,27 @@ def run_episode(
     
     try:
         track = TrackRegistry.get(track_name, track_options)
-        logger.info(f"加载 Track: {track.get_name()} - {track.get_description()}")
+        log_operation(
+            logger,
+            step="Orchestrator",
+            operation="load_track",
+            result=f"{track.get_name()} - {track.get_description()}"
+        )
     except ValueError as e:
-        logger.warning(f"Track 加载失败: {e}，使用默认 life_consumer")
+        logger.warning(
+            f"Track 加载失败: {e}，使用默认 life_consumer",
+            extra={'step': 'Orchestrator', 'operation': 'load_track_fallback'}
+        )
         track = TrackRegistry.get("life_consumer", {})
     
     # 构建 EpisodeContext
+    log_operation(
+        logger,
+        step="Orchestrator",
+        operation="create_context",
+        result=f"episode_date={episode_date}"
+    )
+    
     ctx = EpisodeContext(
         episode_id=episode_id,
         episode_date=episode_date,
@@ -73,7 +112,21 @@ def run_episode(
     )
     
     # 运行 Pipeline
+    log_operation(
+        logger,
+        step="Orchestrator",
+        operation="start_pipeline",
+        result="starting episode pipeline"
+    )
+    
     pipeline = EpisodePipeline()
     ctx = pipeline.run(ctx)
+    
+    log_operation(
+        logger,
+        step="Orchestrator",
+        operation="pipeline_completed",
+        result=f"status={ctx.status}"
+    )
     
     return ctx

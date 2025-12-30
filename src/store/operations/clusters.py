@@ -70,10 +70,14 @@ def cluster_items(items: list[dict], *, config: ClusterConfig | None = None) -> 
         if isinstance(published_at, str):
             try:
                 published_at_dt = dt.datetime.fromisoformat(published_at)
+                if published_at_dt.tzinfo is None:
+                    published_at_dt = published_at_dt.replace(tzinfo=dt.timezone.utc)
             except ValueError:
                 published_at_dt = now
         elif isinstance(published_at, dt.datetime):
             published_at_dt = published_at
+            if published_at_dt.tzinfo is None:
+                published_at_dt = published_at_dt.replace(tzinfo=dt.timezone.utc)
         else:
             published_at_dt = now
 
@@ -91,8 +95,11 @@ def cluster_items(items: list[dict], *, config: ClusterConfig | None = None) -> 
                 if isinstance(last_seen_str, dt.datetime)
                 else None
             )
-            if last_seen and last_seen < cutoff:
-                continue
+            if last_seen:
+                if last_seen.tzinfo is None:
+                    last_seen = last_seen.replace(tzinfo=dt.timezone.utc)
+                if last_seen < cutoff:
+                    continue
 
             ref_item_id = cluster.items[-1]
             ref_item = next((it for it in items if it.get("id") == ref_item_id), None)

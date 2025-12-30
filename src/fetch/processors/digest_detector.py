@@ -249,8 +249,17 @@ def detect_digest_items(items: list[dict]) -> tuple[list[dict], list[dict]]:
     Returns:
         (normal_items, digest_items)
     """
+    import logging
+    from src.utils.logging_config import log_operation
+    
     logger = logging.getLogger("fetch.digest_detector")
-    logger.info(f"开始批量检测 {len(items)} 个items...")
+    
+    log_operation(
+        logger,
+        step="DigestDetector",
+        operation="detect_start",
+        result=f"{len(items)} items to check"
+    )
     
     detector = DigestDetector()
     normal_items = []
@@ -274,16 +283,18 @@ def detect_digest_items(items: list[dict]) -> tuple[list[dict], list[dict]]:
         else:
             normal_items.append(item_copy)
     
-    logger.info(f"批量检测完成:")
-    logger.info(f"  - 普通items: {len(normal_items)}")
-    logger.info(f"  - 汇总items: {len(digest_items)}")
+    log_operation(
+        logger,
+        step="DigestDetector",
+        operation="detect_completed",
+        result=f"{len(normal_items)} normal, {len(digest_items)} digest"
+    )
     
     if digest_items:
-        logger.info(f"检测到的汇总items:")
         for item in digest_items:
             title = item.get("title", "")[:60]
             conf = item.get("_digest_detection", {}).get("confidence", 0)
-            logger.info(f"  • {title} (confidence={conf:.2f})")
+            logger.debug(f"  • Digest: {title} (confidence={conf:.2f})")
     
     return normal_items, digest_items
 

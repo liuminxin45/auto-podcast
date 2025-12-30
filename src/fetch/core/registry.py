@@ -17,11 +17,21 @@ class FetcherRegistry:
     @classmethod
     def register(cls, fetcher_type: str, fetcher_class: Type[BaseFetcher]):
         """注册fetcher"""
+        from src.utils.logging_config import log_operation
+        
         if fetcher_type in cls._fetchers:
-            cls._logger.warning(f"Fetcher '{fetcher_type}' already registered, overwriting")
+            cls._logger.warning(
+                f"Fetcher '{fetcher_type}' already registered, overwriting",
+                extra={'step': 'FetchRegistry', 'operation': 'register_duplicate'}
+            )
         
         cls._fetchers[fetcher_type] = fetcher_class
-        cls._logger.info(f"Registered fetcher: {fetcher_type} -> {fetcher_class.__name__}")
+        log_operation(
+            cls._logger,
+            step="FetchRegistry",
+            operation="register",
+            result=f"{fetcher_type} -> {fetcher_class.__name__}"
+        )
     
     @classmethod
     def get(cls, fetcher_type: str) -> Optional[Type[BaseFetcher]]:
@@ -36,15 +46,29 @@ class FetcherRegistry:
     @classmethod
     def create_instance(cls, fetcher_type: str) -> Optional[BaseFetcher]:
         """创建fetcher实例"""
+        from src.utils.logging_config import log_operation
+        
         fetcher_class = cls.get(fetcher_type)
         if not fetcher_class:
-            cls._logger.error(f"Fetcher type '{fetcher_type}' not found")
+            cls._logger.error(
+                f"Fetcher type '{fetcher_type}' not found",
+                extra={'step': 'FetchRegistry', 'operation': 'create_instance_not_found'}
+            )
             return None
         
         try:
+            log_operation(
+                cls._logger,
+                step="FetchRegistry",
+                operation="create_instance",
+                result=f"{fetcher_type} -> {fetcher_class.__name__}"
+            )
             return fetcher_class()
         except Exception as e:
-            cls._logger.error(f"Failed to create fetcher instance: {e}")
+            cls._logger.error(
+                f"Failed to create fetcher instance: {e}",
+                extra={'step': 'FetchRegistry', 'operation': 'create_instance_failed', 'error': str(e)}
+            )
             return None
 
 

@@ -20,6 +20,8 @@ class ClusterStep(BaseStep):
     
     def execute(self, ctx: EpisodeContext) -> None:
         """执行 Cluster 步骤"""
+        from src.utils.logging_config import log_operation
+        
         cfg = ctx.config
         
         # 获取聚类配置 - 支持多个可能的配置路径
@@ -38,6 +40,13 @@ class ClusterStep(BaseStep):
             cooldown_days=int(cluster_cfg_dict.get("cooldown_days", 2)),
         )
         
+        log_operation(
+            self.logger,
+            step="Cluster",
+            operation="config",
+            result=f"simhash_dist={cluster_cfg.simhash_max_distance}, jaccard={cluster_cfg.title_min_jaccard}"
+        )
+        
         # 转换为 items 列表
         items_list = list(ctx.items_dedup.values())
         
@@ -46,12 +55,22 @@ class ClusterStep(BaseStep):
             ctx.clusters = []
             return
         
-        self.logger.info(f"开始聚类: {len(items_list)} items")
+        log_operation(
+            self.logger,
+            step="Cluster",
+            operation="start_clustering",
+            result=f"{len(items_list)} items"
+        )
         
         # 执行聚类
         ctx.clusters = cluster_items(items_list, config=cluster_cfg)
         
-        self.logger.info(f"聚类完成: {len(ctx.clusters)} clusters")
+        log_operation(
+            self.logger,
+            step="Cluster",
+            operation="clustering_completed",
+            result=f"{len(ctx.clusters)} clusters from {len(items_list)} items"
+        )
         
         ctx.add_event("clustering_completed",
                      items_count=len(items_list),

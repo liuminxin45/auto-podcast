@@ -35,18 +35,43 @@ class SelectionStep(BaseStep):
         1. 如果启用 auto_topic 且有通过的主题 → 使用 auto_topic 结果
         2. 否则 → 使用传统 cluster selection
         """
+        from src.utils.logging_config import log_operation
+        
         cfg = ctx.config
+        
+        log_operation(
+            self.logger,
+            step="Selection",
+            operation="start",
+            result=f"{len(ctx.clusters)} clusters available"
+        )
         
         # ========== 1. 自动选题（可选） ==========
         auto_topic_cfg = cfg.get("auto_topic", {})
         auto_topic_enabled = auto_topic_cfg.get("enabled", False)
         
         if auto_topic_enabled:
-            self.logger.info("启用自动选题模块...")
+            log_operation(
+                self.logger,
+                step="Selection",
+                operation="auto_topic_enabled",
+                result="running auto topic pipeline"
+            )
             ctx.auto_topic_result = self._run_auto_topic(ctx, auto_topic_cfg)
-            self.logger.info(f"自动选题完成: {ctx.auto_topic_result['stats']}")
+            log_operation(
+                self.logger,
+                step="Selection",
+                operation="auto_topic_completed",
+                result=f"{ctx.auto_topic_result['stats']}"
+            )
         
         # ========== 2. 传统 cluster selection（备用） ==========
+        log_operation(
+            self.logger,
+            step="Selection",
+            operation="cluster_selection",
+            result="running traditional selection"
+        )
         selection_cfg = self._build_selection_config(cfg)
         ctx.selection_result = select_clusters(
             ctx.clusters,

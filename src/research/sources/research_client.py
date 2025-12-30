@@ -74,7 +74,7 @@ class UnifiedResearchClient:
     
     def __init__(self, config: ResearchConfig):
         self.config = config
-        self.logger = logging.getLogger(f"research.{config.provider}")
+        self.logger = logging.getLogger(f"research.sources.{config.provider}")
         
     def research_items(self, items: List[Dict[str, Any]], **kwargs) -> ResearchOutput:
         """
@@ -289,7 +289,7 @@ def create_client_from_env(provider: Optional[str] = None) -> UnifiedResearchCli
     try:
         research_config = load_research_config()
     except Exception as e:
-        logging.getLogger("research.config").warning(f"加载配置文件失败: {e}，使用默认配置")
+        logging.getLogger("research.sources.config").warning(f"加载配置文件失败: {e}，使用默认配置")
         research_config = ResearchSettings()  # 使用默认配置
     
     # 确定提供商

@@ -52,6 +52,8 @@ class ScriptInputItem(BaseModel):
     content: str = ""
     url: str
     published_at: Optional[str] = None
+    source: str = ""  # Source name for attribution
+    source_name: str = ""  # Alias for source
 
 
 class ScriptOutput(BaseModel):
@@ -72,7 +74,7 @@ class UnifiedLLMClient:
         self.model = model
         self.timeout_seconds = timeout_seconds
         self.provider = provider.lower()
-        self.log = logging.getLogger(f"script.{self.provider}")
+        self.log = logging.getLogger(f"llm.client.{self.provider}")
 
     def _load_json_from_content(self, content: str) -> Any:
         """
@@ -172,11 +174,23 @@ class UnifiedLLMClient:
         """
         基于研究内容生成播客脚本
         """
+        from src.utils.logging_config import log_api_call
+        
         system, user = build_research_script_prompt(
             channel=channel,
             items=items,
             research_content=research_content,
             citations=citations,
+        )
+        
+        # 计算字符数
+        total_chars = len(system) + len(user)
+        
+        log_api_call(
+            self.log,
+            api_type="LLM",
+            operation=f"{self.provider}_generate_from_research",
+            char_count=total_chars
         )
 
         payload = {

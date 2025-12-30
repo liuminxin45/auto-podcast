@@ -73,7 +73,7 @@ class BatchResearcher:
         self.research_client = research_client or create_client_from_env()
         self.max_concurrent = max_concurrent
         self.timeout_seconds = timeout_seconds
-        self.logger = logging.getLogger("research.batch_researcher")
+        self.logger = logging.getLogger("research.utils.batch_researcher")
     
     def _research_single_topic(self, topic: NewsTopic) -> TopicResearchResult:
         """

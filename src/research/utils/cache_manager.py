@@ -40,7 +40,7 @@ class CacheManager:
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.default_ttl = default_ttl
-        self.logger = logging.getLogger("research.cache")
+        self.logger = logging.getLogger("research.utils.cache")
         
         # 内存缓存（热数据）
         self._memory_cache: Dict[str, CacheEntry] = {}

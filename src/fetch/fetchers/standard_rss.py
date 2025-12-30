@@ -40,6 +40,7 @@ class StandardRSSFetcher(BaseFetcher):
         timeout_seconds: int = 30
     ) -> FetchResult:
         """拉取标准RSS数据"""
+        from src.utils.logging_config import log_operation
         
         # 获取URL
         url = config.get("url")
@@ -47,6 +48,12 @@ class StandardRSSFetcher(BaseFetcher):
         url_to_fetch = url if url else (urls[0] if urls else None)
         
         if not url_to_fetch:
+            log_operation(
+                self.logger,
+                step="Fetch",
+                operation="standard_rss_no_url",
+                result="No URL provided"
+            )
             return FetchResult(
                 items=[],
                 status=FetchStatus.FAILED,

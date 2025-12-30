@@ -28,7 +28,7 @@ class HistoryPodcastSearcher:
         """
         self.history_dir = Path(history_dir)
         self.history_dir.mkdir(parents=True, exist_ok=True)
-        self.logger = logging.getLogger("research.history_search")
+        self.logger = logging.getLogger("research.retrieval.history_search")
         
         # 索引缓存
         self._index: Optional[List[Dict[str, Any]]] = None

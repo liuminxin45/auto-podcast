@@ -101,7 +101,7 @@ def metaso_research_items(
     model: str | None = None,
     max_items: int | None = None,
 ) -> dict[str, Any] | None:
-    log = logging.getLogger("research.metaso")
+    log = logging.getLogger("research.sources.metaso")
 
     api_key = (os.environ.get("METASO_API_KEY") or "").strip()
     if not api_key:
