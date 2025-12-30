@@ -60,7 +60,7 @@ class NewsSplitter:
         """
         self.llm_provider = llm_provider
         self.timeout_seconds = timeout_seconds
-        self.logger = logging.getLogger("research.news_splitter")
+        self.logger = logging.getLogger("research.processing.news_splitter")
         
         # 初始化LLM客户端
         self.llm_client = self._create_llm_client()

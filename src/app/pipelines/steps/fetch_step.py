@@ -37,6 +37,8 @@ class FetchStep(BaseStep):
         6. 汇总型RSS检测与拆分
         7. 保存到 ctx.items_raw 和 ctx.items_dedup
         """
+        from src.utils.logging_config import log_operation
+        
         cfg = ctx.config
         
         # 1. 拉取数据（使用Fetcher Registry）
@@ -44,8 +46,12 @@ class FetchStep(BaseStep):
         from src.fetch.core.base import FetchStatus
         import traceback
         
-        self.logger.info("开始从各个源拉取数据...")
-        self.logger.info(f"已注册fetcher: {FetcherRegistry.list_all()}")
+        log_operation(
+            self.logger,
+            step="Fetch",
+            operation="start",
+            result=f"已注册 {len(FetcherRegistry.list_all())} 个 fetcher"
+        )
         fetched = []
         
         rss_sources = cfg.get("sources", {}).get("rss", [])
@@ -104,7 +110,7 @@ class FetchStep(BaseStep):
         self.logger.info(f"拉取完成: {len(ctx.items_raw)} items")
         
         # 保存 raw items
-        artifacts_dir = ctx.run_dir / "1_fetch" / "artifacts"
+        artifacts_dir = ctx.run_dir / "1_fetch"
         artifacts_dir.mkdir(parents=True, exist_ok=True)
         if ctx.items_raw:
             write_jsonl(artifacts_dir / "01_raw_items.jsonl", ctx.items_raw)
@@ -124,11 +130,19 @@ class FetchStep(BaseStep):
         )
         self.logger.info(f"normalization: {len(normalized)} items, {len(blocked)} blocked")
         
-        # 写入 artifacts (只保存被阻止的items用于调试)
-        artifacts_dir = ctx.run_dir / "1_fetch" / "artifacts"
+        # 写入 artifacts
+        artifacts_dir = ctx.run_dir / "1_fetch"
         artifacts_dir.mkdir(parents=True, exist_ok=True)
+        filtered_dir = artifacts_dir / "filtered"
+        filtered_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Write normalized and simplified items (text selection already done in normalize_item)
+        if normalized:
+            write_jsonl(artifacts_dir / "02_simplified_items.jsonl", normalized)
+        
+        # Save blocked items to filtered directory
         if blocked:
-            write_jsonl(artifacts_dir / "02_source_guard_blocked.jsonl", blocked)
+            write_jsonl(filtered_dir / "02_source_guard_blocked.jsonl", blocked)
         
         # 3. 去重
         max_items = cfg.get("fetch", {}).get("max_items")
@@ -152,12 +166,18 @@ class FetchStep(BaseStep):
         )
         self.logger.info(f"合规验证完成：合规{len(compliant_items)}条，不合规{len(non_compliant_items)}条")
         
+        # Always write compliant items for consistency
+        if compliant_items:
+            write_jsonl(artifacts_dir / "04_compliant_items.jsonl", compliant_items)
+        
+        # Save non-compliant items to filtered directory
         if non_compliant_items:
-            write_jsonl(artifacts_dir / "04_non_compliant_items.jsonl", non_compliant_items)
+            write_jsonl(filtered_dir / "04_non_compliant_items.jsonl", non_compliant_items)
         
         fetched = compliant_items
         
         # 5. 日期过滤（在拆分之前，避免浪费LLM调用）
+        # 特殊处理：60s源始终只保留最新条目，免去日期过滤
         import datetime as dt
         date_str = ctx.episode_id.split(":")[-1] if ":" in ctx.episode_id else ctx.episode_id
         try:
@@ -165,6 +185,21 @@ class FetchStep(BaseStep):
         except ValueError as e:
             self.logger.error(f"日期解析失败: {date_str} - {e}")
             target_date = dt.date.today()
+        
+        # 分离60s源和其他源
+        sixties_items = [item for item in fetched if "60s" in item.get("source_name", "").lower()]
+        other_items = [item for item in fetched if "60s" not in item.get("source_name", "").lower()]
+        
+        self.logger.info(f"60s源: {len(sixties_items)} items, 其他源: {len(other_items)} items")
+        
+        # 60s源只保留最新的一条
+        if sixties_items:
+            # 按published_at排序，取最新的
+            sixties_items.sort(key=lambda x: x.get("published_at", ""), reverse=True)
+            sixties_latest = [sixties_items[0]]
+            self.logger.info(f"60s源保留最新条目: {sixties_latest[0].get('title', '')[:50]}")
+        else:
+            sixties_latest = []
         
         date_filter_cfg = cfg.get("fetch", {}).get("date_filter", {})
         filter_enabled = date_filter_cfg.get("enabled", True)
@@ -174,7 +209,7 @@ class FetchStep(BaseStep):
         
         if not filter_enabled or filter_mode == "disabled":
             self.logger.info("日期过滤已禁用，保留所有items")
-            date_filtered_items = fetched
+            date_filtered_items = other_items
             old_items = []
         else:
             if filter_mode == "exact":
@@ -189,7 +224,8 @@ class FetchStep(BaseStep):
             date_filtered_items = []
             old_items = []
             
-            for item in fetched:
+            # 只对非60s源进行日期过滤
+            for item in other_items:
                 published_at = item.get("published_at")
                 item_title = item.get('title', 'unknown')[:50]
                 
@@ -218,10 +254,23 @@ class FetchStep(BaseStep):
             
             self.logger.info(f"日期过滤完成: 保留 {len(date_filtered_items)} 条, 过滤 {len(old_items)} 条")
             
+            # 保存通过日期过滤的items（不包括60s）
+            if date_filtered_items:
+                write_jsonl(artifacts_dir / "05_date_filtered_kept_items.jsonl", date_filtered_items)
+            
+            # 保存被过滤掉的旧items到filtered目录
             if old_items:
-                write_jsonl(artifacts_dir / "05_date_filtered_old_items.jsonl", old_items)
+                write_jsonl(filtered_dir / "05_date_filtered_old_items.jsonl", old_items)
         
-        fetched = date_filtered_items
+        # 合并60s最新条目和其他源的日期过滤结果
+        fetched = sixties_latest + date_filtered_items
+        self.logger.info(f"日期过滤后总计: {len(fetched)} items (60s最新: {len(sixties_latest)}, 其他源: {len(date_filtered_items)})")
+        
+        # 记录进入digest检测阶段的items
+        self.logger.info(f"进入汇总检测阶段: {len(fetched)} items")
+        for idx, item in enumerate(fetched[:10], 1):  # 记录前10个
+            text_src = item.get('text_source', 'unknown')
+            self.logger.info(f"  {idx}. {item.get('source_name', 'unknown')} | text_source={text_src} | {item.get('title', '')[:50]}")
         
         # 6. 汇总型RSS拆分（在日期过滤之后，只对目标日期范围内的数据拆分）
         digest_split_cfg = cfg.get("digest_split", {})
@@ -231,6 +280,11 @@ class FetchStep(BaseStep):
             normal_items, digest_items = detect_digest_items(fetched)
             self.logger.info(f"检测完成: {len(normal_items)} 普通items, {len(digest_items)} 汇总items")
             
+            # 保存普通items（未被识别为汇总的）
+            if normal_items:
+                write_jsonl(artifacts_dir / "06_normal_items.jsonl", normal_items)
+            
+            split_items = []
             if digest_items:
                 splitter = DigestSplitter(
                     cache_ttl_seconds=int(digest_split_cfg.get("cache_ttl_seconds", 86400)),
@@ -241,13 +295,15 @@ class FetchStep(BaseStep):
                 
                 self.logger.info(f"拆分完成: 生成 {split_stats['total_sub_events']} 个子事件")
                 
-                if digest_items:
-                    write_jsonl(artifacts_dir / "06_digest_items.jsonl", digest_items)
+                # 保存原始汇总items到filtered目录（因为会被拆分替换）
+                write_jsonl(filtered_dir / "06_digest_items_original.jsonl", digest_items)
+                # 保存拆分结果
                 if split_items:
                     write_jsonl(artifacts_dir / "07_split_items.jsonl", split_items)
-                
-                fetched = normal_items + split_items
-                self.logger.info(f"合并后总计: {len(fetched)} items")
+            
+            # 合并：普通items + 拆分后的子事件
+            fetched = normal_items + split_items
+            self.logger.info(f"合并后总计: {len(fetched)} items (普通{len(normal_items)} + 拆分{len(split_items)})")
         
         # 7. 确保 item_id 并保存到 ctx
         for item in fetched:

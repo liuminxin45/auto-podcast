@@ -34,6 +34,7 @@ class SixtysDigestFetcher(BaseFetcher):
         timeout_seconds: int = 30
     ) -> FetchResult:
         """拉取60s汇总RSS数据"""
+        from src.utils.logging_config import log_operation
         
         # 获取URL列表（支持多个备用URL）
         urls = config.get("urls", [])
@@ -43,6 +44,12 @@ class SixtysDigestFetcher(BaseFetcher):
                 urls = [url]
         
         if not urls:
+            log_operation(
+                self.logger,
+                step="Fetch",
+                operation="sixtys_digest_no_urls",
+                result="No URLs provided"
+            )
             return FetchResult(
                 items=[],
                 status=FetchStatus.FAILED,
@@ -51,12 +58,30 @@ class SixtysDigestFetcher(BaseFetcher):
         
         source_name = config.get("name", "60s")
         
+        log_operation(
+            self.logger,
+            step="Fetch",
+            operation="sixtys_digest_start",
+            result=f"source={source_name}, urls={len(urls)}"
+        )
+        
         # 尝试多个URL（降级策略）
-        for url in urls:
+        for i, url in enumerate(urls, 1):
             try:
-                self.logger.info(f"Trying URL: {url}")
+                log_operation(
+                    self.logger,
+                    step="Fetch",
+                    operation="sixtys_digest_try_url",
+                    result=f"[{i}/{len(urls)}] {url}"
+                )
                 result = self._fetch_from_url(url, source_name, timeout_seconds)
                 if result.status == FetchStatus.SUCCESS:
+                    log_operation(
+                        self.logger,
+                        step="Fetch",
+                        operation="sixtys_digest_success",
+                        result=f"{len(result.items)} items from {url}"
+                    )
                     return result
             except Exception as e:
                 self.logger.warning(f"Failed to fetch from {url}: {e}")
@@ -115,9 +140,9 @@ class SixtysDigestFetcher(BaseFetcher):
         
         title = (getattr(entry, "title", None) or "").strip()
         
-        # 检查是否为日期标题
-        if not self._is_date_title(title):
-            self.logger.debug(f"Not a date title: {title}")
+        # 检查是否为日期标题（使用parse_date_from_title来判断）
+        if not parse_date_from_title(title):
+            self.logger.debug(f"Not a date title (cannot extract date): {title}")
             return None
         
         # 提取内容

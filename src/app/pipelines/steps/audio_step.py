@@ -24,15 +24,43 @@ class AudioStep(BaseStep):
     
     def execute(self, ctx: EpisodeContext) -> None:
         """执行 Audio 步骤"""
+        from src.utils.logging_config import log_operation, log_api_call
+        
         if not ctx.script_text:
             self.logger.warning("没有脚本内容，跳过音频生成")
             ctx.audio_paths = {}
             return
         
+        log_operation(
+            self.logger,
+            step="Audio",
+            operation="start",
+            result=f"script length: {len(ctx.script_text)} chars"
+        )
+        
         # 步骤1: TTS 语音合成
+        log_api_call(
+            self.logger,
+            api_type="TTS",
+            operation="synthesize_full_script",
+            char_count=len(ctx.script_text)
+        )
         tts_path = self._generate_tts(ctx)
         
+        log_operation(
+            self.logger,
+            step="Audio",
+            operation="tts_completed",
+            result=f"output: {tts_path.name}"
+        )
+        
         # 步骤2: Render 音频渲染
+        log_operation(
+            self.logger,
+            step="Audio",
+            operation="render_audio",
+            result="starting audio rendering"
+        )
         rendered_path = self._render_audio(ctx, tts_path)
         
         ctx.audio_paths = {
@@ -40,7 +68,12 @@ class AudioStep(BaseStep):
             "rendered": str(rendered_path),
         }
         
-        self.logger.info(f"音频生成完成: TTS={tts_path.name}, Rendered={rendered_path.name}")
+        log_operation(
+            self.logger,
+            step="Audio",
+            operation="completed",
+            result=f"TTS={tts_path.name}, Rendered={rendered_path.name}"
+        )
         ctx.add_event("audio_generated",
                      tts_path=str(tts_path),
                      rendered_path=str(rendered_path))

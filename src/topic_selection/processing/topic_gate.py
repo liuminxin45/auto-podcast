@@ -28,7 +28,7 @@ class TopicGate:
         self.llm_client = llm_client or self._create_default_client()
         self.top_n = top_n
         self.fallback_to_score = fallback_to_score
-        self.logger = logging.getLogger("topic_selection.topic_gate")
+        self.logger = logging.getLogger("topic_selection.processing.topic_gate")
     
     def _create_default_client(self) -> DeepSeekClient:
         import os
@@ -101,16 +101,29 @@ class TopicGate:
         item_lookup: dict
     ) -> Optional[TopicDecision]:
         """对单个候选做LLM决策"""
+        from src.utils.logging_config import log_api_call
         
         start_time = time.time()
         
         try:
+            system_prompt = self._get_system_prompt()
             prompt = self._build_prompt(candidate, item_lookup)
+            
+            # 计算字符数
+            total_chars = len(system_prompt) + len(prompt)
+            
+            # 记录API调用
+            log_api_call(
+                self.logger,
+                api_type="LLM",
+                operation=f"topic_gate_decision_{candidate.topic_id}",
+                char_count=total_chars
+            )
             
             payload = {
                 "model": self.llm_client.model,
                 "messages": [
-                    {"role": "system", "content": self._get_system_prompt()},
+                    {"role": "system", "content": system_prompt},
                     {"role": "user", "content": prompt}
                 ],
                 "temperature": 0.3,
@@ -159,14 +172,16 @@ class TopicGate:
 - 保持平衡的标准，不要过度严格"""
     
     def _build_prompt(self, candidate: TopicCandidate, item_lookup: dict) -> str:
-        # 获取代表性item样本
+        # 获取代表性item样本（只传关键字段，避免噪音）
         sample_items = []
         for item_id in candidate.items[:3]:  # 取前3条
             item = item_lookup.get(item_id)
             if item:
+                # 优先使用简化的text字段，fallback到title
+                text_preview = item.get("text", "") or item.get("title", "")
                 sample_items.append({
                     "title": item.get("title", ""),
-                    "summary": (item.get("summary") or item.get("content", ""))[:200]
+                    "preview": text_preview[:200]  # 最多200字符
                 })
         
         # 不再需要单独的signals_summary和proxy_summary

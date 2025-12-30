@@ -148,7 +148,7 @@ def anspire_research_items(
             - response_text: str, 响应文本
             - response_json: dict | None, 响应JSON数据（仅非流式）
     """
-    log = logging.getLogger("research.anspire")
+    log = logging.getLogger("research.sources.anspire")
 
     api_key = (os.environ.get("ANSPIRE_API_KEY") or "").strip()
     if not api_key:

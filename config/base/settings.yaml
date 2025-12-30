@@ -1,4 +1,15 @@
 # ============================================================
+# 日志配置
+# ============================================================
+logging:
+  # 是否启用verbose模式（详细日志）
+  verbose: true
+  # 控制台日志级别：DEBUG, INFO, WARNING, ERROR
+  console_level: INFO
+  # 文件日志级别
+  file_level: DEBUG
+
+# ============================================================
 # 频道配置（全局入口）
 # 切换频道后，自动选题策略、风格、受众定位等配置会自动响应
 # ============================================================
@@ -94,12 +105,96 @@ sources:
         - "https://60s.7se.cn/v2/60s/rss"
         - "https://60s.mizhoubaobei.top/v2/60s/rss"
 
-    - name: "AI工具集-每日AI快讯"
-      fetcher: "aibot_daily"
-      enabled: true
-      category: "others"
+    - name: "AI日报快讯"
+      fetcher: "ai_daily_news"
+      enabled: false
+      category: "ai_tech"
       urls:
-        - "https://ai-bot.cn/daily-ai-news/"
+        - "https://60s.viki.moe"
+
+    - name: "虎嗅网"
+      fetcher: "standard_rss"
+      enabled: false
+      category: "tech_business"
+      urls:
+        - "https://www.huxiu.com/rss/0.xml"
+
+    - name: "36氪"
+      fetcher: "standard_rss"
+      enabled: false
+      category: "tech_business"
+      urls:
+        - "https://36kr.com/feed"
+
+    - name: "IT之家"
+      fetcher: "standard_rss"
+      enabled: true
+      category: "tech_news"
+      urls:
+        - "https://www.ithome.com/rss/"
+
+    - name: "理想生活实验室"
+      fetcher: "standard_rss"
+      enabled: false
+      category: "lifestyle"
+      urls:
+        - "https://www.toodaylab.com/feed"
+
+    - name: "新华社新闻"
+      fetcher: "standard_rss"
+      enabled: false
+      category: "news"
+      urls:
+        - "https://plink.anyfeeder.com/newscn/whxw"
+
+    - name: "财富中文网商业"
+      fetcher: "standard_rss"
+      enabled: false
+      category: "business"
+      urls:
+        - "https://plink.anyfeeder.com/fortunechina/shangye"
+
+    - name: "华尔街日报"
+      fetcher: "standard_rss"
+      enabled: false
+      category: "business"
+      urls:
+        - "https://plink.anyfeeder.com/wsj/cn"
+
+    - name: "财富中文网"
+      fetcher: "standard_rss"
+      enabled: false
+      category: "business"
+      urls:
+        - "https://plink.anyfeeder.com/fortunechina"
+
+    - name: "雪球今日话题"
+      fetcher: "standard_rss"
+      enabled: false
+      category: "finance"
+      urls:
+        - "https://xueqiu.com/hots/topic/rss"
+
+    - name: "果壳网"
+      fetcher: "standard_rss"
+      enabled: false
+      category: "science"
+      urls:
+        - "https://plink.anyfeeder.com/guokr/scientific"
+
+    - name: "南方周末"
+      fetcher: "standard_rss"
+      enabled: false
+      category: "news"
+      urls:
+        - "https://plink.anyfeeder.com/infzm/recommends"
+
+    - name: "界面新闻"
+      fetcher: "standard_rss"
+      enabled: false
+      category: "news"
+      urls:
+        - "https://a.jiemian.com/index.php?m=article&a=rss"
 
 
 

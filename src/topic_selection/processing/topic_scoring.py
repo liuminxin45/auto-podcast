@@ -59,7 +59,7 @@ class TopicScorer:
     
     def __init__(self, config: TopicScorerConfig | None = None):
         self.config = config or TopicScorerConfig()
-        self.logger = logging.getLogger("topic_selection.topic_scoring")
+        self.logger = logging.getLogger("topic_selection.processing.topic_scoring")
     
     def score_and_filter(
         self,

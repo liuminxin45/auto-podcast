@@ -74,23 +74,76 @@ class EpisodeContext:
     
     def add_event(self, event_type: str, **data):
         """添加事件"""
+        import logging
+        from src.utils.logging_config import log_operation
+        
         self.events.append({
             "type": event_type,
             "timestamp": datetime.now().isoformat(),
             **data
         })
+        
+        # 记录事件到日志
+        logger = logging.getLogger("app.context")
+        log_operation(
+            logger,
+            step="Context",
+            operation="add_event",
+            result=f"{event_type}: {data}"
+        )
     
     def set_metric(self, key: str, value: Any):
         """设置指标"""
+        import logging
+        from src.utils.logging_config import log_operation
+        
         self.metrics[key] = value
+        
+        # 记录指标到日志
+        logger = logging.getLogger("app.context")
+        log_operation(
+            logger,
+            step="Context",
+            operation="set_metric",
+            result=f"{key}={value}"
+        )
     
     def mark_completed(self):
         """标记完成"""
+        import logging
+        from src.utils.logging_config import log_operation
+        
         self.status = "completed"
         self.completed_at = datetime.now()
+        
+        # 记录完成状态
+        logger = logging.getLogger("app.context")
+        duration = (self.completed_at - self.started_at).total_seconds()
+        log_operation(
+            logger,
+            step="Context",
+            operation="mark_completed",
+            result=f"episode_id={self.episode_id}, duration={duration:.1f}s"
+        )
     
     def mark_failed(self, error: str):
         """标记失败"""
+        import logging
+        
         self.status = "failed"
         self.error = error
         self.completed_at = datetime.now()
+        
+        # 记录失败状态
+        logger = logging.getLogger("app.context")
+        duration = (self.completed_at - self.started_at).total_seconds()
+        logger.error(
+            f"Episode 执行失败: {error}",
+            extra={
+                'step': 'Context',
+                'operation': 'mark_failed',
+                'episode_id': self.episode_id,
+                'duration': duration,
+                'error': error
+            }
+        )

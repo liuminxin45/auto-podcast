@@ -23,6 +23,8 @@ class ScriptStep(BaseStep):
     
     def execute(self, ctx: EpisodeContext) -> None:
         """执行 Script 步骤"""
+        from src.utils.logging_config import log_operation, log_api_call
+        
         cfg = ctx.config
         
         # 检查是否有选中的 items
@@ -31,20 +33,41 @@ class ScriptStep(BaseStep):
             ctx.script_text = ""
             return
         
-        self.logger.info(f"开始脚本生成：{len(ctx.items_selected)} items")
+        log_operation(
+            self.logger,
+            step="Script",
+            operation="start",
+            result=f"{len(ctx.items_selected)} items"
+        )
         
         # 准备输入数据
-        input_items = [
-            ScriptInputItem(
-                id=item.get("id", ""),
-                title=item.get("title", ""),
-                summary=item.get("summary", ""),
-                content=item.get("content", ""),
-                url=item.get("url", ""),
-                published_at=item.get("published_at"),
+        input_items = []
+        for item in ctx.items_selected:
+            # 提取source信息（支持多种格式）
+            source = item.get("source", "")
+            if isinstance(source, dict):
+                source_name = source.get("name", "")
+            elif isinstance(source, str):
+                source_name = source
+            else:
+                source_name = ""
+            
+            # 如果source为空，尝试从其他字段获取
+            if not source_name:
+                source_name = item.get("source_name", "") or item.get("source_domain", "")
+            
+            input_items.append(
+                ScriptInputItem(
+                    id=item.get("id", ""),
+                    title=item.get("title", ""),
+                    summary=item.get("summary", ""),
+                    content=item.get("content", ""),
+                    url=item.get("url", ""),
+                    published_at=item.get("published_at"),
+                    source=source_name,
+                    source_name=source_name,
+                )
             )
-            for item in ctx.items_selected
-        ]
         
         # 获取 LLM 配置
         provider = (os.environ.get("LLM_PROVIDER") or "moonshot").strip().lower()

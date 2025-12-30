@@ -69,7 +69,7 @@ class PodcastEnhancer:
         """
         self.llm_provider = llm_provider
         self.timeout_seconds = timeout_seconds
-        self.logger = logging.getLogger("research.podcast_enhancer")
+        self.logger = logging.getLogger("research.llm_integration.podcast_enhancer")
         
         # 初始化LLM客户端
         self.llm_client = self._create_llm_client()

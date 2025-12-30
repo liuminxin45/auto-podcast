@@ -11,6 +11,8 @@ from urllib.parse import urlparse
 
 from src.fetch.operations.extractor import ExtractResult, extract_from_url
 from src.fetch.operations.source_guard import SourceGuard
+from src.fetch.operations.text_selector import select_best_text
+from src.fetch.utils.html_cleaner import clean_content
 from src.store.operations.fingerprints import ensure_item_fingerprints
 from src.utils.hash_utils import stable_hash
 from src.utils.models import NewsEntities, NewsItem, NewsItemQuality, NewsSource
@@ -77,11 +79,20 @@ def normalize_item(
     raw_summary = str(raw.get("summary") or raw.get("description") or "").strip()
     raw_content = str(raw.get("content") or raw.get("body") or "").strip()
 
+    # Clean HTML from title, summary, and content
     title = _pick(extracted_title, raw_title) or "Untitled"
-    summary = _pick(extracted_summary, raw_summary)
+    title = clean_content(title, remove_non_chinese=False)  # Keep title as-is, just remove HTML
+    
+    raw_summary_cleaned = clean_content(raw_summary, remove_non_chinese=True) if raw_summary else None
+    extracted_summary_cleaned = clean_content(extracted_summary, remove_non_chinese=True) if extracted_summary else None
+    summary = _pick(extracted_summary_cleaned, raw_summary_cleaned)
 
-    content_candidates = [extracted_text.strip(), raw_content]
-    content = next((c for c in content_candidates if c and len(c) > 0), summary or raw_title)
+    # Clean content from all sources
+    extracted_text_cleaned = clean_content(extracted_text, remove_non_chinese=True) if extracted_text else ""
+    raw_content_cleaned = clean_content(raw_content, remove_non_chinese=True) if raw_content else ""
+    
+    content_candidates = [extracted_text_cleaned.strip(), raw_content_cleaned]
+    content = next((c for c in content_candidates if c and len(c) > 0), summary or title)
 
     lang = (raw.get("lang") or raw.get("language") or extracted_language or "zh").strip()
 
@@ -150,7 +161,29 @@ def normalize_item(
         data["published_at"] = data["published_at"].isoformat()
     
     ensure_item_fingerprints(data)
-    return data
+    
+    # 文本字段选择和简化：选择最佳文本字段
+    selected_text, text_source = select_best_text(
+        data.get("title"),
+        data.get("summary"),
+        data.get("content")
+    )
+    
+    # 构建简化的item，只保留必要字段
+    simplified = {
+        "id": data.get("id", ""),
+        "source_name": data.get("source_name", ""),
+        "source_domain": data.get("source_domain", ""),
+        "source_url": data.get("source_url", ""),
+        "title": data.get("title", ""),
+        "text": selected_text,
+        "text_source": text_source,
+        "published_at": data.get("published_at", ""),
+        "lang": data.get("lang", "zh"),
+        "fingerprints": data.get("fingerprints", {}),
+    }
+    
+    return simplified
 
 
 def prepare_items(
@@ -165,6 +198,17 @@ def prepare_items(
 
     Returns (normalized_items, guard_blocked_items).
     """
+    import logging
+    from src.utils.logging_config import log_operation
+
+    logger = logging.getLogger("fetch.operations.normalize")
+    
+    log_operation(
+        logger,
+        step="Normalize",
+        operation="prepare_items_start",
+        result=f"{len(raw_items)} raw items"
+    )
 
     extractor_fetch = extractor_fetch or extract_from_url
     normalized: list[dict] = []
@@ -192,5 +236,12 @@ def prepare_items(
         item.setdefault("meta", {})
         item["meta"]["source_guard"] = guard_result
         normalized.append(item)
+
+    log_operation(
+        logger,
+        step="Normalize",
+        operation="prepare_items_completed",
+        result=f"{len(normalized)} normalized, {len(blocked)} blocked"
+    )
 
     return normalized, blocked

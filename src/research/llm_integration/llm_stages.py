@@ -25,7 +25,7 @@ class LLMStage1:
     
     def __init__(self, llm_client: Optional[DeepSeekClient] = None):
         self.llm_client = llm_client or self._create_default_client()
-        self.logger = logging.getLogger("research.llm_stage1")
+        self.logger = logging.getLogger("research.llm_integration.stage1")
     
     def _create_default_client(self) -> DeepSeekClient:
         import os
@@ -154,7 +154,7 @@ class LLMStage2:
     
     def __init__(self, llm_client: Optional[DeepSeekClient] = None):
         self.llm_client = llm_client or self._create_default_client()
-        self.logger = logging.getLogger("research.llm_stage2")
+        self.logger = logging.getLogger("research.llm_integration.stage2")
     
     def _create_default_client(self) -> DeepSeekClient:
         import os

@@ -84,7 +84,8 @@ def build_research_script_prompt(
 
     item_lines = []
     for i, it in enumerate((items or [])[:max_items], start=1):
-        item_lines.append(f"{i}. {it.title}\n{it.url}".strip())
+        source_label = f"[来源: {it.source}]" if hasattr(it, 'source') and it.source else ""
+        item_lines.append(f"{i}. {source_label} {it.title}\n{it.url}".strip())
 
     citation_lines = []
     for i, c in enumerate((citations or [])[:max_citations], start=1):
@@ -122,9 +123,10 @@ def build_research_script_prompt(
 
 输出约束：
 - 输出 JSON，字段为：title, ssml, shownotes, tags
-- ssml 必须是可用于 TTS 的 SSML，包含 <break time=\"500ms\"/> 等停顿
-- shownotes 用 Markdown，列出每条新闻的要点与链接
+- ssml 必须是可用于 TTS 的 SSML，包含 <break time="500ms"/> 等停顿
+- shownotes 用 Markdown，列出每条新闻的要点与链接，**必须注明来源**
 - tags 3~8 个中文标签
+- **重要**：在播客内容中提及新闻时，必须说明来源（如"根据XX报道"、"来自XX消息"）
 
 新闻清单（仅用于链接与 shownotes，已做精简）：
 {chr(10).join(item_lines)}
@@ -167,7 +169,8 @@ def build_news_script_prompt(
 
     item_lines = []
     for i, it in enumerate((items or [])[:max_items], start=1):
-        item_lines.append(f"{i}. {it.title}\n{it.url}".strip())
+        source_label = f"[来源: {it.source}]" if hasattr(it, 'source') and it.source else ""
+        item_lines.append(f"{i}. {source_label} {it.title}\n{it.url}".strip())
 
     system = BASE_SYSTEM_PROMPT_V2
 
@@ -184,8 +187,9 @@ def build_news_script_prompt(
 强约束：
 - 输出 JSON，字段为：title, ssml, shownotes, tags
 - ssml 必须是可用于 TTS 的 SSML，包含 <break time=\"500ms\"/> 等停顿
-- shownotes 用 Markdown，列出每条新闻的要点与链接
+- shownotes 用 Markdown，列出每条新闻的要点与链接，**必须注明来源**
 - tags 3~8 个中文标签
+- **重要**：在播客内容中提及新闻时，必须说明来源（如"根据XX报道"、"来自XX消息"）
 
 新闻素材（已做精简）：
 {chr(10).join(item_lines)}
@@ -222,8 +226,10 @@ def build_detailed_news_script_prompt(
 
     item_lines = []
     for i, it in enumerate((items or [])[:max_items], start=1):
+        source_label = f"来源: {it.source}" if hasattr(it, 'source') and it.source else "来源: 未知"
         item_lines.append(
             f"{i}. 标题: {it.title}\n"
+            f"{source_label}\n"
             f"摘要: {it.summary}\n"
             f"链接: {it.url}\n"
             f"发布时间: {it.published_at or ''}"

@@ -26,7 +26,7 @@ class ItemSignalTagger:
     def __init__(self, llm_client: Optional[DeepSeekClient] = None, prompt_template: Optional[str] = None):
         self.llm_client = llm_client or self._create_default_client()
         self.prompt_template = prompt_template  # 策略提供的 prompt 模板
-        self.logger = logging.getLogger("topic_selection.signal_tagging")
+        self.logger = logging.getLogger("topic_selection.processing.signal_tagging")
     
     def _create_default_client(self) -> DeepSeekClient:
         import os

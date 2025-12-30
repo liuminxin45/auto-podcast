@@ -24,7 +24,7 @@ class TopicMiner:
     
     def __init__(self, time_window_days: int = 7):
         self.time_window_days = time_window_days
-        self.logger = logging.getLogger("topic_selection.topic_mining")
+        self.logger = logging.getLogger("topic_selection.processing.topic_mining")
     
     def mine_topics(
         self,

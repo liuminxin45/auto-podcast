@@ -28,7 +28,7 @@ class ProxySignalComputer:
         self.history_searcher = history_searcher or HistoryPodcastSearcher(history_dir=history_dir)
         self.persona_whitelist = persona_whitelist  # 策略提供的人群白名单
         self.persona_penalty_keywords = persona_penalty_keywords or []  # 策略提供的惩罚关键词
-        self.logger = logging.getLogger("topic_selection.proxy_signals")
+        self.logger = logging.getLogger("topic_selection.processing.proxy_signals")
     
     def compute_signals(
         self,
