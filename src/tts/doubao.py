@@ -1113,6 +1113,16 @@ class DoubaoPodcastClient:
         additions: Dict[str, Any] = {}
         if context_text:
             additions["context_texts"] = [context_text]
+        
+        # 句尾静音时长（增加呼吸感）
+        silence_duration_raw = (os.environ.get("DOUBAO_TTS_V3_SILENCE_DURATION") or "").strip()
+        if silence_duration_raw:
+            try:
+                silence_duration = int(silence_duration_raw)
+                if 0 <= silence_duration <= 30000:
+                    additions["silence_duration"] = silence_duration
+            except Exception:
+                pass
 
         namespace = (os.environ.get("DOUBAO_TTS_V3_NAMESPACE") or "").strip()
         # Official: text_type is a string: plain / ssml

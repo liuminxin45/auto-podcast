@@ -207,7 +207,8 @@ class AudioStepSegmented(BaseStep):
         from src.tts.tts_client import TTSClientFactory
         
         client = TTSClientFactory.create_doubao_podcast_client(timeout_seconds=timeout_s)
-        voice = ((ctx.config.get("tts") or {}).get("voice") or "").strip()
+        voice_cfg = (ctx.config.get("tts") or {}).get("voice") or ""
+        voice = voice_cfg.get("default", "") if isinstance(voice_cfg, dict) else str(voice_cfg).strip()
         result = client.synthesize(text, mode="tts_v3_http", speaker=voice)
         return result.audio_data
     
@@ -215,7 +216,8 @@ class AudioStepSegmented(BaseStep):
         """TTS V3 WebSocket 模式"""
         from src.tts.tts_client import TTSClientFactory
         
-        voice = ((ctx.config.get("tts") or {}).get("voice") or "").strip()
+        voice_cfg = (ctx.config.get("tts") or {}).get("voice") or ""
+        voice = voice_cfg.get("default", "") if isinstance(voice_cfg, dict) else str(voice_cfg).strip()
         client = TTSClientFactory.create_doubao_client(voice_type=voice, timeout_seconds=timeout_s)
         
         try:

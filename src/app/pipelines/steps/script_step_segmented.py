@@ -115,16 +115,31 @@ class ScriptStepSegmented(BaseStep):
             else:
                 facts = text
             
+            # 获取research结果
+            research_evidence = item.get("research_evidence", None)
+            research_claims = item.get("research_claims", None)
+            
             news_item = NewsItem(
                 title=title,
                 facts=facts,
-                context=item.get("source_name", "")
+                context=item.get("source_name", ""),
+                research_evidence=research_evidence,
+                research_claims=research_claims
             )
             news_items.append(news_item)
         
         # 选择 deep dive 主题（第一条新闻）
         deep_topic = news_items[0].title if news_items else "今日热点"
         deep_facts = news_items[0].facts if news_items else ""
+        
+        # 如果有research结果，添加到deep_facts中
+        if news_items and news_items[0].research_evidence:
+            deep_facts += f"\n\n【深度调研补充】\n{news_items[0].research_evidence}"
+            
+            # 如果有research_claims，也添加进去
+            if news_items[0].research_claims:
+                claims_text = "\n".join([f"- {claim}" for claim in news_items[0].research_claims])
+                deep_facts += f"\n\n【关键论点】\n{claims_text}"
         
         # 历史事件（暂时使用占位符）
         history_event = "历史上的今天发生了一些重要事件"
