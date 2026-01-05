@@ -227,7 +227,7 @@ llm:
 tts:
   provider: "doubao"
   mode: "default"
-  voice: "zh_female_tianqing_moon_bigtts"
+  voice: "zh_female_vv_uranus_bigtts"
   speed: 1.0
   volume: 1.0
   pitch: 1.0

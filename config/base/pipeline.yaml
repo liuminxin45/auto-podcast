@@ -123,21 +123,6 @@ script:
     intro_duration: 10.0
     outro_duration: 5.0
 
-# TTS阶段
-tts:
-  # 分段配置
-  segmentation:
-    min_length: 25
-    max_length: 35
-    normalize: true
-    merge_short: true
-  
-  # 语音配置
-  voice:
-    default: "zh-CN-XiaoxiaoNeural"
-    speed: 1.0
-    pitch: 0
-
 # Audio阶段
 audio:
   # 混音配置

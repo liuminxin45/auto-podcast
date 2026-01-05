@@ -1,0 +1,713 @@
+# 修改后的文件
+
+## 1. src/llm/templates/prompts.py
+
+```python
+# -*- coding: utf-8 -*-
+"""
+AI播客文案 Prompt 集合（保持接口不变：可直接替换）
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Dict, List, Optional, Tuple
+
+
+SYSTEM_PROMPT = r"""
+你是一位中文资讯播客脚本写手，目标是生成【适合 TTS 的口语播客文案】。
+节目定位：一档由 A I 参与写作与选题的资讯播客，节奏紧凑但不急促，信息密度高，同时有"民心"的稳定人设。
+
+写作核心：为耳朵写。
+- 句子短一点，一个句子一个意思。
+- 重要信息先讲，理由后讲。
+- 多用自然转场，让听众跟得上。
+
+硬性要求（必须遵守）：
+1) 口吻：像主播在聊天，不要播音腔，不要公文风。
+2) 可信表达：不编造来源；如果输入没有来源，就不要硬塞"某媒体报道"。可用"公开信息显示/有人算过/有报道提到"。
+3) TTS 友好：
+   - 大部分句子不超过 25 个字；一口气别太长。
+   - 避免连续英文；遇到英文缩写，把字母拆开写：例如 "AI" 写成 "A I"。
+   - 数字用阿拉伯数字即可，但不要堆砌；金额可用"元/亿/万"。
+   - 不要输出项目符号、表格、代码块、时间戳。
+4) 幽默度控制：每段会给"幽默档位 0-3"。必须严格执行。
+   - 幽默只能辅助理解，不得抢信息主线。
+   - 不要冒犯或刻薄；不要使用脏话、地域/群体刻板印象。
+5) 主持人个性一致：每段都会给"主持人人格档案"。
+   - 不要在段与段之间突然换人设。
+   - 口头禅可以出现 1-2 次即可，别刷屏。
+6) 输出只要脚本文案正文，不要写"提示词/分析/大纲/免责声明"。
+
+【硬规则：机构简称禁用】
+- 全文禁止出现任何中文机构简称或缩写。
+- 示例禁用词：中消协、工信部、发改委、文旅局、央行、证监会、银保监会、住建部、商务部等。
+- 如果知道全称，必须写全称（例如"中消协"必须写"中国消费者协会"）。
+- 如果不确定全称，禁止猜测，改用中性指代："某消费者组织/某监管部门/行业协会/平台方/相关部门"。
+
+【硬规则：禁止无来由对比词】
+- 除非上一句已明确给出"之前的状态"作为对比背景，否则禁止出现以下表达：
+  "突然重要/突然火/这阵子突然/一下子变得/最近才重要/为什么现在火了"
+- 如果素材中未提供明确的时间对比或触发事件，就不要暗示"之前不重要"。
+
+【硬规则：口头禅限频】
+- "我把它翻译成一句话/你可以这么理解/所以呢"等口头禅可用，但必须限频。
+- 快讯段：每3条快讯最多使用1次，且不能连续两条使用同一句式。
+- 深度段：整段最多使用2次，且不能集中在开头。
+
+【输出前必须自检重写】
+- 写完后，对脚本做一次"口语润色自检"：
+  1. 检查是否有机构简称或缩写，如有则替换为全称或中性指代。
+  2. 检查是否有"突然重要/突然火"等无前置对比的表达，如有则删除或改为有前提的说法。
+  3. 检查口头禅是否过度重复，如有则替换为其他自然表达。
+  4. 整体读一遍，删除模板痕迹，让它更像自然聊天。
+- 最终只输出润色后的正文，不输出自检过程。
+
+你会收到：节目配置、日期信息、看点清单、历史事件、资讯列表、深度主题素材。
+请严格按每个段落的格式要求输出。
+""".strip()
+
+
+@dataclass
+class HostPersona:
+    name: str
+    voice: str
+    pov: str
+    rhythm: str
+    signature_phrases: Tuple[str, ...] = ()
+    banned_phrases: Tuple[str, ...] = ()
+
+
+PRESET_PERSONAS: Dict[str, HostPersona] = {
+    "balanced": HostPersona(
+        name="民心·清醒拆解派",
+        voice="清爽、克制、偶尔俏皮；不端着，但有判断力。",
+        pov="站在普通人和消费者视角，把复杂事翻译成一句能用的话。",
+        rhythm="短句推进；先结论后理由；用'所以呢'把信息落地。",
+        signature_phrases=("我把它翻译成一句话", "你可以这么理解", "所以呢", "给你3个可操作点"),
+        banned_phrases=(
+            "今天的节目您将听到",
+            "今天你将会听到",
+            "摸鱼早知道",
+            "折叠时空",
+            "节目最后的消费热新闻",
+            "据悉",
+            "综上所述",
+        ),
+    ),
+    "warm": HostPersona(
+        name="民心·温暖陪伴派",
+        voice="更暖、更像朋友聊天；允许轻微自嘲。",
+        pov="把资讯当'生活情报'，少说教，多共情。",
+        rhythm="转场更柔和；每条多一句'你会感受到什么变化'。",
+        signature_phrases=("我们换个频道", "别急，我说人话", "这条你记一下"),
+        banned_phrases=("摸鱼早知道", "今天的节目您将听到"),
+    ),
+    "spicy": HostPersona(
+        name="民心·清醒犀利派",
+        voice="更锋利一点，但不刻薄；吐槽只对现象，不对人。",
+        pov="对营销话术更敏感，喜欢拆掉包装看本质。",
+        rhythm="先戳破泡沫，再给事实；一句'关键在这儿'收束。",
+        signature_phrases=("别被话术带跑", "关键在这儿", "所以呢"),
+        banned_phrases=("摸鱼早知道", "据悉", "综上所述"),
+    ),
+}
+
+
+@dataclass
+class ShowConfig:
+    show_name: str = "民心A I切片电台"
+    host_name: str = "民心"
+    tagline: str = "A I先筛一遍，我负责讲成人话。"
+    humor_level: int = 1
+    brief_density: str = "short"
+    persona_preset: str = "balanced"
+    persona: Optional[HostPersona] = None
+    cue_preview: str = "开机自检完成"
+    cue_history: str = "时间倒带"
+    cue_briefs: str = "快进快讯开始"
+    cue_deep: str = "慢放一条"
+    cue_wrap: str = "关机前一句"
+
+
+@dataclass
+class NewsItem:
+    title: str
+    facts: str
+    context: Optional[str] = None
+    research_evidence: Optional[str] = None
+    research_claims: Optional[list] = None
+
+
+def spell_out_acronyms(text: str) -> str:
+    if not text:
+        return text
+    mapping = {
+        "AI": "A I",
+        "CEO": "C E O",
+        "GPU": "G P U",
+        "CPU": "C P U",
+        "AR": "A R",
+        "VR": "V R",
+        "IP": "I P",
+        "PC": "P C",
+        "APP": "A P P",
+        "Sora": "S o r a",
+        "OpenAI": "O p e n A I",
+    }
+    for k, v in mapping.items():
+        text = text.replace(k, v)
+    return text
+
+
+def clamp_humor(level: int) -> int:
+    try:
+        level = int(level)
+    except Exception:
+        level = 1
+    return max(0, min(3, level))
+
+
+def brief_length_range(config: ShowConfig) -> Tuple[int, int]:
+    if (config.brief_density or "").lower() == "long":
+        return (120, 180)
+    return (60, 100)
+
+
+def humor_guidance_line(level: int) -> str:
+    level = clamp_humor(level)
+    if level == 0:
+        return "幽默档位 0：不吐槽，不拟人化，语气克制，信息直给。"
+    if level == 1:
+        return "幽默档位 1：轻松自然，允许偶尔俏皮一句，但不影响信息密度。"
+    if level == 2:
+        return "幽默档位 2：可以明显幽默，允许轻微自嘲或拟人化，但每条最多 1 处。"
+    return "幽默档位 3：节奏更有梗，但别油腻；笑点必须服务理解，不许跑题。"
+
+
+def resolve_persona(config: ShowConfig) -> HostPersona:
+    if config.persona is not None:
+        return config.persona
+    preset = (config.persona_preset or "").strip()
+    return PRESET_PERSONAS.get(preset, PRESET_PERSONAS["balanced"])
+
+
+def persona_guidance_lines(persona: HostPersona) -> str:
+    sig = "；".join(persona.signature_phrases) if persona.signature_phrases else "（无）"
+    banned = "；".join(persona.banned_phrases) if persona.banned_phrases else "（无）"
+    return (
+        f"主持人人格：{persona.name}。"
+        f" 气质：{persona.voice}"
+        f" 视角：{persona.pov}"
+        f" 节奏：{persona.rhythm}"
+        f" 口头禅（限频使用）：{sig}。"
+        f" 禁用表达：{banned}。"
+    )
+
+
+def build_opening_prompt(
+    config: ShowConfig,
+    date_line: str,
+    lunar_line: Optional[str],
+    weekday_line: Optional[str],
+    tease_points: List[str],
+) -> str:
+    persona = resolve_persona(config)
+    persona_line = persona_guidance_lines(persona)
+    humor_line = humor_guidance_line(config.humor_level)
+
+    tease_points = [spell_out_acronyms(p) for p in tease_points]
+    tease = "，".join(tease_points).strip("，")
+    lunar = f"，{lunar_line}" if lunar_line else ""
+    weekday = f"，{weekday_line}" if weekday_line else ""
+
+    hook_hint = ""
+    if clamp_humor(config.humor_level) >= 2:
+        hook_hint = " 可以加一句很短的'反直觉'钩子，但只一口气，不展开。"
+
+    return f"""
+请写【开场：开机自检】（约 150-240 字）：
+- 第一句必须以"{config.cue_preview}，"开头。
+- 立刻把看点抛出来：用口语说"今天我们把信息切成几片：{tease}"。
+- 用两句完成节目身份：
+  你正在收听《{config.show_name}》，一档由A I参与写作的资讯播客。我是{config.host_name}。
+- 加一句"AI透明度"：强调"A I先筛，我负责讲成人话"。不要夸张，不要科幻化。
+- 报日期：今天是{date_line}{weekday}{lunar}。
+- 最后用一句把听众带入快讯段：例如"好，咱们直接快进。"
+
+写作约束：
+- {persona_line}
+- {humor_line}{hook_hint}
+""".strip()
+
+
+def build_history_prompt(
+    config: ShowConfig,
+    history_event: str,
+) -> str:
+    persona = resolve_persona(config)
+    persona_line = persona_guidance_lines(persona)
+    humor_line = humor_guidance_line(config.humor_level)
+    history_event = spell_out_acronyms(history_event)
+
+    return f"""
+请写【时间倒带：历史上的今天】段（约 80-150 字）：
+- 第一行用固定转场：{config.cue_history}，把镜头往回拨一下。
+- 只讲 1 个事件：{history_event}
+- 末尾加一句"把历史翻译成今天的感觉"：例如"你会发现…其实一直没变"。
+- 段尾再用一句自然转场到快讯：例如"回到今天，我们开始快进。"
+
+写作约束：
+- {persona_line}
+- {humor_line}（这里的幽默像"轻轻一笑"，不要段子化。）
+""".strip()
+
+
+def build_brief_news_prompt(
+    config: ShowConfig,
+    news_items: List[NewsItem],
+) -> str:
+    persona = resolve_persona(config)
+    persona_line = persona_guidance_lines(persona)
+    humor_line = humor_guidance_line(config.humor_level)
+    lo, hi = brief_length_range(config)
+
+    items_text = "\n".join(
+        [
+            f"{i+1}. 标题：{spell_out_acronyms(it.title)}；事实：{spell_out_acronyms(it.facts)}；补充：{spell_out_acronyms(it.context or '')}"
+            + (f"；深度调研：{spell_out_acronyms(it.research_evidence)}" if it.research_evidence else "")
+            for i, it in enumerate(news_items)
+        ]
+    )
+
+    if (config.brief_density or "").lower() == "long":
+        explain_hint = "每条多给一句背景或因果，让听众能跟上。"
+    else:
+        explain_hint = "每条一句背景就好，像'刷卡'一样快过。"
+
+    transitions = (
+        "转场词库（任选其一，尽量不重复）："
+        ""下一条，换个频道。""
+        ""我们快进一下。""
+        ""镜头切过去。""
+        ""再给你塞一条信息。""
+        ""顺手看一眼。""
+    )
+
+    return f"""
+请写【快进快讯】（总计约 {len(news_items)*lo}-{len(news_items)*hi} 字）：
+- 开头一句必须是：{config.cue_briefs}。
+- 依次讲下面这些资讯（保持顺序），每条约 {lo}-{hi} 字：
+{items_text}
+
+写作要求（可变体三拍结构）：
+- 每条按"事实→影响→提醒"三拍节奏：
+  1. 事实（发生了什么，1-2句）
+  2. 影响（对谁有影响，1句）
+  3. 提醒/下一步（听众可以怎么做/怎么看，1句）
+- 三拍可以变体，不必每条都用固定句式，避免模板感。
+- 条与条之间必须有自然转场。{transitions}
+- {explain_hint}
+- 数字不要堆砌；如必须提数字，要解释含义。
+- 不要编造来源；不要出现竞品栏目词与句式（已在禁用表达里列出）。
+
+口头禅限频硬规则：
+- "我把它翻译成一句话/你可以这么理解/所以呢"等口头禅，在所有快讯中每3条最多出现1次。
+- 不能连续两条使用同一个口头禅。
+
+写作约束：
+- {persona_line}
+- {humor_line}（快讯里幽默要点到即止，别一条里讲 2 个梗。）
+""".strip()
+
+
+def build_deep_dive_prompt(
+    config: ShowConfig,
+    topic: str,
+    facts_bundle: str,
+) -> str:
+    persona = resolve_persona(config)
+    persona_line = persona_guidance_lines(persona)
+    humor_line = humor_guidance_line(config.humor_level)
+
+    topic = spell_out_acronyms(topic)
+    facts_bundle = spell_out_acronyms(facts_bundle)
+
+    extra = ""
+    if clamp_humor(config.humor_level) >= 2:
+        extra = " 类比可以更生活化一点，但别讲成段子。"
+
+    return f"""
+请写【慢放一条：深度拆解】（420-900 字）：
+- 开头必须明确：{config.cue_deep}，我们慢放这一条：{topic}。
+- 输入事实/素材如下（只可基于这些信息发挥，不要编造"某某机构最新数据"）：
+{facts_bundle}
+
+结构必须包含（用口语串起来，不要项目符号）：
+1) 先给一句"这事儿一句话是什么"。
+2) 它到底是什么：大白话解释 + 一个生活类比（类比必须服务理解，不许为了幽默而幽默）。
+3) 背景与触发点（条件式）：
+   - 只有当素材明确提供了时间对比/政策窗口/供需变化/事件触发时，才写2-3句解释"为什么现在被讨论"。
+   - 如果素材未提供明确对比背景，就直接跳到下一条"里面的门道"，禁止出现"突然重要/突然火/这阵子突然"等无前提的表达。
+4) 里面的门道：讲 2-4 个点，用"第一/第二/第三"或其他自然方式串起来。
+5) 跟你有什么关系：给 2-3 个可操作的观察点或建议。
+6) 结尾留钩子：一句"如果你也好奇…我们之后再拆"。
+7) 最后用一句收回节目主线：例如"好，今天的切片就到这儿。"
+
+口头禅限频硬规则：
+- 整个深度段最多使用2次口头禅，且不能集中在开头。
+
+写作约束：
+- {persona_line}
+- {humor_line}{extra}
+""".strip()
+
+
+def build_outro_prompt(
+    config: ShowConfig,
+    outro_hint: str = "明天我们再展开",
+    cta_hint: Optional[str] = "喜欢这种A I切片的话，点个关注，就当给我充电。",
+) -> str:
+    persona = resolve_persona(config)
+    persona_line = persona_guidance_lines(persona)
+    humor_line = humor_guidance_line(config.humor_level)
+
+    outro_hint = spell_out_acronyms(outro_hint)
+    cta = f"{cta_hint} " if cta_hint else ""
+
+    return f"""
+请写【收尾：关机前一句】（60-120 字）：
+- 必须包含：节目名《{config.show_name}》、主持人{config.host_name}、感谢收听。
+- 用一句"{config.cue_wrap}"开头，给一个很短的"今天总结/情绪落点"。
+- 可以加一句轻量 CTA：{cta}
+- 最后给出明确下次见：{outro_hint}。
+- 结尾句尽量有节奏感，像把一天合上，不要口号堆叠。
+
+写作约束：
+- {persona_line}
+- {humor_line}（收尾幽默像"眨眼"，不要硬梗。）
+""".strip()
+```
+
+## 2. src/llm/segment_generator.py
+
+```python
+# -*- coding: utf-8 -*-
+"""
+Segment Script Generator（保持接口不变：可直接替换）
+"""
+from __future__ import annotations
+
+import argparse
+from dataclasses import dataclass, replace
+from typing import List, Optional, Protocol, Dict
+
+from src.llm.templates.prompts import (
+    ShowConfig,
+    NewsItem,
+    HostPersona,
+    PRESET_PERSONAS,
+    SYSTEM_PROMPT,
+    build_opening_prompt,
+    build_history_prompt,
+    build_brief_news_prompt,
+    build_deep_dive_prompt,
+    build_outro_prompt,
+)
+
+
+class LLMClient(Protocol):
+    def generate(self, *, system: str, user: str, temperature: float = 0.7) -> str:
+        ...
+
+
+class MockLLMClient:
+    def generate(self, *, system: str, user: str, temperature: float = 0.7) -> str:
+        return (
+            "【Mock 输出】\n"
+            "（这里应替换为真实 L L M 输出）\n\n"
+            f"--- user prompt ---\n{user}\n"
+        )
+
+
+@dataclass
+class Segment:
+    segment_id: str
+    title: str
+    prompt: str
+    temperature: float = 0.7
+
+
+def _normalize_text(text: str) -> str:
+    """
+    内部后处理：规范化机构简称为全称或中性指代。
+    """
+    if not text:
+        return text
+    
+    # 机构简称替换表
+    replacements = {
+        "中消协": "中国消费者协会",
+        "工信部": "工业和信息化部",
+        "发改委": "国家发展和改革委员会",
+        "证监会": "中国证券监督管理委员会",
+        "银保监会": "中国银行保险监督管理委员会",
+        "央行": "中国人民银行",
+        "文旅部": "文化和旅游部",
+        "住建部": "住房和城乡建设部",
+        "商务部": "商务部",
+        "教育部": "教育部",
+        "财政部": "财政部",
+        "交通部": "交通运输部",
+        "农业部": "农业农村部",
+        "环保部": "生态环境部",
+        "卫健委": "国家卫生健康委员会",
+        "市监局": "市场监督管理局",
+        "网信办": "国家互联网信息办公室",
+    }
+    
+    result = text
+    for abbr, full in replacements.items():
+        result = result.replace(abbr, full)
+    
+    return result
+
+
+class SegmentScriptGenerator:
+    def __init__(
+        self,
+        llm: LLMClient,
+        config: Optional[ShowConfig] = None,
+    ) -> None:
+        self.llm = llm
+        self.config = config or ShowConfig()
+
+    def _config_with_overrides(
+        self,
+        *,
+        humor_level: Optional[int] = None,
+        brief_density: Optional[str] = None,
+        persona_preset: Optional[str] = None,
+        persona: Optional[HostPersona] = None,
+    ) -> ShowConfig:
+        cfg = self.config
+
+        if humor_level is not None:
+            cfg = replace(cfg, humor_level=int(humor_level))
+
+        if brief_density is not None:
+            bd = str(brief_density).lower().strip()
+            if bd not in ("short", "long"):
+                bd = cfg.brief_density
+            cfg = replace(cfg, brief_density=bd)
+
+        if persona is not None:
+            cfg = replace(cfg, persona=persona)
+
+        if persona_preset is not None:
+            pp = str(persona_preset).strip()
+            if pp and pp in PRESET_PERSONAS:
+                cfg = replace(cfg, persona_preset=pp, persona=None)
+            elif pp:
+                cfg = replace(cfg, persona_preset=cfg.persona_preset)
+
+        return cfg
+
+    def build_segments(
+        self,
+        *,
+        cfg: ShowConfig,
+        date_line: str,
+        weekday_line: Optional[str],
+        lunar_line: Optional[str],
+        tease_points: List[str],
+        history_event: str,
+        news_items: List[NewsItem],
+        deep_topic: str,
+        deep_facts: str,
+        outro_hint: str,
+        cta_hint: Optional[str] = None,
+    ) -> List[Segment]:
+        segs: List[Segment] = []
+
+        segs.append(
+            Segment(
+                segment_id="opening",
+                title="开机自检（开场）",
+                prompt=build_opening_prompt(cfg, date_line, lunar_line, weekday_line, tease_points),
+                temperature=0.6,
+            )
+        )
+
+        segs.append(
+            Segment(
+                segment_id="history",
+                title="时间倒带（历史上的今天）",
+                prompt=build_history_prompt(cfg, history_event),
+                temperature=0.7,
+            )
+        )
+
+        segs.append(
+            Segment(
+                segment_id="briefs",
+                title="快进快讯（资讯串讲）",
+                prompt=build_brief_news_prompt(cfg, news_items),
+                temperature=0.6,
+            )
+        )
+
+        segs.append(
+            Segment(
+                segment_id="deep_dive",
+                title="慢放一条（深度拆解）",
+                prompt=build_deep_dive_prompt(cfg, deep_topic, deep_facts),
+                temperature=0.7,
+            )
+        )
+
+        segs.append(
+            Segment(
+                segment_id="outro",
+                title="关机前一句（收尾）",
+                prompt=build_outro_prompt(cfg, outro_hint, cta_hint=cta_hint),
+                temperature=0.6,
+            )
+        )
+
+        return segs
+
+    def render(
+        self,
+        *,
+        date_line: str,
+        weekday_line: Optional[str] = None,
+        lunar_line: Optional[str] = None,
+        tease_points: Optional[List[str]] = None,
+        history_event: str,
+        news_items: List[NewsItem],
+        deep_topic: str,
+        deep_facts: str,
+        outro_hint: str = "明天我们再展开",
+        cta_hint: Optional[str] = "喜欢这种A I切片的话，点个关注，就当给我充电。",
+        humor_level: Optional[int] = None,
+        brief_density: Optional[str] = None,
+        persona_preset: Optional[str] = None,
+        persona: Optional[HostPersona] = None,
+    ) -> Dict[str, str]:
+        cfg = self._config_with_overrides(
+            humor_level=humor_level,
+            brief_density=brief_density,
+            persona_preset=persona_preset,
+            persona=persona,
+        )
+
+        if not tease_points:
+            tease_points = [it.title.strip() for it in news_items[:6]]
+
+        segments = self.build_segments(
+            cfg=cfg,
+            date_line=date_line,
+            weekday_line=weekday_line,
+            lunar_line=lunar_line,
+            tease_points=tease_points,
+            history_event=history_event,
+            news_items=news_items,
+            deep_topic=deep_topic,
+            deep_facts=deep_facts,
+            outro_hint=outro_hint,
+            cta_hint=cta_hint,
+        )
+
+        outputs: Dict[str, str] = {}
+        parts: List[str] = []
+
+        for seg in segments:
+            text = self.llm.generate(
+                system=SYSTEM_PROMPT,
+                user=seg.prompt,
+                temperature=seg.temperature,
+            ).strip()
+            
+            # 内部后处理：规范化机构简称
+            text = _normalize_text(text)
+            
+            outputs[seg.segment_id] = text
+            parts.append(text)
+
+        outputs["full_script"] = "\n\n".join([p for p in parts if p])
+        return outputs
+
+
+def demo_inputs() -> Dict:
+    news_items = [
+        NewsItem(
+            title="智能眼镜首次纳入国补",
+            facts="首批625亿国补资金下达，明年补贴范围扩大到智能眼镜等。",
+            context="对消费者来说，可能意味着入手门槛下降；对品牌来说，是一波抢位战。",
+        ),
+        NewsItem(
+            title="宇树科技线下首店北京开业",
+            facts="线下门店集中展示四足机器狗与人形机器人等产品。",
+            context="机器人从展会走进商场，是'能看见的商业化'。",
+        ),
+        NewsItem(
+            title="必胜客开始卖烤串做夜宵",
+            facts="部分门店新增夜宵时段与烤串菜单，价格贴近连锁烧烤。",
+            context="餐饮巨头在用'第二曲线'对抗存量竞争。",
+        ),
+        NewsItem(
+            title="国产载人飞艇拿到生产许可证",
+            facts="祥云A700取得全国首张国产载人飞艇生产许可证。",
+            context="低空经济从概念走向交付，接下来拼的是场景。",
+        ),
+    ]
+
+    return dict(
+        date_line="2026年1月4日",
+        weekday_line="星期日",
+        lunar_line=None,
+        tease_points=[
+            "国补把智能眼镜也算进来了",
+            "机器人开店，离日常更近一步",
+            "必胜客卖烤串，夜宵开始内卷",
+            "飞艇拿到准生证，低空要进城",
+        ],
+        history_event="在1996年的12月31日，波音与麦道宣布合并，这被很多人视作行业格局的一次改写，也给后来的文化磨合埋下伏笔。",
+        news_items=news_items,
+        deep_topic="载人飞艇为什么突然火了",
+        deep_facts=(
+            "素材要点：取得生产许可证；可载10人，航时可达10小时；"
+            "优势是低空慢速、短距起降；安全依赖材料、冗余与试飞验证；"
+            "主要场景包括低空观光、城市安保与巡检、应急通信与物资投送。"
+        ),
+        outro_hint="明天我们再展开",
+        cta_hint="如果你觉得有用，点个关注，咱们每天一起把信息切一下。",
+    )
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--demo", action="store_true", help="运行 demo（使用 MockLLM）")
+    parser.add_argument("--humor", type=int, default=None, help="幽默度 0-3（覆盖 config）")
+    parser.add_argument("--density", type=str, default=None, help="快讯密度 short/long（覆盖 config）")
+    parser.add_argument(
+        "--persona",
+        type=str,
+        default=None,
+        help=f"主持人个性预设（覆盖 config）。可选：{', '.join(PRESET_PERSONAS.keys())}",
+    )
+    args = parser.parse_args()
+
+    if args.demo:
+        llm = MockLLMClient()
+        gen = SegmentScriptGenerator(llm=llm, config=ShowConfig())
+        out = gen.render(**demo_inputs(), humor_level=args.humor, brief_density=args.density, persona_preset=args.persona)
+        print(out["full_script"])
+        return
+
+    print("请在你的工程中引入 SegmentScriptGenerator，并传入真实的 LLMClient。")
+
+
+if __name__ == "__main__":
+    main()
+```
