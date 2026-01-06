@@ -43,9 +43,196 @@ from src.research.core.config import ResearchSettings, load_research_config
 from src.research.sources.metaso import metaso_research_items
 
 
+def bocha_web_search_items(
+    items: List[Dict[str, Any]],
+    api_key: str,
+    timeout_seconds: int = 60,
+    count: int = 10,
+    summary: bool = True,
+    freshness: str = "noLimit",
+    max_items: Optional[int] = None,
+    save_dir: Optional[str] = None
+) -> Optional[Dict[str, Any]]:
+    """
+    使用博查 Web Search API 搜索新闻条目
+    
+    Args:
+        items: 要搜索的新闻条目列表
+        api_key: 博查 API Key
+        timeout_seconds: 请求超时时间
+        count: 返回结果数量 (1-50)
+        summary: 是否显示文本摘要
+        freshness: 搜索时间范围
+        max_items: 最大处理条目数
+        
+    Returns:
+        搜索结果字典，包含 ok, response_json, response_text 等字段
+    """
+    logger = logging.getLogger("research.sources.bocha")
+    
+    if not api_key:
+        logger.error("博查 API Key 未配置")
+        return {"ok": False, "error": "API Key 未配置"}
+    
+    # 限制处理的条目数
+    if max_items and len(items) > max_items:
+        items = items[:max_items]
+        logger.info(f"限制处理条目数为 {max_items}")
+    
+    # 构建搜索查询（从新闻标题和文本中提取关键词）
+    queries = []
+    for item in items:
+        title = item.get("title", "")
+        text = item.get("text", "")
+        # 优先使用标题，如果标题为空则使用文本的前50个字符
+        query = title if title else (text[:50] if text else "")
+        if query:
+            queries.append(query)
+    
+    if not queries:
+        logger.warning("没有有效的搜索查询")
+        return {"ok": False, "error": "没有有效的搜索查询"}
+    
+    # 合并查询（博查支持复杂查询）
+    combined_query = " ".join(queries[:3])  # 只取前3个查询避免过长
+    
+    url = "https://api.bocha.cn/v1/web-search"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+    
+    payload = {
+        "query": combined_query,
+        "freshness": freshness,
+        "summary": summary,
+        "count": min(count, 50)  # 最大50
+    }
+    
+    try:
+        logger.info(f"开始博查搜索，查询: {combined_query[:100]}...")
+        
+        # 准备保存目录
+        save_path = None
+        if save_dir:
+            import os
+            from pathlib import Path
+            import hashlib
+            save_path = Path(save_dir)
+            save_path.mkdir(parents=True, exist_ok=True)
+            
+            # 生成文件名（使用查询的哈希值）
+            query_hash = hashlib.md5(combined_query.encode()).hexdigest()[:8]
+            
+            # 保存请求报文
+            request_data = {
+                "url": url,
+                "headers": {k: v for k, v in headers.items() if k != "Authorization"},  # 不保存API Key
+                "payload": payload,
+                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+            }
+            
+            request_file = save_path / f"bocha_request_{query_hash}.json"
+            with open(request_file, "w", encoding="utf-8") as f:
+                json.dump(request_data, f, ensure_ascii=False, indent=2)
+            logger.info(f"已保存请求报文: {request_file}")
+        
+        response = requests.post(
+            url,
+            headers=headers,
+            json=payload,
+            timeout=timeout_seconds
+        )
+        
+        # 保存响应报文
+        if save_path and response:
+            import hashlib
+            query_hash = hashlib.md5(combined_query.encode()).hexdigest()[:8]
+            
+            response_data = {
+                "status_code": response.status_code,
+                "headers": dict(response.headers),
+                "body": response.json() if response.status_code == 200 else response.text,
+                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+            }
+            
+            response_file = save_path / f"bocha_response_{query_hash}.json"
+            with open(response_file, "w", encoding="utf-8") as f:
+                json.dump(response_data, f, ensure_ascii=False, indent=2)
+            logger.info(f"已保存响应报文: {response_file}")
+        
+        if response.status_code == 200:
+            result = response.json()
+            
+            # 检查响应格式
+            if result.get("code") == 200 and result.get("data"):
+                data = result["data"]
+                web_pages = data.get("webPages", {})
+                pages = web_pages.get("value", [])
+                
+                # 构建返回格式（兼容现有 research 流程）
+                content_parts = []
+                for i, page in enumerate(pages[:count], 1):
+                    name = page.get("name", "")
+                    snippet = page.get("snippet", "")
+                    summary_text = page.get("summary", "")
+                    url_link = page.get("url", "")
+                    site_name = page.get("siteName", "")
+                    date_published = page.get("datePublished", "")
+                    
+                    part = f"[{i}] {name}\n"
+                    if site_name:
+                        part += f"来源: {site_name}\n"
+                    if date_published:
+                        part += f"发布时间: {date_published}\n"
+                    if summary_text:
+                        part += f"摘要: {summary_text}\n"
+                    elif snippet:
+                        part += f"简介: {snippet}\n"
+                    if url_link:
+                        part += f"链接: {url_link}\n"
+                    content_parts.append(part)
+                
+                content = "\n".join(content_parts)
+                
+                logger.info(f"博查搜索成功，返回 {len(pages)} 条结果")
+                return {
+                    "ok": True,
+                    "response_json": {
+                        "choices": [{
+                            "message": {
+                                "content": content
+                            }
+                        }]
+                    },
+                    "response_text": content,
+                    "model": "bocha-web-search",
+                    "metadata": {
+                        "total_results": web_pages.get("totalEstimatedMatches", 0),
+                        "query": combined_query,
+                        "pages_count": len(pages)
+                    }
+                }
+            else:
+                error_msg = result.get("message", "未知错误")
+                logger.error(f"博查 API 返回错误: {error_msg}")
+                return {"ok": False, "error": error_msg}
+        else:
+            error_msg = f"HTTP {response.status_code}: {response.text}"
+            logger.error(f"博查 API 请求失败: {error_msg}")
+            return {"ok": False, "error": error_msg}
+            
+    except requests.exceptions.Timeout:
+        logger.error(f"博查 API 请求超时 ({timeout_seconds}秒)")
+        return {"ok": False, "error": "请求超时"}
+    except Exception as e:
+        logger.error(f"博查搜索异常: {e}")
+        return {"ok": False, "error": str(e)}
+
+
 class ResearchConfig(BaseModel):
     """研究配置模型"""
-    provider: str = Field(default="metaso", description="研究服务提供商 (metaso, anspire)")
+    provider: str = Field(default="metaso", description="研究服务提供商 (metaso, anspire, bocha)")
     api_key: Optional[str] = Field(default=None, description="API密钥")
     base_url: Optional[str] = Field(default=None, description="API基础URL")
     model: Optional[str] = Field(default=None, description="模型名称")
@@ -55,6 +242,12 @@ class ResearchConfig(BaseModel):
     retry_delay: float = Field(default=1.0, description="重试延迟时间（秒）")
     top_k: Optional[int] = Field(default=None, description="Anspire: 搜索返回的最大结果数")
     is_stream: bool = Field(default=False, description="Anspire: 是否使用流式输出")
+    # Bocha Web Search 配置
+    bocha_count: int = Field(default=10, description="Bocha: 返回结果数量 (1-50)")
+    bocha_summary: bool = Field(default=True, description="Bocha: 是否显示文本摘要")
+    bocha_freshness: str = Field(default="noLimit", description="Bocha: 搜索时间范围 (noLimit, oneDay, oneWeek, oneMonth, oneYear)")
+    # 保存目录
+    save_dir: Optional[str] = Field(default=None, description="保存请求/响应报文的目录")
 
 
 class ResearchOutput(BaseModel):
@@ -101,6 +294,8 @@ class UnifiedResearchClient:
                 result = self._research_with_metaso(items, max_items, model)
             elif self.config.provider == "anspire":
                 result = self._research_with_anspire(items, max_items)
+            elif self.config.provider == "bocha":
+                result = self._research_with_bocha(items, max_items)
             else:
                 raise ValueError(f"不支持的研究提供商: {self.config.provider}")
             
@@ -165,6 +360,24 @@ class UnifiedResearchClient:
             return result
         except Exception as e:
             self.logger.error(f"Anspire研究失败: {e}")
+            raise
+    
+    def _research_with_bocha(self, items: List[Dict[str, Any]], max_items: Optional[int]) -> Optional[Dict[str, Any]]:
+        """使用博查 Web Search 进行研究"""
+        try:
+            result = bocha_web_search_items(
+                items=items,
+                api_key=self.config.api_key or "",
+                timeout_seconds=self.config.timeout_seconds,
+                count=self.config.bocha_count,
+                summary=self.config.bocha_summary,
+                freshness=self.config.bocha_freshness,
+                max_items=max_items,
+                save_dir=self.config.save_dir
+            )
+            return result
+        except Exception as e:
+            self.logger.error(f"博查搜索失败: {e}")
             raise
     
     def research_with_retry(self, items: List[Dict[str, Any]], **kwargs) -> ResearchOutput:
@@ -267,7 +480,7 @@ def create_client(
         **kwargs
     )
     
-    if provider in ["metaso", "anspire"]:
+    if provider in ["metaso", "anspire", "bocha"]:
         return UnifiedResearchClient(config)
     else:
         raise ValueError(f"不支持的研究提供商: {provider}")
@@ -278,7 +491,7 @@ def create_client_from_env(provider: Optional[str] = None) -> UnifiedResearchCli
     从环境变量和配置文件创建研究客户端
     
     Args:
-        provider: 研究服务提供商 ("metaso", "anspire")，如果为None则从RESEARCH_PROVIDER读取
+        provider: 研究服务提供商 ("metaso", "anspire", "bocha")，如果为None则从RESEARCH_PROVIDER读取
         
     Returns:
         UnifiedResearchClient: 配置好的研究客户端
@@ -340,6 +553,27 @@ def create_client_from_env(provider: Optional[str] = None) -> UnifiedResearchCli
             retry_delay=retry_delay,
             top_k=top_k,
             is_stream=is_stream
+        )
+    elif provider == "bocha":
+        api_key = os.environ.get("BOCHA_API_KEY") or (research_config.bocha.get("api_key") if research_config and hasattr(research_config, 'bocha') else None)
+        timeout_seconds = int(os.environ.get("BOCHA_TIMEOUT_SECONDS", str(research_config.bocha.get("timeout_seconds", research_config.timeout_seconds) if research_config and hasattr(research_config, 'bocha') else 60)))
+        max_items = int(os.environ.get("BOCHA_MAX_ITEMS", str(research_config.bocha.get("max_items", 0) if research_config and hasattr(research_config, 'bocha') else 0))) or None
+        max_retries = int(os.environ.get("BOCHA_MAX_RETRIES", str(research_config.bocha.get("max_retries", research_config.max_retries) if research_config and hasattr(research_config, 'bocha') else 3)))
+        retry_delay = float(os.environ.get("BOCHA_RETRY_DELAY", str(research_config.bocha.get("retry_delay", research_config.retry_delay) if research_config and hasattr(research_config, 'bocha') else 1.0)))
+        bocha_count = int(os.environ.get("BOCHA_COUNT", str(research_config.bocha.get("count", 10) if research_config and hasattr(research_config, 'bocha') else 10)))
+        bocha_summary = os.environ.get("BOCHA_SUMMARY", str(research_config.bocha.get("summary", True) if research_config and hasattr(research_config, 'bocha') else "true")).lower() == "true"
+        bocha_freshness = os.environ.get("BOCHA_FRESHNESS", str(research_config.bocha.get("freshness", "noLimit") if research_config and hasattr(research_config, 'bocha') else "noLimit"))
+        
+        return create_client(
+            provider=provider,
+            api_key=api_key,
+            timeout_seconds=timeout_seconds,
+            max_items=max_items,
+            max_retries=max_retries,
+            retry_delay=retry_delay,
+            bocha_count=bocha_count,
+            bocha_summary=bocha_summary,
+            bocha_freshness=bocha_freshness
         )
     else:
         raise ValueError(f"不支持的研究提供商: {provider}")

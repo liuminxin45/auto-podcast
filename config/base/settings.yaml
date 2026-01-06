@@ -38,7 +38,7 @@ channel:
   id: life-consumer
   
   # 以下字段由channel.id自动决定，无需手动修改
-  name: "生活与消费资讯"  # 自动映射
+  name: "民心快报"  # 自动映射
   language: "zh-CN"
   style:
     tone: "口语化、生动、像朋友聊天"  # 自动映射
@@ -48,7 +48,7 @@ channel:
 # 频道预设（内部映射表，由代码自动读取）
 channel_presets:
   life-consumer:
-    name: "生活与消费资讯"
+    name: "民心快报"
     style:
       tone: "口语化、生动、像朋友聊天"
       audience: "普通消费者"
@@ -366,7 +366,7 @@ tts:
       speech_rate: -5
       emotion_scale: 4
       silence_duration: 800  # 句尾静音时长（毫秒）
-      context_texts: ["请用温和亲切的语气说话"]  # 语音风格控制
+      context_texts: ["请用温和亲切的语气说话，在播完一条完整快讯后，微微停顿一下，再开始下一条信息。"]  # 语音风格控制
     
     # TTS V3 WebSocket 模式配置 (mode=tts_v3_ws)
     tts_v3_ws:
@@ -454,7 +454,7 @@ output:
 # Research 配置
 # ============================================================
 research:
-  provider: "anspire"  # metaso | anspire
+  provider: "bocha"  # metaso | anspire | bocha
   enabled: true
   timeout_seconds: 60
   max_items: 10
@@ -495,6 +495,17 @@ research:
     is_stream: false
     timeout_seconds: 60
     max_items: 1
+    max_retries: 3
+    retry_delay: 1.0
+  
+  # Bocha Web Search 配置
+  bocha:
+    api_key: "<api-key>"  # 请替换为您的博查 API Key
+    count: 10  # 返回结果数量 (1-50)
+    summary: true  # 是否显示文本摘要
+    freshness: "noLimit"  # 搜索时间范围: noLimit, oneDay, oneWeek, oneMonth, oneYear
+    timeout_seconds: 60
+    max_items: 10
     max_retries: 3
     retry_delay: 1.0
 

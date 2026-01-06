@@ -41,7 +41,7 @@ def test_tencent_yuanbao_scoring():
     
     candidate = TopicCandidate(
         topic_id="topic:test_yuanbao",
-        title="腾讯元宝宣布"任务"功能上线：一句话安排时间，到点就提醒",
+        title='腾讯元宝宣布"任务"功能上线：一句话安排时间，到点就提醒',
         items=["item1"],
         entities=["腾讯元宝", "DeepSeek"],
         signal_profile=signals,

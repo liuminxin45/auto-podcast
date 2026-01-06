@@ -192,6 +192,122 @@ def parse_anspire_result(result: Dict[str, Any]) -> List[Evidence]:
     return evidence_list
 
 
+def parse_bocha_result(result: Dict[str, Any]) -> List[Evidence]:
+    """
+    解析博查 Web Search API 结果为证据列表
+    
+    博查 API 返回格式:
+    {
+        "ok": bool,
+        "response_json": {
+            "choices": [{
+                "message": {
+                    "content": "[1] 标题\n来源: xxx\n发布时间: xxx\n摘要: xxx\n链接: xxx\n\n[2] ..."
+                }
+            }]
+        },
+        "response_text": "...",
+        "metadata": {
+            "total_results": int,
+            "query": str,
+            "pages_count": int
+        }
+    }
+    
+    Args:
+        result: 博查返回的结果字典
+        
+    Returns:
+        证据列表
+    """
+    evidence_list: List[Evidence] = []
+    
+    if not result or not isinstance(result, dict):
+        return evidence_list
+    
+    # 从 response_text 或 response_json 中提取内容
+    content = result.get("response_text", "")
+    if not content:
+        response_json = result.get("response_json", {})
+        if isinstance(response_json, dict):
+            choices = response_json.get("choices", [])
+            if choices and isinstance(choices, list) and len(choices) > 0:
+                message = choices[0].get("message", {})
+                content = message.get("content", "")
+    
+    if not content or len(content.strip()) < 20:
+        return evidence_list
+    
+    # 解析内容（博查返回的是格式化的文本）
+    # 格式: [1] 标题\n来源: xxx\n发布时间: xxx\n摘要: xxx\n链接: xxx\n\n[2] ...
+    items = content.split("\n\n")
+    
+    for item_text in items:
+        if not item_text.strip():
+            continue
+        
+        lines = item_text.strip().split("\n")
+        if not lines:
+            continue
+        
+        # 提取标题（第一行，去掉 [数字] 前缀）
+        title_line = lines[0]
+        title = title_line
+        if title_line.startswith("[") and "]" in title_line:
+            title = title_line.split("]", 1)[1].strip()
+        
+        # 提取其他字段
+        source_name = None
+        published_at = None
+        summary = None
+        url = None
+        
+        for line in lines[1:]:
+            if line.startswith("来源:") or line.startswith("来源："):
+                source_name = line.split(":", 1)[1].strip() if ":" in line else line.split("：", 1)[1].strip()
+            elif line.startswith("发布时间:") or line.startswith("发布时间："):
+                published_at = line.split(":", 1)[1].strip() if ":" in line else line.split("：", 1)[1].strip()
+            elif line.startswith("摘要:") or line.startswith("摘要："):
+                summary = line.split(":", 1)[1].strip() if ":" in line else line.split("：", 1)[1].strip()
+            elif line.startswith("简介:") or line.startswith("简介："):
+                if not summary:
+                    summary = line.split(":", 1)[1].strip() if ":" in line else line.split("：", 1)[1].strip()
+            elif line.startswith("链接:") or line.startswith("链接："):
+                url = line.split(":", 1)[1].strip() if ":" in line else line.split("：", 1)[1].strip()
+        
+        # 如果没有摘要，使用标题
+        if not summary:
+            summary = title
+        
+        # 计算时效性分数
+        timeliness = 0.7
+        if published_at:
+            if "2026" in published_at or "2025" in published_at:
+                timeliness = 0.9
+            elif "2024" in published_at:
+                timeliness = 0.8
+            elif "2023" in published_at:
+                timeliness = 0.7
+        
+        # 创建证据
+        evidence = Evidence(
+            source_url=url if url else None,
+            source_title=title if title else (source_name if source_name else "博查搜索结果"),
+            content=summary[:800] if summary else "",
+            relevance_score=0.75,  # 博查搜索结果相关性较高
+            credibility_score=0.70,  # 可信度中等偏高
+            timeliness_score=timeliness,
+            published_at=published_at if published_at else None,
+            metadata={
+                "source": "bocha",
+                "source_name": source_name,
+            },
+        )
+        evidence_list.append(evidence)
+    
+    return evidence_list
+
+
 def parse_metaso_result(result: Dict[str, Any]) -> List[Evidence]:
     """
     解析MetaSo调查结果为证据列表
@@ -346,19 +462,25 @@ def assess_evidence_pack(pack: EvidencePack) -> None:
 
 def _detect_result_type(result: Dict[str, Any]) -> str:
     """
-    检测结果类型（anspire 或 metaso）
+    检测结果类型（anspire, metaso, 或 bocha）
     
     Args:
         result: 查询结果字典
         
     Returns:
-        "anspire" 或 "metaso"
+        "anspire", "metaso", "bocha" 或 "unknown"
     """
     if not result or not isinstance(result, dict):
         return "unknown"
     
-    # Anspire特征：有ok, response_json, response_text字段
-    if "response_json" in result or "response_text" in result:
+    # 博查特征：metadata 中有 query 和 pages_count
+    metadata = result.get("metadata", {})
+    if isinstance(metadata, dict) and "query" in metadata and "pages_count" in metadata:
+        return "bocha"
+    
+    # Anspire特征：response_json 中有 items 字段
+    response_json = result.get("response_json", {})
+    if isinstance(response_json, dict) and "items" in response_json:
         return "anspire"
     
     # MetaSo特征：有citations字段
@@ -391,15 +513,20 @@ def create_evidence_pack(
     # 检测结果类型并使用对应的解析器
     result_type = _detect_result_type(main_result)
     
+    main_evidence: List[Evidence] = []
+    contrast_evidence: List[Evidence] = []
+    
     if result_type == "anspire":
         main_evidence = parse_anspire_result(main_result)
-        contrast_evidence: List[Evidence] = []
         if contrast_result:
             contrast_evidence = parse_anspire_result(contrast_result)
+    elif result_type == "bocha":
+        main_evidence = parse_bocha_result(main_result)
+        if contrast_result:
+            contrast_evidence = parse_bocha_result(contrast_result)
     else:
         # 默认使用 MetaSo 解析器（向后兼容）
         main_evidence = parse_metaso_result(main_result)
-        contrast_evidence: List[Evidence] = []
         if contrast_result:
             contrast_evidence = parse_metaso_result(contrast_result)
     
@@ -484,4 +611,5 @@ __all__ = [
     "assess_evidence_pack",
     "parse_anspire_result",
     "parse_metaso_result",
+    "parse_bocha_result",
 ]

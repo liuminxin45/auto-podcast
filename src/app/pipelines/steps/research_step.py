@@ -75,6 +75,10 @@ class ResearchStep(BaseStep):
             provider = research_cfg.get("provider", "anspire")
             research_client = create_client_from_env(provider=provider)
             
+            # 设置保存目录（用于保存博查 API 请求/响应）
+            research_dir = ctx.run_dir / "2_research"
+            research_client.config.save_dir = str(research_dir)
+            
             # 配置预算
             budget_cfg = BudgetConfig(
                 max_total_claims=research_cfg.get("max_total_claims", 20),

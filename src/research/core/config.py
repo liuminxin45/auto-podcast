@@ -35,7 +35,7 @@ from pydantic import BaseModel, Field
 
 class ResearchSettings(BaseModel):
     """研究配置模型"""
-    provider: str = Field(default="metaso", description="研究服务提供商 (metaso, anspire)")
+    provider: str = Field(default="bocha", description="研究服务提供商 (metaso, anspire, bocha)")
     enabled: bool = Field(default=True, description="是否启用研究功能")
     timeout_seconds: int = Field(default=60, description="请求超时时间（秒）")
     max_items: Optional[int] = Field(default=None, description="最大研究条目数")
@@ -45,6 +45,7 @@ class ResearchSettings(BaseModel):
     # Provider-specific settings
     metaso: Dict[str, Any] = Field(default_factory=dict, description="MetaSo特定配置")
     anspire: Dict[str, Any] = Field(default_factory=dict, description="Anspire特定配置")
+    bocha: Dict[str, Any] = Field(default_factory=dict, description="Bocha Web Search特定配置")
 
 
 def load_research_config(
@@ -132,6 +133,8 @@ def load_research_config(
         merged_config["metaso"] = {}
     if "anspire" not in merged_config:
         merged_config["anspire"] = {}
+    if "bocha" not in merged_config:
+        merged_config["bocha"] = {}
     
     # 创建配置对象
     try:
@@ -149,7 +152,7 @@ def get_provider_config(config: ResearchSettings, provider: str) -> Dict[str, An
     
     Args:
         config: 研究配置对象
-        provider: 提供商名称 (metaso, anspire)
+        provider: 提供商名称 (metaso, anspire, bocha)
         
     Returns:
         Dict[str, Any]: 提供商特定配置
@@ -158,6 +161,8 @@ def get_provider_config(config: ResearchSettings, provider: str) -> Dict[str, An
         return config.metaso or {}
     elif provider == "anspire":
         return config.anspire or {}
+    elif provider == "bocha":
+        return config.bocha or {}
     else:
         return {}
 
