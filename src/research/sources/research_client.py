@@ -41,6 +41,7 @@ from pydantic import BaseModel, Field
 from src.research.sources.anspire import anspire_research_items
 from src.research.core.config import ResearchSettings, load_research_config
 from src.research.sources.metaso import metaso_research_items
+from src.research.sources.mcp_client import mcp_search_items
 
 
 def bocha_web_search_items(
@@ -233,6 +234,7 @@ def bocha_web_search_items(
 class ResearchConfig(BaseModel):
     """研究配置模型"""
     provider: str = Field(default="metaso", description="研究服务提供商 (metaso, anspire, bocha)")
+    use_mcp_server: bool = Field(default=False, description="是否通过 MCP Server 调用（仅对 bocha 有效）")
     api_key: Optional[str] = Field(default=None, description="API密钥")
     base_url: Optional[str] = Field(default=None, description="API基础URL")
     model: Optional[str] = Field(default=None, description="模型名称")
@@ -242,7 +244,8 @@ class ResearchConfig(BaseModel):
     retry_delay: float = Field(default=1.0, description="重试延迟时间（秒）")
     top_k: Optional[int] = Field(default=None, description="Anspire: 搜索返回的最大结果数")
     is_stream: bool = Field(default=False, description="Anspire: 是否使用流式输出")
-    # Bocha Web Search 配置
+    # Bocha 配置
+    bocha_api_type: str = Field(default="web-search", description="Bocha: API类型 (web-search | ai-search)")
     bocha_count: int = Field(default=10, description="Bocha: 返回结果数量 (1-50)")
     bocha_summary: bool = Field(default=True, description="Bocha: 是否显示文本摘要")
     bocha_freshness: str = Field(default="noLimit", description="Bocha: 搜索时间范围 (noLimit, oneDay, oneWeek, oneMonth, oneYear)")
@@ -295,7 +298,11 @@ class UnifiedResearchClient:
             elif self.config.provider == "anspire":
                 result = self._research_with_anspire(items, max_items)
             elif self.config.provider == "bocha":
-                result = self._research_with_bocha(items, max_items)
+                # 根据配置决定是否使用 MCP Server
+                if self.config.use_mcp_server:
+                    result = self._research_with_mcp(items, max_items)
+                else:
+                    result = self._research_with_bocha(items, max_items)
             else:
                 raise ValueError(f"不支持的研究提供商: {self.config.provider}")
             
@@ -378,6 +385,20 @@ class UnifiedResearchClient:
             return result
         except Exception as e:
             self.logger.error(f"博查搜索失败: {e}")
+            raise
+    
+    def _research_with_mcp(self, items: List[Dict[str, Any]], max_items: Optional[int]) -> Optional[Dict[str, Any]]:
+        """使用 MCP Server + Bocha AI Search API 进行研究"""
+        try:
+            result = mcp_search_items(
+                items=items,
+                max_results=max_items or self.config.bocha_count,
+                timeout_seconds=self.config.timeout_seconds,
+                save_dir=self.config.save_dir
+            )
+            return result
+        except Exception as e:
+            self.logger.error(f"MCP研究失败: {e}")
             raise
     
     def research_with_retry(self, items: List[Dict[str, Any]], **kwargs) -> ResearchOutput:
@@ -556,10 +577,12 @@ def create_client_from_env(provider: Optional[str] = None) -> UnifiedResearchCli
         )
     elif provider == "bocha":
         api_key = os.environ.get("BOCHA_API_KEY") or (research_config.bocha.get("api_key") if research_config and hasattr(research_config, 'bocha') else None)
+        use_mcp_server = os.environ.get("USE_MCP_SERVER", str(research_config.use_mcp_server if research_config and hasattr(research_config, 'use_mcp_server') else "false")).lower() == "true"
         timeout_seconds = int(os.environ.get("BOCHA_TIMEOUT_SECONDS", str(research_config.bocha.get("timeout_seconds", research_config.timeout_seconds) if research_config and hasattr(research_config, 'bocha') else 60)))
         max_items = int(os.environ.get("BOCHA_MAX_ITEMS", str(research_config.bocha.get("max_items", 0) if research_config and hasattr(research_config, 'bocha') else 0))) or None
         max_retries = int(os.environ.get("BOCHA_MAX_RETRIES", str(research_config.bocha.get("max_retries", research_config.max_retries) if research_config and hasattr(research_config, 'bocha') else 3)))
         retry_delay = float(os.environ.get("BOCHA_RETRY_DELAY", str(research_config.bocha.get("retry_delay", research_config.retry_delay) if research_config and hasattr(research_config, 'bocha') else 1.0)))
+        bocha_api_type = os.environ.get("BOCHA_API_TYPE", str(research_config.bocha.get("api_type", "web-search") if research_config and hasattr(research_config, 'bocha') else "web-search"))
         bocha_count = int(os.environ.get("BOCHA_COUNT", str(research_config.bocha.get("count", 10) if research_config and hasattr(research_config, 'bocha') else 10)))
         bocha_summary = os.environ.get("BOCHA_SUMMARY", str(research_config.bocha.get("summary", True) if research_config and hasattr(research_config, 'bocha') else "true")).lower() == "true"
         bocha_freshness = os.environ.get("BOCHA_FRESHNESS", str(research_config.bocha.get("freshness", "noLimit") if research_config and hasattr(research_config, 'bocha') else "noLimit"))
@@ -567,10 +590,12 @@ def create_client_from_env(provider: Optional[str] = None) -> UnifiedResearchCli
         return create_client(
             provider=provider,
             api_key=api_key,
+            use_mcp_server=use_mcp_server,
             timeout_seconds=timeout_seconds,
             max_items=max_items,
             max_retries=max_retries,
             retry_delay=retry_delay,
+            bocha_api_type=bocha_api_type,
             bocha_count=bocha_count,
             bocha_summary=bocha_summary,
             bocha_freshness=bocha_freshness

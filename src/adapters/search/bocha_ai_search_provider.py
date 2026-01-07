@@ -73,8 +73,8 @@ class BochaAISearchProvider(BaseSearchProvider):
         count = min(max(1, max_results), 50)
         
         self.logger.info(
-            f"博查 AI Search: query='{query[:50]}...', count={count}, "
-            f"freshness={freshness}"
+            f"[BochaAI] 开始搜索: query='{query[:50]}...', count={count}, "
+            f"freshness={freshness}, include_answer={include_answer}"
         )
         
         # 构建请求
@@ -86,6 +86,8 @@ class BochaAISearchProvider(BaseSearchProvider):
             "stream": False  # 使用非流式返回
         }
         
+        self.logger.debug(f"[BochaAI] 请求参数: {json.dumps(payload, ensure_ascii=False)}")
+        
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json"
@@ -93,13 +95,17 @@ class BochaAISearchProvider(BaseSearchProvider):
         
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
+                self.logger.debug(f"[BochaAI] 发送请求到: {self.api_url}")
                 response = await client.post(
                     self.api_url,
                     json=payload,
                     headers=headers
                 )
                 
+                self.logger.info(f"[BochaAI] API 响应状态: {response.status_code}")
+                
                 if response.status_code != 200:
+                    self.logger.error(f"[BochaAI] API 错误: status={response.status_code}, body={response.text[:200]}")
                     raise SearchError(
                         "API_ERROR",
                         f"博查 API 返回错误: {response.status_code}",
@@ -107,27 +113,35 @@ class BochaAISearchProvider(BaseSearchProvider):
                     )
                 
                 data = response.json()
+                self.logger.debug(f"[BochaAI] 响应数据: code={data.get('code')}, messages_count={len(data.get('messages', []))}")
                 
                 # 检查返回状态
                 if data.get("code") != 200:
+                    error_msg = data.get('msg', 'Unknown error')
+                    self.logger.error(f"[BochaAI] API 业务错误: {error_msg}")
                     raise SearchError(
                         "API_ERROR",
-                        f"博查 API 返回错误: {data.get('msg', 'Unknown error')}",
+                        f"博查 API 返回错误: {error_msg}",
                         detail=data
                     )
                 
                 # 解析结果
+                self.logger.info(f"[BochaAI] 开始解析响应数据...")
                 results = self._parse_response(data, max_results)
                 
-                self.logger.info(f"博查 AI Search 完成: 返回 {len(results)} 条结果")
+                self.logger.info(f"[BochaAI] ✓ 搜索完成: 返回 {len(results)} 条结果")
+                if results:
+                    self.logger.debug(f"[BochaAI] 首条结果: title='{results[0].get('title', '')[:50]}', url={results[0].get('url', '')}")
                 return results
         
         except httpx.TimeoutException:
+            self.logger.error(f"[BochaAI] ✗ 请求超时: {self.timeout}秒")
             raise SearchError(
                 "TIMEOUT",
                 f"博查 API 请求超时（{self.timeout}秒）"
             )
         except httpx.RequestError as e:
+            self.logger.error(f"[BochaAI] ✗ 网络错误: {str(e)}")
             raise SearchError(
                 "NETWORK_ERROR",
                 f"网络请求失败: {str(e)}",
@@ -136,7 +150,7 @@ class BochaAISearchProvider(BaseSearchProvider):
         except SearchError:
             raise
         except Exception as e:
-            self.logger.error(f"博查 AI Search 异常: {e}", exc_info=True)
+            self.logger.error(f"[BochaAI] ✗ 未知异常: {e}", exc_info=True)
             raise SearchError(
                 "SEARCH_ERROR",
                 f"搜索过程中发生错误: {str(e)}",
@@ -161,19 +175,26 @@ class BochaAISearchProvider(BaseSearchProvider):
         results = []
         messages = data.get("messages", [])
         
-        for message in messages:
+        self.logger.debug(f"[BochaAI] 解析响应: 共 {len(messages)} 条消息")
+        
+        for idx, message in enumerate(messages):
             role = message.get("role")
             msg_type = message.get("type")
             content_type = message.get("content_type")
             content = message.get("content", "")
             
+            self.logger.debug(f"[BochaAI] 消息[{idx}]: role={role}, type={msg_type}, content_type={content_type}")
+            
             # 只处理 assistant 返回的 source 类型消息
             if role != "assistant" or msg_type != "source":
+                self.logger.debug(f"[BochaAI] 跳过消息[{idx}]: 非 assistant/source 类型")
                 continue
             
             # 处理网页结果
             if content_type == "webpage":
+                self.logger.debug(f"[BochaAI] 解析网页结果...")
                 webpage_results = self._parse_webpage(content, max_results - len(results))
+                self.logger.info(f"[BochaAI] 解析到 {len(webpage_results)} 条网页结果")
                 results.extend(webpage_results)
             
             # 处理模态卡（百科、医疗等）
@@ -187,14 +208,20 @@ class BochaAISearchProvider(BaseSearchProvider):
                 "exchangerate", "oil_price", "phone", "stock",
                 "car_common", "car_pro"
             ]:
+                self.logger.debug(f"[BochaAI] 解析模态卡: {content_type}")
                 modal_result = self._parse_modal_card(content, content_type)
                 if modal_result:
+                    self.logger.info(f"[BochaAI] 解析到模态卡: {content_type}")
                     results.append(modal_result)
+                else:
+                    self.logger.warning(f"[BochaAI] 模态卡解析失败: {content_type}")
             
             # 如果已经达到最大结果数，停止处理
             if len(results) >= max_results:
+                self.logger.debug(f"[BochaAI] 已达到最大结果数 {max_results}，停止解析")
                 break
         
+        self.logger.info(f"[BochaAI] 解析完成: 总共 {len(results)} 条结果")
         return results[:max_results]
     
     def _parse_webpage(
@@ -209,6 +236,8 @@ class BochaAISearchProvider(BaseSearchProvider):
             # content 是 JSON 字符串
             webpage_data = json.loads(content)
             value_list = webpage_data.get("value", [])
+            
+            self.logger.debug(f"[BochaAI] 网页数据: 共 {len(value_list)} 条")
             
             for item in value_list[:max_count]:
                 result = self._normalize_result({
@@ -225,11 +254,13 @@ class BochaAISearchProvider(BaseSearchProvider):
                     }
                 })
                 results.append(result)
+            
+            self.logger.debug(f"[BochaAI] 网页解析: 成功解析 {len(results)}/{len(value_list)} 条")
         
         except json.JSONDecodeError as e:
-            self.logger.warning(f"解析网页结果失败: {e}")
+            self.logger.warning(f"[BochaAI] ✗ 解析网页结果失败: {e}")
         except Exception as e:
-            self.logger.warning(f"处理网页结果异常: {e}")
+            self.logger.warning(f"[BochaAI] ✗ 处理网页结果异常: {e}")
         
         return results
     
@@ -282,10 +313,10 @@ class BochaAISearchProvider(BaseSearchProvider):
             return result
         
         except json.JSONDecodeError as e:
-            self.logger.warning(f"解析模态卡失败: {e}")
+            self.logger.warning(f"[BochaAI] ✗ 解析模态卡失败: {e}")
             return None
         except Exception as e:
-            self.logger.warning(f"处理模态卡异常: {e}")
+            self.logger.warning(f"[BochaAI] ✗ 处理模态卡异常: {e}")
             return None
     
     def _extract_modal_summary(

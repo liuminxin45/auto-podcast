@@ -43,16 +43,19 @@ class Router:
         Returns:
             操作结果
         """
-        self.logger.info(f"路由操作: op={op}, payload_keys={list(payload.keys())}")
+        self.logger.info(f"[Router] 接收路由请求: op={op}, payload_keys={list(payload.keys())}")
+        self.logger.debug(f"[Router] 请求详情: payload={payload}")
         
         # 校验 op
         if not op:
+            self.logger.error(f"[Router] ✗ op 为空")
             return OperationResult.failure(
                 "INVALID_OP",
                 "op 不能为空"
             )
         
         if op not in self.SUPPORTED_OPS:
+            self.logger.error(f"[Router] ✗ 不支持的操作: {op}")
             return OperationResult.failure(
                 "UNSUPPORTED_OP",
                 f"不支持的操作: {op}",
@@ -61,22 +64,28 @@ class Router:
         
         # 路由到对应的处理函数
         try:
+            self.logger.debug(f"[Router] 路由到处理函数: {op}")
+            
             if op == "web.search":
-                return await self._handle_web_search(payload)
+                result = await self._handle_web_search(payload)
             elif op == "web.fetch":
-                return await self._handle_web_fetch(payload)
+                result = await self._handle_web_fetch(payload)
             else:
+                self.logger.error(f"[Router] ✗ 操作未实现: {op}")
                 return OperationResult.failure(
                     "NOT_IMPLEMENTED",
                     f"操作 {op} 尚未实现"
                 )
+            
+            self.logger.info(f"[Router] ✓ 路由完成: op={op}, success={result.success}")
+            return result
         
         except ValidationError as e:
-            self.logger.warning(f"参数校验失败: {e.message}")
+            self.logger.warning(f"[Router] ✗ 参数校验失败: {e.message}")
             return OperationResult.failure(e.code, e.message, detail=e.detail)
         
         except Exception as e:
-            self.logger.error(f"操作执行失败: {e}", exc_info=True)
+            self.logger.error(f"[Router] ✗ 操作执行失败: {e}", exc_info=True)
             return OperationResult.failure(
                 "INTERNAL_ERROR",
                 f"内部错误: {str(e)}",
@@ -85,30 +94,45 @@ class Router:
     
     async def _handle_web_search(self, payload: Dict[str, Any]) -> OperationResult:
         """处理 web.search 操作"""
+        self.logger.debug(f"[Router] 处理 web.search...")
+        
         # 提取参数
         query = payload.get("query")
         max_results = payload.get("max_results", 10)
         
+        self.logger.debug(f"[Router] 提取参数: query='{query}', max_results={max_results}")
+        
         # 校验必填参数
         if not query:
+            self.logger.error(f"[Router] ✗ 缺少 query 参数")
             raise ValidationError("MISSING_QUERY", "缺少必填参数: query")
         
         # 校验参数类型
         if not isinstance(query, str):
+            self.logger.error(f"[Router] ✗ query 类型错误: {type(query)}")
             raise ValidationError("INVALID_QUERY_TYPE", "query 必须是字符串")
         
         if not isinstance(max_results, int):
+            self.logger.error(f"[Router] ✗ max_results 类型错误: {type(max_results)}")
             raise ValidationError("INVALID_MAX_RESULTS_TYPE", "max_results 必须是整数")
         
+        self.logger.info(f"[Router] 参数校验通过")
+        
         # 调用服务
+        self.logger.debug(f"[Router] 调用 WebService.search...")
         results = await self.web_service.search(
             query=query,
             max_results=max_results,
             **{k: v for k, v in payload.items() if k not in ["query", "max_results"]}
         )
         
+        self.logger.info(f"[Router] WebService 返回 {len(results)} 条结果")
+        
         # 转换为字典
+        self.logger.debug(f"[Router] 转换结果为字典...")
         data = [r.to_dict() for r in results]
+        
+        self.logger.info(f"[Router] ✓ web.search 完成: {len(data)} 条结果")
         
         return OperationResult.success(
             data=data,
@@ -120,34 +144,50 @@ class Router:
     
     async def _handle_web_fetch(self, payload: Dict[str, Any]) -> OperationResult:
         """处理 web.fetch 操作"""
+        self.logger.debug(f"[Router] 处理 web.fetch...")
+        
         # 提取参数
         url = payload.get("url")
         extract_content = payload.get("extract_content", True)
         timeout = payload.get("timeout")
         
+        self.logger.debug(f"[Router] 提取参数: url={url}, extract={extract_content}, timeout={timeout}")
+        
         # 校验必填参数
         if not url:
+            self.logger.error(f"[Router] ✗ 缺少 url 参数")
             raise ValidationError("MISSING_URL", "缺少必填参数: url")
         
         # 校验参数类型
         if not isinstance(url, str):
+            self.logger.error(f"[Router] ✗ url 类型错误: {type(url)}")
             raise ValidationError("INVALID_URL_TYPE", "url 必须是字符串")
         
         if not isinstance(extract_content, bool):
+            self.logger.error(f"[Router] ✗ extract_content 类型错误: {type(extract_content)}")
             raise ValidationError("INVALID_EXTRACT_CONTENT_TYPE", "extract_content 必须是布尔值")
         
         if timeout is not None and not isinstance(timeout, int):
+            self.logger.error(f"[Router] ✗ timeout 类型错误: {type(timeout)}")
             raise ValidationError("INVALID_TIMEOUT_TYPE", "timeout 必须是整数")
         
+        self.logger.info(f"[Router] 参数校验通过")
+        
         # 调用服务
+        self.logger.debug(f"[Router] 调用 WebService.fetch...")
         result = await self.web_service.fetch(
             url=url,
             extract_content=extract_content,
             timeout=timeout
         )
         
+        self.logger.info(f"[Router] WebService 返回结果: title='{result.title}', length={result.content_length}")
+        
         # 转换为字典
+        self.logger.debug(f"[Router] 转换结果为字典...")
         data = result.to_dict()
+        
+        self.logger.info(f"[Router] ✓ web.fetch 完成: url={result.url}")
         
         return OperationResult.success(
             data=data,

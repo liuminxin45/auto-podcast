@@ -70,8 +70,14 @@ class EvidencePack:
     summary: str = ""
     metadata: Dict[str, Any] = field(default_factory=dict)
     
+    @property
+    def item_id(self) -> str:
+        """从 claim 中获取 item_id"""
+        return self.claim.source_item_id
+    
     def to_dict(self) -> Dict[str, Any]:
         return {
+            "item_id": self.item_id,  # 添加 item_id 以便合并时匹配
             "claim": self.claim.to_dict(),
             "main_query": self.main_query.to_dict(),
             "main_evidence_count": len(self.main_evidence),

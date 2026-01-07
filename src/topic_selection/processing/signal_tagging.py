@@ -12,7 +12,9 @@ import re
 import time
 from typing import List, Optional
 
-from src.llm.client.api_client import DeepSeekClient
+import requests
+
+from src.llm.client.api_client import UnifiedLLMClient, create_client
 from src.topic_selection.core.models import (
     ItemSignalTagging,
     SignalScores,
@@ -23,28 +25,80 @@ from src.topic_selection.core.models import (
 class ItemSignalTagger:
     """LLM#0: 为每条item打信号标签"""
     
-    def __init__(self, llm_client: Optional[DeepSeekClient] = None, prompt_template: Optional[str] = None):
+    def __init__(self, llm_client: Optional[UnifiedLLMClient] = None, prompt_template: Optional[str] = None):
         self.llm_client = llm_client or self._create_default_client()
         self.prompt_template = prompt_template  # 策略提供的 prompt 模板
         self.logger = logging.getLogger("topic_selection.processing.signal_tagging")
     
-    def _create_default_client(self) -> DeepSeekClient:
+    def _create_default_client(self) -> UnifiedLLMClient:
         import os
-        return DeepSeekClient(
-            base_url=os.environ.get("DEEPSEEK_BASE_URL", ""),
-            api_key=os.environ.get("DEEPSEEK_API_KEY", ""),
-            model=os.environ.get("DEEPSEEK_MODEL", "deepseek-chat"),
-            timeout_seconds=30
+
+        provider = (os.environ.get("LLM_PROVIDER") or "").strip().lower()
+        if not provider:
+            try:
+                from src.utils.config_loader import get_config_loader
+
+                provider = (get_config_loader().get("llm.provider", "deepseek") or "deepseek").strip().lower()
+            except Exception:
+                provider = "deepseek"
+
+        if provider not in {"deepseek", "moonshot"}:
+            provider = "deepseek"
+
+        timeout_seconds = 30
+        base_url = ""
+        api_key = ""
+        model = ""
+
+        try:
+            from src.utils.config_loader import get_config_loader
+
+            llm_cfg = get_config_loader().get_llm_config(provider=provider)
+            timeout_seconds = int(llm_cfg.get("timeout_seconds", timeout_seconds))
+            base_url = (llm_cfg.get("base_url") or "").strip()
+            api_key = (llm_cfg.get("api_key") or "").strip()
+            model = (llm_cfg.get("model") or "").strip()
+        except Exception:
+            pass
+
+        timeout_seconds = int(min(timeout_seconds, 30))
+
+        if provider == "deepseek":
+            base_url = (os.environ.get("DEEPSEEK_BASE_URL") or base_url or "https://api.deepseek.com").strip()
+            api_key = (os.environ.get("DEEPSEEK_API_KEY") or api_key).strip()
+            model = (os.environ.get("DEEPSEEK_MODEL") or model or "deepseek-chat").strip()
+        else:
+            base_url = (os.environ.get("MOONSHOT_BASE_URL") or base_url or "https://api.moonshot.cn/v1").strip()
+            api_key = (os.environ.get("MOONSHOT_API_KEY") or api_key).strip()
+            model = (os.environ.get("MOONSHOT_MODEL") or model or "moonshot-v1-8k").strip()
+
+        if not api_key:
+            raise RuntimeError(f"LLM 未配置: provider={provider}, api_key missing")
+
+        return create_client(
+            provider=provider,
+            base_url=base_url,
+            api_key=api_key,
+            model=model,
+            timeout_seconds=timeout_seconds,
         )
     
     def tag_items(self, items: List[dict]) -> List[ItemSignalTagging]:
         """批量打标签"""
         results = []
+        consecutive_network_failures = 0
         for item in items:
             try:
                 result = self.tag_single_item(item)
                 if result:
                     results.append(result)
+                consecutive_network_failures = 0
+            except (requests.Timeout, requests.ConnectionError) as e:
+                consecutive_network_failures += 1
+                self.logger.error(f"打标签失败(网络): {item.get('id', 'unknown')} - {e}")
+                if consecutive_network_failures >= 2:
+                    self.logger.error("LLM 网络连续失败次数过多，提前结束 signal_tagging，回退到后续规则流程")
+                    break
             except Exception as e:
                 self.logger.error(f"打标签失败: {item.get('id', 'unknown')} - {e}")
         return results
@@ -73,7 +127,10 @@ class ItemSignalTagger:
                 "max_tokens": 800
             }
             
-            response_data = self.llm_client._post_json(payload)
+            try:
+                response_data = self.llm_client._post_json(payload)
+            except (requests.Timeout, requests.ConnectionError):
+                raise
             if not response_data:
                 return None
             

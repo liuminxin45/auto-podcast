@@ -130,14 +130,14 @@ def main():
     try:
         # 调用 orchestrator
         if args.step == "all" or args.step == "fetch":
-            log.info(">>> 步骤 1/5: 数据获取 (FETCH)")
+            log.info(">>> 开始执行完整 Pipeline (7 个步骤)")
             ctx = run_episode(
                 episode_id=episode_id,
                 episode_date=episode_date,
                 config=config,
                 output_dir=output_dir,
             )
-            log.info(f"<<< 步骤 1/5 完成")
+            log.info(f"<<< Pipeline 执行完成 (7/7 步骤)")
             
             # 检查是否有选中的 items
             if not ctx.items_selected:

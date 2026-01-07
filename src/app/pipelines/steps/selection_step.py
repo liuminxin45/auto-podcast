@@ -57,20 +57,30 @@ class SelectionStep(BaseStep):
                 operation="auto_topic_enabled",
                 result="running auto topic pipeline"
             )
-            ctx.auto_topic_result = self._run_auto_topic(ctx, auto_topic_cfg)
-            log_operation(
-                self.logger,
-                step="Selection",
-                operation="auto_topic_completed",
-                result=f"{ctx.auto_topic_result['stats']}"
-            )
-            
-            # 人工反馈收集（如果启用）
-            feedback_session = self._collect_human_feedback_if_enabled(ctx)
-            if feedback_session:
-                ctx.human_feedback_session = feedback_session
-                self.logger.info(f"人工反馈已应用: {len(feedback_session.feedbacks)} 条反馈")
-        
+            try:
+                ctx.auto_topic_result = self._run_auto_topic(ctx, auto_topic_cfg)
+                log_operation(
+                    self.logger,
+                    step="Selection",
+                    operation="auto_topic_completed",
+                    result=f"{ctx.auto_topic_result['stats']}"
+                )
+
+                # 人工反馈收集（如果启用）
+                feedback_session = self._collect_human_feedback_if_enabled(ctx)
+                if feedback_session:
+                    ctx.human_feedback_session = feedback_session
+                    self.logger.info(f"人工反馈已应用: {len(feedback_session.feedbacks)} 条反馈")
+            except Exception as e:
+                auto_topic_enabled = False
+                ctx.auto_topic_result = None
+                log_operation(
+                    self.logger,
+                    step="Selection",
+                    operation="auto_topic_failed_fallback",
+                    result=f"auto_topic failed: {e}; fallback to traditional selection"
+                )
+
         # ========== 2. 传统 cluster selection（备用） ==========
         log_operation(
             self.logger,
@@ -473,21 +483,44 @@ class SelectionStep(BaseStep):
         
         # 获取 LLM 客户端
         import os
-        provider = (os.environ.get("LLM_PROVIDER") or "deepseek").strip().lower()
+        provider = (
+            os.environ.get("LLM_PROVIDER")
+            or cfg.get("llm", {}).get("provider")
+            or "deepseek"
+        ).strip().lower()
         
         if provider == "deepseek":
             from src.llm.client.api_client import DeepSeekClient
+
+            deepseek_cfg = (cfg.get("llm", {}) or {}).get("deepseek", {}) or {}
+            base_url = (os.environ.get("DEEPSEEK_BASE_URL") or deepseek_cfg.get("base_url") or "").strip()
+            api_key = (os.environ.get("DEEPSEEK_API_KEY") or deepseek_cfg.get("api_key") or "").strip()
+            model = (os.environ.get("DEEPSEEK_MODEL") or deepseek_cfg.get("model") or "deepseek-chat").strip()
+
+            if not base_url or not api_key:
+                raise RuntimeError("DeepSeek 未配置: 需要在 settings.yaml 的 llm.deepseek 里配置，或设置 DEEPSEEK_BASE_URL / DEEPSEEK_API_KEY")
+
             llm_client = DeepSeekClient(
-                base_url=os.environ.get("DEEPSEEK_BASE_URL", ""),
-                api_key=os.environ.get("DEEPSEEK_API_KEY", ""),
-                model=os.environ.get("DEEPSEEK_MODEL", "deepseek-chat"),
+                base_url=base_url,
+                api_key=api_key,
+                model=model,
                 timeout_seconds=30
             )
         else:
             from src.llm.client.api_client import MoonshotClient
+
+            moonshot_cfg = (cfg.get("llm", {}) or {}).get("moonshot", {}) or {}
+            base_url = (os.environ.get("MOONSHOT_BASE_URL") or moonshot_cfg.get("base_url") or "https://api.moonshot.cn/v1").strip()
+            api_key = (os.environ.get("MOONSHOT_API_KEY") or moonshot_cfg.get("api_key") or "").strip()
+            model = (os.environ.get("MOONSHOT_MODEL") or moonshot_cfg.get("model") or "moonshot-v1-8k").strip()
+
+            if not api_key:
+                raise RuntimeError("Moonshot 未配置: 需要在 settings.yaml 的 llm.moonshot 里配置，或设置 MOONSHOT_API_KEY")
+
             llm_client = MoonshotClient(
-                api_key=os.environ.get("MOONSHOT_API_KEY", ""),
-                model=os.environ.get("MOONSHOT_MODEL", "moonshot-v1-8k"),
+                base_url=base_url,
+                api_key=api_key,
+                model=model,
                 timeout_seconds=30
             )
         

@@ -8,12 +8,19 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from src.app.pipelines.base_step import BaseStep
 from src.research.core.pipeline import ResearchPipeline
 from src.research.sources.research_client import create_client_from_env
 from src.research.utils.budget import BudgetConfig
+from src.utils.validation import (
+    validate_evidence_pack,
+    validate_enhanced_item,
+    validate_batch,
+    ValidationError,
+    StrictModeError
+)
 
 if TYPE_CHECKING:
     from src.app.core.context import EpisodeContext
@@ -151,6 +158,27 @@ class ResearchStep(BaseStep):
             self.logger.info("没有 evidence packs，跳过合并")
             return
         
+        # ========== 数据验证：验证 evidence_packs 结构 ==========
+        research_cfg = ctx.config.get("research", {})
+        strict_mode = research_cfg.get("strict_validation", True)  # 默认启用严格模式
+        
+        self.logger.info(f"开始验证 {len(evidence_packs)} 个 evidence packs (strict={strict_mode})")
+        
+        validation_result = validate_batch(
+            evidence_packs,
+            validate_evidence_pack,
+            context="Evidence Packs",
+            fail_fast=False,
+            strict=strict_mode
+        )
+        
+        # 如果验证失败，根据严格模式决定是否抛异常
+        if not validation_result.passed:
+            if strict_mode:
+                validation_result.raise_if_failed(strict=True)
+            else:
+                self.logger.warning(f"Evidence packs 验证失败，但非严格模式，继续执行")
+        
         # 构建 item_id -> evidence_pack 的映射
         evidence_by_item = {}
         for pack in evidence_packs:
@@ -163,6 +191,13 @@ class ResearchStep(BaseStep):
                 if item_id:
                     evidence_by_item[item_id] = pack
         
+        # 调试日志：显示 evidence_by_item 的键
+        self.logger.info(f"Evidence packs 的 item_id: {list(evidence_by_item.keys())}")
+        
+        # 调试日志：显示 items_selected 的 ID
+        item_ids = [item.get("id") for item in ctx.items_selected]
+        self.logger.info(f"Items selected 的 ID: {item_ids}")
+        
         # 将 evidence 合并到 items_selected
         merged_count = 0
         for item in ctx.items_selected:
@@ -171,30 +206,71 @@ class ResearchStep(BaseStep):
                 evidence = evidence_by_item[item_id]
                 
                 # 提取 evidence 内容
-                if hasattr(evidence, "evidence_summary"):
-                    item["research_evidence"] = evidence.evidence_summary
+                if hasattr(evidence, "summary"):
+                    item["research_evidence"] = evidence.summary
                 elif isinstance(evidence, dict):
-                    item["research_evidence"] = evidence.get("evidence_summary", "")
+                    item["research_evidence"] = evidence.get("summary", "")
                 
-                # 提取 claims
-                if hasattr(evidence, "claims"):
-                    item["research_claims"] = [
-                        c.claim_text if hasattr(c, "claim_text") else str(c)
-                        for c in evidence.claims
-                    ]
-                elif isinstance(evidence, dict) and "claims" in evidence:
-                    item["research_claims"] = evidence.get("claims", [])
+                # 提取 claim 信息
+                if hasattr(evidence, "claim"):
+                    # EvidencePack 对象，claim 是一个 Claim 对象
+                    item["research_claims"] = [evidence.claim.text]
+                elif isinstance(evidence, dict) and "claim" in evidence:
+                    # 字典格式，claim 是一个字典
+                    claim_dict = evidence.get("claim", {})
+                    if isinstance(claim_dict, dict):
+                        item["research_claims"] = [claim_dict.get("text", "")]
+                    else:
+                        item["research_claims"] = [str(claim_dict)]
+                
+                # 提取主要证据和对照证据
+                if isinstance(evidence, dict):
+                    item["research_main_evidence"] = evidence.get("main_evidence", [])
+                    item["research_contrast_evidence"] = evidence.get("contrast_evidence", [])
+                    item["research_verdict"] = evidence.get("verdict", "uncertain")
+                    item["research_confidence"] = evidence.get("confidence", 0.0)
                 
                 merged_count += 1
         
         self.logger.info(f"已将 {merged_count}/{len(ctx.items_selected)} 个 items 的 research 结果合并")
         
+        # ========== 数据验证：验证合并后的 items ==========
+        if merged_count < len(ctx.items_selected):
+            missing_count = len(ctx.items_selected) - merged_count
+            self.logger.warning(
+                f"警告: {missing_count} 个 items 没有匹配到 research 结果。"
+                f"这可能导致部分 items 缺少 research 数据。"
+            )
+            
+            if strict_mode:
+                raise ValidationError(
+                    f"严格模式: {missing_count} 个 items 缺少 research 结果，中止流程"
+                )
+        
         # 保存增强后的 items
-        self._save_enhanced_items(ctx)
+        self._save_enhanced_items(ctx, strict_mode=strict_mode)
     
-    def _save_enhanced_items(self, ctx: "EpisodeContext") -> None:
+    def _save_enhanced_items(self, ctx: "EpisodeContext", strict_mode: bool = True) -> None:
         """保存增强后的 items（包含 research 结果）"""
         import json
+        
+        # ========== 数据验证：验证 enhanced_items 结构 ==========
+        self.logger.info(f"开始验证 {len(ctx.items_selected)} 个 enhanced items (strict={strict_mode})")
+        
+        validation_result = validate_batch(
+            ctx.items_selected,
+            lambda item, strict: validate_enhanced_item(item, require_research=True, strict=strict),
+            context="Enhanced Items",
+            fail_fast=False,
+            strict=strict_mode
+        )
+        
+        # 如果验证失败，根据严格模式决定是否抛异常
+        if not validation_result.passed:
+            if strict_mode:
+                validation_result.raise_if_failed(strict=True)
+            else:
+                self.logger.warning(f"Enhanced items 验证失败，但非严格模式，继续保存")
         
         research_dir = ctx.run_dir / "2_research"
         research_dir.mkdir(parents=True, exist_ok=True)

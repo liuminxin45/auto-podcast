@@ -454,12 +454,14 @@ output:
 # Research 配置
 # ============================================================
 research:
-  provider: "bocha"  # metaso | anspire | bocha
+  provider: "bocha"  # metaso | anspire | bocha (数据提供商)
   enabled: true
   timeout_seconds: 60
   max_items: 10
   max_retries: 3
   retry_delay: 1.0
+  use_mcp_server: true  # 是否通过 MCP Server 调用（协议层）
+  strict_validation: true  # 严格模式：数据验证失败时立即中止并抛出异常
   
   # 断言提取
   claims:
@@ -498,9 +500,10 @@ research:
     max_retries: 3
     retry_delay: 1.0
   
-  # Bocha Web Search 配置
+  # Bocha 配置
   bocha:
     api_key: "<api-key>"  # 请替换为您的博查 API Key
+    api_type: "ai-search"  # web-search | ai-search (AI Search 更强大，支持模态卡)
     count: 10  # 返回结果数量 (1-50)
     summary: true  # 是否显示文本摘要
     freshness: "noLimit"  # 搜索时间范围: noLimit, oneDay, oneWeek, oneMonth, oneYear

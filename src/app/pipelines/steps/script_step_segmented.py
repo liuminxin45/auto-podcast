@@ -36,6 +36,48 @@ class ScriptStepSegmented(BaseStep):
             return
         
         from src.utils.logging_config import log_operation
+        from src.utils.validation import validate_enhanced_item, ValidationError
+        
+        # ========== 数据验证：检查 items_selected 是否包含 research 数据 ==========
+        research_cfg = cfg.get("research", {})
+        strict_mode = research_cfg.get("strict_validation", True)
+        
+        self.logger.info(f"开始验证 {len(ctx.items_selected)} 个 items 的 research 数据")
+        
+        items_with_research = 0
+        items_without_research = []
+        
+        for item in ctx.items_selected:
+            item_id = item.get("id", "unknown")
+            has_research = (
+                item.get("research_evidence") or 
+                item.get("research_claims") or 
+                item.get("research_main_evidence")
+            )
+            
+            if has_research:
+                items_with_research += 1
+                # 记录详细信息
+                evidence_count = len(item.get("research_main_evidence", []))
+                claims_count = len(item.get("research_claims", []))
+                self.logger.debug(
+                    f"Item {item_id}: {evidence_count} 条证据, {claims_count} 个论点"
+                )
+            else:
+                items_without_research.append(item_id)
+        
+        self.logger.info(
+            f"Research 数据检查: {items_with_research}/{len(ctx.items_selected)} 个 items 包含 research 数据"
+        )
+        
+        if items_without_research:
+            warning_msg = f"警告: {len(items_without_research)} 个 items 缺少 research 数据: {items_without_research}"
+            self.logger.warning(warning_msg)
+            
+            if strict_mode and items_with_research == 0:
+                raise ValidationError(
+                    f"严格模式: 所有 items 都缺少 research 数据，无法生成高质量脚本"
+                )
         
         log_operation(
             self.logger,
@@ -90,6 +132,86 @@ class ScriptStepSegmented(BaseStep):
         self.logger.info(f"脚本生成完成: {len(segments)} 个段落")
         ctx.add_event("script_segments_generated", segments_count=len(segments))
     
+    def _build_deep_facts_bundle(self, items: list) -> str:
+        """
+        构建深度段落的素材库，包含所有快讯及其 research 数据
+        
+        让 LLM 自由选择深度话题，可以是：
+        - 某一条完整的快讯
+        - 某条快讯中的某个角度或细节
+        - 多条快讯背后的共同现象或趋势
+        - 某个引发思考的点
+        
+        Returns:
+            str: 格式化的素材库文本
+        """
+        if not items:
+            return "今日暂无深度素材"
+        
+        bundle_parts = []
+        bundle_parts.append("【今日快讯素材库】")
+        bundle_parts.append("以下是今天的所有快讯及其深度调研数据，你可以自由选择一个最值得深挖的话题进行深度分析。")
+        bundle_parts.append("")
+        
+        for idx, item in enumerate(items, 1):
+            bundle_parts.append(f"\n========== 快讯 {idx} ==========")
+            
+            # 基本信息
+            title = item.get("title", "")
+            text = item.get("text", "")
+            source = item.get("source_name", "")
+            
+            bundle_parts.append(f"标题：{title}")
+            bundle_parts.append(f"内容：{text}")
+            if source:
+                bundle_parts.append(f"来源：{source}")
+            
+            # Research 数据
+            research_claims = item.get("research_claims", [])
+            if research_claims:
+                bundle_parts.append("\n【关键论点】")
+                for claim in research_claims:
+                    bundle_parts.append(f"  - {claim}")
+            
+            main_evidence = item.get("research_main_evidence", [])
+            if main_evidence:
+                bundle_parts.append(f"\n【深度调研证据】（共 {len(main_evidence)} 条）")
+                for i, evidence in enumerate(main_evidence[:5], 1):  # 最多5条
+                    source_title = evidence.get("source_title", "未知来源")
+                    content = evidence.get("content", "")
+                    published_at = evidence.get("published_at", "")
+                    relevance_score = evidence.get("relevance_score", 0)
+                    
+                    content_preview = content[:200] if content else ""
+                    
+                    bundle_parts.append(f"\n  证据 {i}：{source_title}")
+                    if published_at:
+                        bundle_parts.append(f"  发布时间：{published_at}")
+                    bundle_parts.append(f"  相关度：{relevance_score:.2f}")
+                    if content_preview:
+                        bundle_parts.append(f"  内容摘要：{content_preview}...")
+            
+            verdict = item.get("research_verdict", "")
+            confidence = item.get("research_confidence", 0)
+            if verdict:
+                verdict_map = {
+                    "supported": "已验证支持",
+                    "refuted": "已验证反驳",
+                    "uncertain": "证据不足"
+                }
+                verdict_text = verdict_map.get(verdict, verdict)
+                bundle_parts.append(f"\n【验证结论】{verdict_text}（置信度：{confidence:.2f}）")
+        
+        bundle_parts.append("\n\n========== 深度话题选择指引 ==========")
+        bundle_parts.append("你可以选择：")
+        bundle_parts.append("1. 深挖某一条快讯的完整故事")
+        bundle_parts.append("2. 聚焦某条快讯中的某个有趣角度（如'为什么大厂都爱直播发布会'）")
+        bundle_parts.append("3. 串联多条快讯背后的趋势或现象（如'2026年科技圈的新动向'）")
+        bundle_parts.append("4. 挑选一个引发思考的点进行深度剖析")
+        bundle_parts.append("\n选择标准：最能引发听众兴趣、最有深度挖掘价值、调研证据最充分的话题。")
+        
+        return "\n".join(bundle_parts)
+    
     def _prepare_render_params(self, ctx: EpisodeContext) -> dict:
         """准备 render 方法的参数"""
         # 获取日期信息
@@ -128,38 +250,61 @@ class ScriptStepSegmented(BaseStep):
             )
             news_items.append(news_item)
         
-        # 选择 deep dive 主题（第一条新闻）
-        deep_topic = news_items[0].title if news_items else "今日热点"
-        deep_facts = news_items[0].facts if news_items else ""
+        # ========== 构建深度段落的素材库（所有快讯 + research 数据）==========
+        deep_facts_bundle = self._build_deep_facts_bundle(ctx.items_selected)
         
-        # 如果有research结果，添加到deep_facts中
-        if news_items and news_items[0].research_evidence:
-            deep_facts += f"\n\n【深度调研补充】\n{news_items[0].research_evidence}"
-            
-            # 如果有research_claims，也添加进去
-            if news_items[0].research_claims:
-                claims_text = "\n".join([f"- {claim}" for claim in news_items[0].research_claims])
-                deep_facts += f"\n\n【关键论点】\n{claims_text}"
+        self.logger.info(
+            f"Deep dive 素材库构建完成: {len(deep_facts_bundle)} 字符"
+        )
         
         # 历史事件（暂时使用占位符）
         history_event = "历史上的今天发生了一些重要事件"
         
-        return {
+        render_params = {
             "date_line": date_str,
             "weekday_line": weekday,
             "lunar_line": None,
             "tease_points": [item.title for item in news_items[:4]],
             "history_event": history_event,
             "news_items": news_items,
-            "deep_topic": deep_topic,
-            "deep_facts": deep_facts,
+            "deep_topic": "今日话题",  # 不再预设话题，让 LLM 自由选择
+            "deep_facts": deep_facts_bundle,
             "outro_hint": "明天我们再展开",
             "cta_hint": "喜欢这种A I切片的话，点个关注，就当给我充电。",
         }
+        
+        # ========== 记录传递给 LLM 的数据摘要 ==========
+        self.logger.info("=" * 60)
+        self.logger.info("传递给 LLM 的数据摘要:")
+        self.logger.info(f"  - 新闻条数: {len(news_items)}")
+        self.logger.info(f"  - Deep facts 素材库长度: {len(deep_facts_bundle)} 字符")
+        
+        # 记录 deep_facts 的前500字符（用于调试）
+        deep_facts_preview = deep_facts_bundle[:500] if len(deep_facts_bundle) > 500 else deep_facts_bundle
+        self.logger.info(f"  - Deep facts 预览:\n{deep_facts_preview}...")
+        
+        # 统计 research 数据
+        total_evidence = sum(
+            len(item.get("research_main_evidence", [])) 
+            for item in ctx.items_selected
+        )
+        total_claims = sum(
+            len(item.get("research_claims", [])) 
+            for item in ctx.items_selected
+        )
+        self.logger.info(f"  - 总证据数: {total_evidence}")
+        self.logger.info(f"  - 总论点数: {total_claims}")
+        self.logger.info("=" * 60)
+        
+        return render_params
     
     def _get_llm_adapter(self, cfg: dict):
         """获取 LLM 客户端适配器"""
-        provider = (os.environ.get("LLM_PROVIDER") or "moonshot").strip().lower()
+        provider = (
+            os.environ.get("LLM_PROVIDER")
+            or cfg.get("llm", {}).get("provider")
+            or "moonshot"
+        ).strip().lower()
         if provider not in {"moonshot", "deepseek"}:
             self.logger.warning(f"未知的 LLM_PROVIDER={provider}，回退到 moonshot")
             provider = "moonshot"
@@ -167,24 +312,25 @@ class ScriptStepSegmented(BaseStep):
         timeout_s = int(cfg.get("llm", {}).get("timeout_seconds", 120))
         
         if provider == "deepseek":
-            client = self._create_deepseek_client(timeout_s)
+            client = self._create_deepseek_client(timeout_s, cfg)
         else:
-            client = self._create_moonshot_client(timeout_s)
+            client = self._create_moonshot_client(timeout_s, cfg)
         
         # 包装为适配器
         from src.llm.client.segment_adapter import LLMClientAdapter
         return LLMClientAdapter(client)
     
-    def _create_deepseek_client(self, timeout_s: int):
+    def _create_deepseek_client(self, timeout_s: int, cfg: dict):
         """创建 DeepSeek 客户端"""
         from src.llm.client.api_client import DeepSeekClient
-        
-        base_url = os.environ.get("DEEPSEEK_BASE_URL", "").strip()
-        api_key = os.environ.get("DEEPSEEK_API_KEY", "").strip()
-        model = os.environ.get("DEEPSEEK_MODEL", "deepseek-chat").strip()
-        
+
+        deepseek_cfg = (cfg.get("llm", {}) or {}).get("deepseek", {}) or {}
+        base_url = (os.environ.get("DEEPSEEK_BASE_URL") or deepseek_cfg.get("base_url") or "").strip()
+        api_key = (os.environ.get("DEEPSEEK_API_KEY") or deepseek_cfg.get("api_key") or "").strip()
+        model = (os.environ.get("DEEPSEEK_MODEL") or deepseek_cfg.get("model") or "deepseek-chat").strip()
+
         if not base_url or not api_key:
-            raise RuntimeError("DeepSeek 未配置: 需要设置 DEEPSEEK_BASE_URL 和 DEEPSEEK_API_KEY")
+            raise RuntimeError("DeepSeek 未配置: 需要在 settings.yaml 的 llm.deepseek 里配置，或设置 DEEPSEEK_BASE_URL / DEEPSEEK_API_KEY")
         
         return DeepSeekClient(
             base_url=base_url,
@@ -193,16 +339,17 @@ class ScriptStepSegmented(BaseStep):
             timeout_seconds=timeout_s
         )
     
-    def _create_moonshot_client(self, timeout_s: int):
+    def _create_moonshot_client(self, timeout_s: int, cfg: dict):
         """创建 Moonshot 客户端"""
         from src.llm.client.api_client import MoonshotClient
-        
-        base_url = os.environ.get("MOONSHOT_BASE_URL", "https://api.moonshot.cn/v1").strip()
-        api_key = os.environ.get("MOONSHOT_API_KEY", "").strip()
-        model = os.environ.get("MOONSHOT_MODEL", "moonshot-v1-8k").strip()
-        
+
+        moonshot_cfg = (cfg.get("llm", {}) or {}).get("moonshot", {}) or {}
+        base_url = (os.environ.get("MOONSHOT_BASE_URL") or moonshot_cfg.get("base_url") or "https://api.moonshot.cn/v1").strip()
+        api_key = (os.environ.get("MOONSHOT_API_KEY") or moonshot_cfg.get("api_key") or "").strip()
+        model = (os.environ.get("MOONSHOT_MODEL") or moonshot_cfg.get("model") or "moonshot-v1-8k").strip()
+
         if not api_key:
-            raise RuntimeError("Moonshot 未配置: 需要设置 MOONSHOT_API_KEY")
+            raise RuntimeError("Moonshot 未配置: 需要在 settings.yaml 的 llm.moonshot 里配置，或设置 MOONSHOT_API_KEY")
         
         return MoonshotClient(
             base_url=base_url,

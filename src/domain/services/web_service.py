@@ -68,28 +68,36 @@ class WebService:
             SearchError: 搜索失败
         """
         # 参数校验
+        self.logger.debug(f"[WebService] 接收搜索请求: query='{query[:100]}', max_results={max_results}, kwargs={kwargs}")
+        
         if not query or not query.strip():
+            self.logger.error(f"[WebService] ✗ 参数校验失败: 查询为空")
             raise ValidationError("EMPTY_QUERY", "搜索查询不能为空")
         
         if max_results < 1 or max_results > 50:
+            self.logger.error(f"[WebService] ✗ 参数校验失败: max_results={max_results} 超出范围")
             raise ValidationError("INVALID_MAX_RESULTS", "max_results 必须在 1-50 之间")
         
         self.logger.info(
-            f"执行搜索: query='{query[:50]}...', max_results={max_results}, "
+            f"[WebService] 开始搜索: query='{query[:50]}...', max_results={max_results}, "
             f"provider={self.search_provider.get_provider_name()}"
         )
         
         try:
             # 调用搜索提供商
+            self.logger.debug(f"[WebService] 调用搜索提供商: {self.search_provider.get_provider_name()}")
             raw_results = await self.search_provider.search(
                 query=query,
                 max_results=max_results,
                 **kwargs
             )
             
+            self.logger.info(f"[WebService] 搜索提供商返回 {len(raw_results)} 条原始结果")
+            
             # 转换为领域模型
             results = []
-            for raw in raw_results:
+            self.logger.debug(f"[WebService] 开始转换为领域模型...")
+            for idx, raw in enumerate(raw_results):
                 result = SearchResult(
                     title=raw.get("title", ""),
                     snippet=raw.get("snippet", ""),
@@ -100,14 +108,18 @@ class WebService:
                     metadata=raw.get("metadata", {}),
                 )
                 results.append(result)
+                
+                if idx == 0:
+                    self.logger.debug(f"[WebService] 首条结果: title='{result.title[:50]}', url={result.url}")
             
-            self.logger.info(f"搜索完成: 返回 {len(results)} 条结果")
+            self.logger.info(f"[WebService] ✓ 搜索完成: 返回 {len(results)} 条结果")
             return results
         
-        except SearchError:
+        except SearchError as e:
+            self.logger.error(f"[WebService] ✗ 搜索错误: {e.message}")
             raise
         except Exception as e:
-            self.logger.error(f"搜索失败: {e}")
+            self.logger.error(f"[WebService] ✗ 搜索失败: {e}", exc_info=True)
             raise SearchError("SEARCH_FAILED", f"搜索失败: {str(e)}", detail=str(e))
     
     async def fetch(
@@ -133,22 +145,30 @@ class WebService:
             ExtractionError: 内容提取失败
         """
         # 参数校验
+        self.logger.debug(f"[WebService] 接收抓取请求: url={url}, extract={extract_content}, timeout={timeout}")
+        
         if not url or not url.strip():
+            self.logger.error(f"[WebService] ✗ 参数校验失败: URL 为空")
             raise ValidationError("EMPTY_URL", "URL 不能为空")
         
         if not url.startswith(("http://", "https://")):
+            self.logger.error(f"[WebService] ✗ 参数校验失败: URL 格式错误 {url}")
             raise ValidationError("INVALID_URL", "URL 必须以 http:// 或 https:// 开头")
         
-        self.logger.info(f"抓取网页: url={url}, extract={extract_content}")
+        self.logger.info(f"[WebService] 开始抓取: url={url}, extract={extract_content}")
         
         try:
             # 抓取 HTML
+            self.logger.debug(f"[WebService] 调用 Fetcher 抓取 HTML...")
             fetch_response = await self.fetcher.fetch(url, timeout=timeout or 30)
             html = fetch_response.get("content", "")
             status_code = fetch_response.get("status_code", 200)
             
+            self.logger.info(f"[WebService] HTML 抓取完成: status={status_code}, length={len(html)}")
+            
             if not extract_content:
                 # 不提取正文，直接返回 HTML
+                self.logger.info(f"[WebService] ✓ 返回原始 HTML: length={len(html)}")
                 return FetchResult(
                     url=url,
                     content=html,
@@ -158,6 +178,7 @@ class WebService:
                 )
             
             # 提取正文
+            self.logger.debug(f"[WebService] 调用 Extractor 提取正文...")
             extracted = self.extractor.extract(html, url=url)
             
             title = extracted.get("title")
@@ -165,12 +186,15 @@ class WebService:
             author = extracted.get("author")
             publish_date = extracted.get("publish_date")
             
+            self.logger.info(f"[WebService] 正文提取完成: title='{title}', content_length={len(content)}")
+            
             # 裁剪内容
             is_truncated = False
-            if len(content) > self.max_content_length:
+            original_length = len(content)
+            if original_length > self.max_content_length:
                 content = content[:self.max_content_length]
                 is_truncated = True
-                self.logger.info(f"内容被裁剪: 原长度 {len(content)}, 裁剪后 {self.max_content_length}")
+                self.logger.info(f"[WebService] 内容被裁剪: {original_length} -> {self.max_content_length}")
             
             result = FetchResult(
                 url=url,
@@ -188,14 +212,15 @@ class WebService:
             )
             
             self.logger.info(
-                f"抓取完成: title='{title}', content_length={len(content)}, "
+                f"[WebService] ✓ 抓取完成: title='{title}', content_length={len(content)}, "
                 f"truncated={is_truncated}"
             )
             
             return result
         
-        except (FetchError, ExtractionError):
+        except (FetchError, ExtractionError) as e:
+            self.logger.error(f"[WebService] ✗ 抓取/提取错误: {e.message if hasattr(e, 'message') else str(e)}")
             raise
         except Exception as e:
-            self.logger.error(f"抓取失败: {e}")
+            self.logger.error(f"[WebService] ✗ 抓取失败: {e}", exc_info=True)
             raise FetchError("FETCH_FAILED", f"抓取失败: {str(e)}", detail=str(e))
