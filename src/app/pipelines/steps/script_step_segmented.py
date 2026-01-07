@@ -91,7 +91,7 @@ class ScriptStepSegmented(BaseStep):
         
         # 获取 LLM 客户端适配器
         llm_adapter = self._get_llm_adapter(cfg)
-        
+
         # 创建配置
         show_config = ShowConfig(
             show_name=cfg.get("channel", {}).get("name", "民心A I切片电台"),
@@ -150,7 +150,7 @@ class ScriptStepSegmented(BaseStep):
         
         bundle_parts = []
         bundle_parts.append("【今日快讯素材库】")
-        bundle_parts.append("以下是今天的所有快讯及其深度调研数据，你可以自由选择一个最值得深挖的话题进行深度分析。")
+        bundle_parts.append("以下是今天的所有快讯及其深度调研数据，供你围绕既定深度主题取用与分析。")
         bundle_parts.append("")
         
         for idx, item in enumerate(items, 1):
@@ -202,18 +202,14 @@ class ScriptStepSegmented(BaseStep):
                 verdict_text = verdict_map.get(verdict, verdict)
                 bundle_parts.append(f"\n【验证结论】{verdict_text}（置信度：{confidence:.2f}）")
         
-        bundle_parts.append("\n\n========== 深度话题选择指引 ==========")
-        bundle_parts.append("你可以选择：")
-        bundle_parts.append("1. 深挖某一条快讯的完整故事")
-        bundle_parts.append("2. 聚焦某条快讯中的某个有趣角度（如'为什么大厂都爱直播发布会'）")
-        bundle_parts.append("3. 串联多条快讯背后的趋势或现象（如'2026年科技圈的新动向'）")
-        bundle_parts.append("4. 挑选一个引发思考的点进行深度剖析")
-        bundle_parts.append("\n选择标准：最能引发听众兴趣、最有深度挖掘价值、调研证据最充分的话题。")
+        bundle_parts.append("\n\n========== 使用说明 ==========")
+        bundle_parts.append("深度主题已在前序确定。请只从上述素材中挑选与该主题最相关的事实、证据与细节来支持你的分析。")
         
         return "\n".join(bundle_parts)
     
     def _prepare_render_params(self, ctx: EpisodeContext) -> dict:
         """准备 render 方法的参数"""
+        cfg = ctx.config
         # 获取日期信息
         date_str = str(ctx.episode_date)
         weekday_map = {0: "一", 1: "二", 2: "三", 3: "四", 4: "五", 5: "六", 6: "日"}
@@ -257,8 +253,64 @@ class ScriptStepSegmented(BaseStep):
             f"Deep dive 素材库构建完成: {len(deep_facts_bundle)} 字符"
         )
         
-        # 历史事件（暂时使用占位符）
+        # 历史事件：优先从 today_in_history 数据源拉取；失败则回退占位符
         history_event = "历史上的今天发生了一些重要事件"
+        try:
+            from src.fetch import FetcherRegistry
+            from src.fetch.core.base import FetchStatus
+
+            # 转换episode_date为date对象
+            import datetime as dt
+            if isinstance(ctx.episode_date, str):
+                episode_date_obj = dt.datetime.strptime(ctx.episode_date, "%Y-%m-%d").date()
+            else:
+                episode_date_obj = ctx.episode_date
+
+            history_source = None
+            for source_config in (cfg.get("sources", {}) or {}).get("rss", []) or []:
+                if not isinstance(source_config, dict):
+                    continue
+                if (source_config.get("fetcher") or "").strip() == "today_in_history":
+                    history_source = source_config
+                    break
+
+            if history_source:
+                fetcher = FetcherRegistry.create_instance("today_in_history")
+                if fetcher and fetcher.validate_config(history_source):
+                    timeout_s = int((cfg.get("fetch", {}) or {}).get("timeout_seconds", 30))
+                    result = fetcher.fetch_items(
+                        config=history_source,
+                        episode_date=episode_date_obj,
+                        timeout_seconds=timeout_s,
+                    )
+                    if result.status in (FetchStatus.SUCCESS, FetchStatus.PARTIAL) and result.items:
+                        lines = []
+                        for idx, it in enumerate(result.items, 1):
+                            title = (it.get("title") or "").strip()
+                            content = (it.get("content") or it.get("summary") or "").strip()
+                            meta = it.get("_metadata") or {}
+                            event_type = (meta.get("event_type") or "").strip()
+                            link = (it.get("url") or "").strip()
+                            if not title or not content:
+                                continue
+
+                            # 控制长度，避免把 history 段 prompt 撑爆
+                            content = content.replace("\n", " ").strip()
+                            if len(content) > 240:
+                                content = content[:240].rstrip() + "…"
+
+                            suffix = []
+                            if event_type:
+                                suffix.append(f"类型:{event_type}")
+                            if link:
+                                suffix.append(f"链接:{link}")
+                            suffix_text = f"（{'；'.join(suffix)}）" if suffix else ""
+                            lines.append(f"{idx}. {title}：{content}{suffix_text}")
+
+                        if lines:
+                            history_event = "\n".join(lines)
+        except Exception as e:
+            self.logger.warning(f"历史事件拉取失败，使用占位符: {e}")
         
         render_params = {
             "date_line": date_str,

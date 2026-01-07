@@ -14,6 +14,8 @@ import argparse
 import datetime as dt
 import json
 import logging
+import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -127,7 +129,22 @@ def main():
     log.info(f"Episode ID: {episode_id} | 日期: {episode_date} | 步骤: {args.step} | 超时: {args.timeout_seconds}s")
     log.info("=" * 80)
     
+    mcp_proc: subprocess.Popen | None = None
     try:
+        # Auto start MCP Server if enabled in config
+        research_cfg = config.get("research", {})
+        use_mcp = bool(research_cfg.get("use_mcp_server", False))
+        if use_mcp:
+            log.info("MCP option enabled: starting mcp-server")
+            env = os.environ.copy()
+            mcp_proc = subprocess.Popen(
+                [sys.executable, "-m", "src.mcp_server.server"],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                env=env,
+            )
+
         # 调用 orchestrator
         if args.step == "all" or args.step == "fetch":
             log.info(">>> 开始执行完整 Pipeline (7 个步骤)")
@@ -168,6 +185,19 @@ def main():
         import traceback
         traceback.print_exc()
         return 1
+
+    finally:
+        # Ensure MCP Server is stopped
+        if mcp_proc is not None:
+            try:
+                log.info("Stopping mcp-server")
+                mcp_proc.terminate()
+                try:
+                    mcp_proc.wait(timeout=5)
+                except Exception:
+                    mcp_proc.kill()
+            except Exception as _e:
+                log.warning(f"Failed to stop mcp-server: {_e}")
 
 
 if __name__ == "__main__":

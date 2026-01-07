@@ -184,6 +184,14 @@ sources:
         - "https://60s.7se.cn/v2/60s/rss"
         - "https://60s.mizhoubaobei.top/v2/60s/rss"
 
+    - name: "历史上的今天"
+      fetcher: "today_in_history"
+      enabled: false
+      category: "history"
+      base_url: "https://60s.viki.moe"
+      params:
+        encoding: "json"
+
     - name: "AI日报快讯"
       fetcher: "ai_daily_news"
       enabled: false

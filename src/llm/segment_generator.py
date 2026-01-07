@@ -14,6 +14,7 @@ Segment Script Generator（保持接口不变：可直接替换）
 from __future__ import annotations
 
 import argparse
+import json
 from dataclasses import dataclass, replace
 from typing import List, Optional, Protocol, Dict
 
@@ -61,7 +62,7 @@ POLISH_PROMPT = r"""
    - 知道全称就写全称（例如"中消协"必须写"中国消费者协会"）。
    - 不确定全称就用中性指代（"相关部门/消费者组织/行业协会/平台方/监管部门"），绝不猜测。
 6) 口头禅与称呼：
-   - 把"我把它翻译成一句话/你可以这么理解/所以呢/简单说/翻译一下"等减少到"整段最多1次"，能不用就不用，用时要非常自然。
+   - 禁止使用这些口头禅与同义变体："我把它翻译成一句话"、"你可以这么理解"、"所以呢"、"简单说"、"翻译一下"。
    - 避免频繁直接说"那跟你有什么关系呢"，更自然地改成"这和很多人/普通人/大家有什么关系"这类说法。
    - 优先用“大家/普通人/很多人/消费者”等集合称呼，而不是反复直接用“你”。
    - 避免生硬的"第一条/第二条/第三条"枚举，可以改成"还有一件事/再看一条消息"等更口语的过渡。
@@ -230,6 +231,8 @@ class SegmentScriptGenerator:
         history_event: str,
         news_items: List[NewsItem],
         deep_topic: str,
+        deep_hook_question: Optional[str] = None,
+        deep_anchor_title: Optional[str] = None,
         deep_facts: str,
         outro_hint: str,
         cta_hint: Optional[str] = None,
@@ -258,7 +261,13 @@ class SegmentScriptGenerator:
             Segment(
                 segment_id="briefs",
                 title="快进快讯（资讯串讲）",
-                prompt=build_brief_news_prompt(cfg, news_items),
+                prompt=build_brief_news_prompt(
+                    cfg,
+                    news_items,
+                    deep_topic=deep_topic,
+                    deep_hook_question=deep_hook_question,
+                    deep_anchor_title=deep_anchor_title,
+                ),
                 temperature=0.6,
             )
         )
@@ -267,7 +276,7 @@ class SegmentScriptGenerator:
             Segment(
                 segment_id="deep_dive",
                 title="慢放一条（深度拆解）",
-                prompt=build_deep_dive_prompt(cfg, deep_topic, deep_facts),
+                prompt=build_deep_dive_prompt(cfg, deep_topic, deep_facts, hook_question=deep_hook_question),
                 temperature=0.7,
             )
         )
@@ -293,6 +302,8 @@ class SegmentScriptGenerator:
         history_event: str,
         news_items: List[NewsItem],
         deep_topic: str,
+        deep_hook_question: Optional[str] = None,
+        deep_anchor_title: Optional[str] = None,
         deep_facts: str,
         outro_hint: str = "明天我们再展开",
         cta_hint: Optional[str] = "喜欢这种A I切片的话，点个关注，就当给我充电。",
@@ -321,44 +332,122 @@ class SegmentScriptGenerator:
         if not tease_points:
             tease_points = [it.title.strip() for it in news_items[:6]]
 
-        segments = self.build_segments(
-            cfg=cfg,
-            date_line=date_line,
-            weekday_line=weekday_line,
-            lunar_line=lunar_line,
-            tease_points=tease_points,
-            history_event=history_event,
-            news_items=news_items,
-            deep_topic=deep_topic,
-            deep_facts=deep_facts,
-            outro_hint=outro_hint,
-            cta_hint=cta_hint,
-        )
-
         outputs: Dict[str, str] = {}
         parts: List[str] = []
 
-        for seg in segments:
+        def _extract_json_obj(s: str) -> dict:
+            s = (s or "").strip()
+            if not s:
+                return {}
+            try:
+                out = json.loads(s)
+                return out if isinstance(out, dict) else {}
+            except Exception:
+                pass
+            start = s.find("{")
+            end = s.rfind("}")
+            if start != -1 and end != -1 and end > start:
+                try:
+                    out = json.loads(s[start : end + 1])
+                    return out if isinstance(out, dict) else {}
+                except Exception:
+                    return {}
+            return {}
+
+        def _gen(seg: Segment) -> str:
             # 第一次调用：生成初稿
-            draft = self.llm.generate(
-                system=SYSTEM_PROMPT,
-                user=seg.prompt,
-                temperature=seg.temperature,
-            ).strip()
+            draft = self.llm.generate(system=SYSTEM_PROMPT, user=seg.prompt, temperature=seg.temperature).strip()
             
             # 第二次调用：口播润色
             # 温度降低到0.4，使语言更稳定、更像播音稿
-            polished = self.llm.generate(
-                system=SYSTEM_PROMPT,
-                user=f"{POLISH_PROMPT}\n\n{draft}",
-                temperature=0.4,
-            ).strip()
+            polished = self.llm.generate(system=SYSTEM_PROMPT, user=f"{POLISH_PROMPT}\n\n{draft}", temperature=0.4).strip()
             
             # 内部后处理：规范化机构简称
-            final_text = _normalize_text(polished)
-            
-            outputs[seg.segment_id] = final_text
-            parts.append(final_text)
+            return _normalize_text(polished)
+
+        opening_seg = Segment(
+            segment_id="opening",
+            title="开机自检（开场）",
+            prompt=build_opening_prompt(cfg, date_line, lunar_line, weekday_line, tease_points),
+            temperature=0.6,
+        )
+        opening_text = _gen(opening_seg)
+        outputs["opening"] = opening_text
+        parts.append(opening_text)
+
+        history_seg = Segment(
+            segment_id="history",
+            title="时间倒带（历史上的今天）",
+            prompt=build_history_prompt(cfg, history_event),
+            temperature=0.7,
+        )
+        history_text = _gen(history_seg)
+        outputs["history"] = history_text
+        parts.append(history_text)
+
+        if not deep_hook_question or not deep_anchor_title or not deep_topic or deep_topic.strip() in {"今日话题"}:
+            titles = [it.title.strip() for it in (news_items or []) if getattr(it, "title", None) and it.title.strip()]
+            if titles:
+                titles_text = "\n".join([f"{i+1}. {t}" for i, t in enumerate(titles)])
+                system2 = (
+                    "你是中文资讯播客的选题编辑。你的任务是从快讯标题中挑出一个最值得做深度的主题，并给出一个钩子问题。"
+                    "你只输出JSON，不输出其它任何文字。"
+                )
+                user2 = (
+                    "给你今天的快讯标题列表。请基于标题，输出一个用于深度段的主题与钩子。\n\n"
+                    "要求：\n"
+                    "- deep_topic：一句话主题，偏问题导向/矛盾导向，适合做3分钟左右深度拆解。\n"
+                    "- deep_hook_question：一句短问题（15-25字左右），用于快讯段埋钩子；不要在快讯段回答。\n"
+                    "- deep_anchor_title：从标题列表中原封不动选择一个最相关的标题（必须完全一致），作为快讯段埋钩子的锚点。\n"
+                    "- 不要使用口头禅：我把它翻译成一句话 / 你可以这么理解 / 所以呢 / 简单说 / 翻译一下。\n\n"
+                    "输出JSON格式如下：\n"
+                    '{"deep_topic":"...","deep_hook_question":"...","deep_anchor_title":"..."}\n\n'
+                    "标题列表：\n"
+                    f"{titles_text}"
+                )
+                raw2 = self.llm.generate(system=system2, user=user2, temperature=0.2)
+                data2 = _extract_json_obj(raw2)
+                deep_topic = (data2.get("deep_topic") or deep_topic or "").strip() or deep_topic
+                deep_hook_question = (data2.get("deep_hook_question") or "").strip() or deep_hook_question
+                deep_anchor_title = (data2.get("deep_anchor_title") or "").strip() or deep_anchor_title
+                if deep_anchor_title and deep_anchor_title not in titles:
+                    deep_anchor_title = None
+
+        briefs_seg = Segment(
+            segment_id="briefs",
+            title="快进快讯（资讯串讲）",
+            prompt=build_brief_news_prompt(
+                cfg,
+                news_items,
+                deep_topic=deep_topic,
+                deep_hook_question=deep_hook_question,
+                deep_anchor_title=deep_anchor_title,
+            ),
+            temperature=0.6,
+        )
+        briefs_text = _gen(briefs_seg)
+        outputs["briefs"] = briefs_text
+        parts.append(briefs_text)
+
+        deep_seg = Segment(
+            segment_id="deep_dive",
+            title="慢放一条（深度拆解）",
+            prompt=build_deep_dive_prompt(cfg, deep_topic, deep_facts, hook_question=deep_hook_question),
+            temperature=0.7,
+        )
+        deep_text = _gen(deep_seg)
+        outputs["deep_dive"] = deep_text
+        parts.append(deep_text)
+
+        outro_seg = Segment(
+            segment_id="outro",
+            title="关机前一句（收尾）",
+            prompt=build_outro_prompt(cfg, outro_hint, cta_hint=cta_hint),
+            temperature=0.6,
+        )
+        outro_text = _gen(outro_seg)
+        outputs["outro"] = outro_text
+        parts.append(outro_text)
 
         outputs["full_script"] = "\n\n".join([p for p in parts if p])
         return outputs

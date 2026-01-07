@@ -127,6 +127,9 @@ class TopicScoreBreakdown(BaseModel):
     matched_compounds: List[str] = Field(default_factory=list, description="命中的联合规则")
     matched_domains: List[str] = Field(default_factory=list, description="命中的语义域")
     domain_bonus: float = Field(default=0.0, description="语义域加成")
+
+    # 题材多样性惩罚（新增）
+    diversity_penalty: float = Field(default=0.0, description="题材多样性惩罚（例如某域过多时降权）")
     
     # 总分 (0-100)
     total_score: float = Field(default=0.0, description="总分 0-100")

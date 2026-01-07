@@ -226,6 +226,51 @@ class AutoTopicPipeline:
                 if c.topic_score >= self.config.scorer_config.threshold_maybe_publish
             ]
             self.logger.info(f"  完成: 策略调整后保留 {len(filtered_candidates)} 个候选")
+
+        # 步骤4.6: 题材多样性约束（抑制电车刷屏）
+        # 说明：保留 1-2 条最值得讲的电车，但避免同一期被 ev_auto 占满。
+        if filtered_candidates:
+            max_ev_auto = 2
+            ev_seen = 0
+
+            # 先按分数排序，优先保留高分电车，低分电车后续再逐条降权
+            filtered_candidates.sort(key=lambda c: c.topic_score, reverse=True)
+
+            for c in filtered_candidates:
+                penalty = 0.0
+                if "ev_auto" in (c.domains or []):
+                    ev_seen += 1
+                    if ev_seen > max_ev_auto:
+                        # 递减收益：第3条开始降权，越往后惩罚越大
+                        penalty = 8.0 + float(ev_seen - max_ev_auto - 1) * 4.0
+
+                if penalty > 0:
+                    original_score = c.topic_score
+                    c.topic_score = max(0.0, min(100.0, original_score - penalty))
+
+                    # 写入 candidate 的 breakdown（dict）
+                    if c.score_breakdown is not None:
+                        c.score_breakdown["diversity_penalty"] = penalty
+                        c.score_breakdown["total_score"] = c.topic_score
+
+                    # 写入 TopicScoreBreakdown（pydantic）
+                    bd = breakdown_map.get(c.topic_id)
+                    if bd is not None:
+                        bd.diversity_penalty = penalty
+                        bd.total_score = c.topic_score
+
+                    self.logger.info(
+                        f"多样性惩罚(ev_auto): {c.title[:40]} | "
+                        f"{original_score:.1f} -> {c.topic_score:.1f} (-{penalty:.1f}) | ev_seen={ev_seen}"
+                    )
+
+            # 重新过滤与排序（惩罚后分数可能跌破阈值）
+            filtered_candidates = [
+                c for c in filtered_candidates
+                if c.topic_score >= self.config.scorer_config.threshold_maybe_publish
+            ]
+            filtered_candidates.sort(key=lambda c: c.topic_score, reverse=True)
+            self.logger.info(f"  完成: 多样性约束后保留 {len(filtered_candidates)} 个候选")
         
         if not filtered_candidates:
             self.logger.warning("所有候选均被打分淘汰，pipeline终止")
@@ -337,6 +382,8 @@ class AutoTopicPipeline:
                         "content_score": b.content_score,
                         "proxy_score": b.proxy_score,
                         "structure_bonus": b.structure_bonus,
+                        "strategy_adjustment": b.strategy_adjustment,
+                        "diversity_penalty": b.diversity_penalty,
                         "total_score": b.total_score,
                         "decision": b.decision,
                         "details": {
@@ -350,6 +397,8 @@ class AutoTopicPipeline:
                             "continuity": b.continuity_bonus,
                             "data_enrichable": b.data_enrichable_bonus,
                             "follow_up": b.follow_up_bonus,
+                            "domain_bonus": b.domain_bonus,
+                            "matched_domains": b.matched_domains,
                         }
                     }
                     for b in breakdowns
@@ -414,6 +463,10 @@ class AutoTopicPipeline:
             self.logger.info(f"     ├─ 连续性: {breakdown.continuity_bonus:.2f}/6")
             self.logger.info(f"     ├─ 数据可补充: {breakdown.data_enrichable_bonus:.2f}/6")
             self.logger.info(f"     └─ 可跟进: {breakdown.follow_up_bonus:.2f}/3")
+            if abs(breakdown.strategy_adjustment) > 0.1:
+                self.logger.info(f"  ├─ 策略增强: {breakdown.strategy_adjustment:+.2f}")
+            if breakdown.diversity_penalty > 0.1:
+                self.logger.info(f"  ├─ 多样性惩罚: -{breakdown.diversity_penalty:.2f}")
         
         self.logger.info("\n" + "=" * 80)
         self.logger.info(f"通过LLM Gate的主题 ({len(passed_candidates)})：")
