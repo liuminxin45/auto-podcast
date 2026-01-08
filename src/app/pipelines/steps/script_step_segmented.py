@@ -92,6 +92,56 @@ class ScriptStepSegmented(BaseStep):
         # 获取 LLM 客户端适配器
         llm_adapter = self._get_llm_adapter(cfg)
 
+        # ========== 可选：使用 LangGraph Agent 生成脚本（最小侵入）==========
+        agent_cfg = (cfg.get("script", {}) or {}).get("agent", {}) or {}
+        use_agent = bool(agent_cfg.get("enabled", False))
+        if use_agent:
+            from src.llm.podcast_script_agent import generate_segmented_script
+
+            news_bundle = self._build_news_bundle_for_agent(ctx)
+            style_profile = self._build_style_profile(cfg)
+
+            temperature = float(agent_cfg.get("temperature", cfg.get("llm", {}).get("temperature", 0.7)))
+            threshold = int(agent_cfg.get("threshold", 78))
+            max_revisions = int(agent_cfg.get("max_revisions", 2))
+
+            try:
+                result = generate_segmented_script(
+                    llm=llm_adapter,
+                    news=news_bundle,
+                    style_profile=style_profile,
+                    temperature=temperature,
+                    threshold=threshold,
+                    max_revisions=max_revisions,
+                )
+
+                outputs = dict(result.outputs)
+                self._save_agent_debug(ctx, result)
+
+                # 走后续统一流程：outputs -> segments
+                segments = self._convert_outputs_to_segments(outputs)
+
+                for segment in segments:
+                    self._save_segment(ctx, segment)
+
+                ctx.script_segments = segments
+                self._save_summary(ctx, segments)
+
+                self.logger.info(
+                    f"脚本生成完成(Agent): {len(segments)} 个段落, score={result.score}, revisions={result.revisions}"
+                )
+                ctx.add_event(
+                    "script_segments_generated",
+                    segments_count=len(segments),
+                    agent=True,
+                    score=result.score,
+                    revisions=result.revisions,
+                    issues=result.issues,
+                )
+                return
+            except Exception as e:
+                self.logger.exception(f"Agent 脚本生成失败，回退到原有生成器: {e}")
+
         # 创建配置
         show_config = ShowConfig(
             show_name=cfg.get("channel", {}).get("name", "民心A I切片电台"),
@@ -131,6 +181,82 @@ class ScriptStepSegmented(BaseStep):
         
         self.logger.info(f"脚本生成完成: {len(segments)} 个段落")
         ctx.add_event("script_segments_generated", segments_count=len(segments))
+
+    def _build_style_profile(self, cfg: dict) -> str:
+        """将现有频道风格配置拼成 agent 的 style_profile 文本"""
+        channel = cfg.get("channel", {}) or {}
+        style = channel.get("style", {}) or {}
+        tone = (style.get("tone") or "").strip()
+        audience = (style.get("audience") or "").strip()
+        name = (channel.get("name") or "").strip()
+        length = style.get("length_minutes")
+        length_s = f"{length}分钟" if length is not None else ""
+
+        parts = []
+        if name:
+            parts.append(f"频道：{name}")
+        if tone:
+            parts.append(f"语气：{tone}")
+        if audience:
+            parts.append(f"受众：{audience}")
+        if length_s:
+            parts.append(f"时长：{length_s}")
+        return "；".join(parts) if parts else "口语化、生动、像朋友聊天"
+
+    def _build_news_bundle_for_agent(self, ctx: EpisodeContext) -> str:
+        """把 items_selected + research 打包成 agent 输入"""
+        lines = []
+        lines.append("【今日新闻素材】")
+        for idx, item in enumerate(ctx.items_selected or [], 1):
+            title = (item.get("title") or "").strip()
+            text = (item.get("text") or item.get("content") or "").strip()
+            source = (item.get("source_name") or item.get("source") or "").strip()
+
+            lines.append(f"\n========== 新闻 {idx} ==========")
+            if title:
+                lines.append(f"标题：{title}")
+            if source:
+                lines.append(f"来源：{source}")
+            if text:
+                if len(text) > 800:
+                    text = text[:800].rstrip() + "…"
+                lines.append(f"内容：{text}")
+
+            claims = item.get("research_claims") or []
+            if claims:
+                lines.append("\n【关键论点】")
+                for c in claims[:8]:
+                    lines.append(f"- {c}")
+
+            evidences = item.get("research_main_evidence") or []
+            if evidences:
+                lines.append(f"\n【主要证据】（{len(evidences)}条，节选）")
+                for ev in evidences[:3]:
+                    st = (ev.get("source_title") or "").strip()
+                    ct = (ev.get("content") or "").strip()
+                    if ct and len(ct) > 240:
+                        ct = ct[:240].rstrip() + "…"
+                    if st:
+                        lines.append(f"- {st}：{ct}")
+                    elif ct:
+                        lines.append(f"- {ct}")
+
+        return "\n".join(lines).strip() + "\n"
+
+    def _save_agent_debug(self, ctx: EpisodeContext, result) -> None:
+        """保存 agent 产物，便于回归"""
+        agent_dir = ctx.run_dir / "3_script" / "agent"
+        agent_dir.mkdir(parents=True, exist_ok=True)
+
+        (agent_dir / "outline.txt").write_text(result.outline or "", encoding="utf-8")
+        (agent_dir / "critique.json").write_text(
+            json.dumps(result.critique or {}, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        (agent_dir / "final_outputs.json").write_text(
+            json.dumps(result.outputs or {}, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
     
     def _build_deep_facts_bundle(self, items: list) -> str:
         """

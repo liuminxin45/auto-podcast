@@ -629,6 +629,13 @@ script:
     pass_threshold: 0.7
     drop_threshold: 0.4
     max_revisions: 3
+
+  # LangGraph Agent 配置（可选，默认关闭）
+  agent:
+    enabled: false
+    temperature: 0.7
+    threshold: 78
+    max_revisions: 2
   
   # 章节配置
   chapters:
