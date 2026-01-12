@@ -52,19 +52,21 @@ def bocha_web_search_items(
     summary: bool = True,
     freshness: str = "noLimit",
     max_items: Optional[int] = None,
-    save_dir: Optional[str] = None
+    save_dir: Optional[str] = None,
+    api_type: str = "ai-search"
 ) -> Optional[Dict[str, Any]]:
     """
-    使用博查 Web Search API 搜索新闻条目
+    使用博查搜索 API 搜索新闻条目
     
     Args:
         items: 要搜索的新闻条目列表
         api_key: 博查 API Key
         timeout_seconds: 请求超时时间
         count: 返回结果数量 (1-50)
-        summary: 是否显示文本摘要
+        summary: 是否显示文本摘要 (仅 web-search)
         freshness: 搜索时间范围
         max_items: 最大处理条目数
+        api_type: API 类型 (web-search | ai-search)，默认 ai-search
         
     Returns:
         搜索结果字典，包含 ok, response_json, response_text 等字段
@@ -97,17 +99,28 @@ def bocha_web_search_items(
     # 合并查询（博查支持复杂查询）
     combined_query = " ".join(queries[:3])  # 只取前3个查询避免过长
     
-    url = "https://api.bocha.cn/v1/web-search"
+    # 根据 api_type 选择端点
+    if api_type == "ai-search":
+        url = "https://api.bocha.cn/v1/ai-search"
+        payload = {
+            "query": combined_query,
+            "freshness": freshness,
+            "answer": False,  # AI Search 使用 answer 参数
+            "count": min(count, 50),  # 最大50
+            "stream": False
+        }
+    else:  # web-search
+        url = "https://api.bocha.cn/v1/web-search"
+        payload = {
+            "query": combined_query,
+            "freshness": freshness,
+            "summary": summary,
+            "count": min(count, 50)  # 最大50
+        }
+    
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json"
-    }
-    
-    payload = {
-        "query": combined_query,
-        "freshness": freshness,
-        "summary": summary,
-        "count": min(count, 50)  # 最大50
     }
     
     try:
@@ -165,63 +178,186 @@ def bocha_web_search_items(
         if response.status_code == 200:
             result = response.json()
             
+            # 检查业务状态码
+            code = result.get("code")
+            if code != 200:
+                # 处理业务错误码
+                error_msg = result.get("message", result.get("msg", "未知错误"))
+                log_id = result.get("log_id", "")
+                
+                # 友好错误提示
+                if code == 400:
+                    if "Missing parameter" in error_msg:
+                        friendly_msg = f"请求参数缺失: {error_msg}"
+                    elif "API KEY is missing" in error_msg:
+                        friendly_msg = "权限校验失败：Header 缺少 Authorization"
+                    else:
+                        friendly_msg = f"请求参数错误: {error_msg}"
+                elif code == 401:
+                    friendly_msg = f"API KEY 无效，权限校验失败: {error_msg}"
+                elif code == 403:
+                    if "not have enough money" in error_msg:
+                        friendly_msg = "余额不足，请前往 https://open.bocha.cn 进行充值"
+                    else:
+                        friendly_msg = f"访问被拒绝: {error_msg}"
+                elif code == 429:
+                    friendly_msg = "请求频率达到限制，频率限制与总充值金额有关，详见 API 定价"
+                elif code == 500:
+                    friendly_msg = f"博查服务异常: {error_msg}"
+                else:
+                    friendly_msg = f"博查 API 错误 (code={code}): {error_msg}"
+                
+                logger.error(f"[博查] {friendly_msg} [log_id={log_id}]")
+                return {"ok": False, "error": friendly_msg, "code": code, "log_id": log_id}
+            
             # 检查响应格式
-            if result.get("code") == 200 and result.get("data"):
-                data = result["data"]
-                web_pages = data.get("webPages", {})
-                pages = web_pages.get("value", [])
-                
-                # 构建返回格式（兼容现有 research 流程）
-                content_parts = []
-                for i, page in enumerate(pages[:count], 1):
-                    name = page.get("name", "")
-                    snippet = page.get("snippet", "")
-                    summary_text = page.get("summary", "")
-                    url_link = page.get("url", "")
-                    site_name = page.get("siteName", "")
-                    date_published = page.get("datePublished", "")
+            if result.get("code") == 200:
+                # AI-Search 格式：使用 messages
+                if api_type == "ai-search" and result.get("messages"):
+                    messages = result.get("messages", [])
+                    content_parts = []
+                    page_count = 0
                     
-                    part = f"[{i}] {name}\n"
-                    if site_name:
-                        part += f"来源: {site_name}\n"
-                    if date_published:
-                        part += f"发布时间: {date_published}\n"
-                    if summary_text:
-                        part += f"摘要: {summary_text}\n"
-                    elif snippet:
-                        part += f"简介: {snippet}\n"
-                    if url_link:
-                        part += f"链接: {url_link}\n"
-                    content_parts.append(part)
-                
-                content = "\n".join(content_parts)
-                
-                logger.info(f"博查搜索成功，返回 {len(pages)} 条结果")
-                return {
-                    "ok": True,
-                    "response_json": {
-                        "choices": [{
-                            "message": {
-                                "content": content
-                            }
-                        }]
-                    },
-                    "response_text": content,
-                    "model": "bocha-web-search",
-                    "metadata": {
-                        "total_results": web_pages.get("totalEstimatedMatches", 0),
-                        "query": combined_query,
-                        "pages_count": len(pages)
+                    for message in messages:
+                        if message.get("role") == "assistant" and message.get("type") == "source":
+                            content_type = message.get("content_type")
+                            content_str = message.get("content", "")
+                            
+                            # 解析网页结果
+                            if content_type == "webpage" and content_str:
+                                try:
+                                    webpage_data = json.loads(content_str)
+                                    pages = webpage_data.get("value", [])
+                                    
+                                    for page in pages[:count]:
+                                        page_count += 1
+                                        name = page.get("name", "")
+                                        snippet = page.get("snippet", "")
+                                        summary_text = page.get("summary", "")
+                                        url_link = page.get("url", "")
+                                        site_name = page.get("siteName", "")
+                                        date_published = page.get("dateLastCrawled", "")
+                                        
+                                        part = f"[{page_count}] {name}\n"
+                                        if site_name:
+                                            part += f"来源: {site_name}\n"
+                                        if date_published:
+                                            part += f"发布时间: {date_published}\n"
+                                        if summary_text:
+                                            part += f"摘要: {summary_text}\n"
+                                        elif snippet:
+                                            part += f"简介: {snippet}\n"
+                                        if url_link:
+                                            part += f"链接: {url_link}\n"
+                                        content_parts.append(part)
+                                except json.JSONDecodeError:
+                                    logger.warning(f"无法解析网页内容: {content_str[:100]}")
+                    
+                    content = "\n".join(content_parts)
+                    logger.info(f"博查 AI-Search 成功，返回 {page_count} 条结果")
+                    return {
+                        "ok": True,
+                        "response_json": {
+                            "choices": [{
+                                "message": {
+                                    "content": content
+                                }
+                            }]
+                        },
+                        "response_text": content,
+                        "model": "bocha-ai-search",
+                        "metadata": {
+                            "query": combined_query,
+                            "pages_count": page_count,
+                            "messages_count": len(messages)
+                        }
                     }
-                }
-            else:
-                error_msg = result.get("message", "未知错误")
-                logger.error(f"博查 API 返回错误: {error_msg}")
-                return {"ok": False, "error": error_msg}
+                
+                # Web-Search 格式：使用 data.webPages
+                elif result.get("data"):
+                    data = result["data"]
+                    web_pages = data.get("webPages", {})
+                    pages = web_pages.get("value", [])
+                    
+                    # 构建返回格式（兼容现有 research 流程）
+                    content_parts = []
+                    for i, page in enumerate(pages[:count], 1):
+                        name = page.get("name", "")
+                        snippet = page.get("snippet", "")
+                        summary_text = page.get("summary", "")
+                        url_link = page.get("url", "")
+                        site_name = page.get("siteName", "")
+                        date_published = page.get("datePublished", "")
+                        
+                        part = f"[{i}] {name}\n"
+                        if site_name:
+                            part += f"来源: {site_name}\n"
+                        if date_published:
+                            part += f"发布时间: {date_published}\n"
+                        if summary_text:
+                            part += f"摘要: {summary_text}\n"
+                        elif snippet:
+                            part += f"简介: {snippet}\n"
+                        if url_link:
+                            part += f"链接: {url_link}\n"
+                        content_parts.append(part)
+                    
+                    content = "\n".join(content_parts)
+                    
+                    logger.info(f"博查 Web-Search 成功，返回 {len(pages)} 条结果")
+                    return {
+                        "ok": True,
+                        "response_json": {
+                            "choices": [{
+                                "message": {
+                                    "content": content
+                                }
+                            }]
+                        },
+                        "response_text": content,
+                        "model": "bocha-web-search",
+                        "metadata": {
+                            "total_results": web_pages.get("totalEstimatedMatches", 0),
+                            "query": combined_query,
+                            "pages_count": len(pages)
+                        }
+                    }
+                else:
+                    error_msg = "响应格式不正确：未找到有效的搜索结果数据"
+                    logger.error(f"博查 API 返回错误: {error_msg}")
+                    logger.debug(f"响应内容: {json.dumps(result, ensure_ascii=False)[:500]}")
+                    return {"ok": False, "error": error_msg}
         else:
-            error_msg = f"HTTP {response.status_code}: {response.text}"
-            logger.error(f"博查 API 请求失败: {error_msg}")
-            return {"ok": False, "error": error_msg}
+            # 处理 HTTP 错误
+            try:
+                result = response.json()
+                code = result.get("code")
+                error_msg = result.get("message", result.get("msg", response.text))
+                log_id = result.get("log_id", "")
+                
+                # 友好错误提示
+                if code == 400:
+                    friendly_msg = f"请求参数错误: {error_msg}"
+                elif code == 401:
+                    friendly_msg = f"API KEY 无效: {error_msg}"
+                elif code == 403:
+                    if "not have enough money" in error_msg:
+                        friendly_msg = "余额不足，请前往 https://open.bocha.cn 进行充值"
+                    else:
+                        friendly_msg = f"访问被拒绝: {error_msg}"
+                elif code == 429:
+                    friendly_msg = "请求频率达到限制"
+                elif code == 500:
+                    friendly_msg = f"博查服务异常: {error_msg}"
+                else:
+                    friendly_msg = f"HTTP {response.status_code}: {error_msg}"
+                
+                logger.error(f"[博查] {friendly_msg} [log_id={log_id}]")
+                return {"ok": False, "error": friendly_msg, "code": code, "log_id": log_id}
+            except:
+                error_msg = f"HTTP {response.status_code}: {response.text[:200]}"
+                logger.error(f"博查 API 请求失败: {error_msg}")
+                return {"ok": False, "error": error_msg}
             
     except requests.exceptions.Timeout:
         logger.error(f"博查 API 请求超时 ({timeout_seconds}秒)")
@@ -370,7 +506,7 @@ class UnifiedResearchClient:
             raise
     
     def _research_with_bocha(self, items: List[Dict[str, Any]], max_items: Optional[int]) -> Optional[Dict[str, Any]]:
-        """使用博查 Web Search 进行研究"""
+        """使用博查搜索进行研究（支持 Web-Search 和 AI-Search）"""
         try:
             result = bocha_web_search_items(
                 items=items,
@@ -380,7 +516,8 @@ class UnifiedResearchClient:
                 summary=self.config.bocha_summary,
                 freshness=self.config.bocha_freshness,
                 max_items=max_items,
-                save_dir=self.config.save_dir
+                save_dir=self.config.save_dir,
+                api_type=self.config.bocha_api_type
             )
             return result
         except Exception as e:
