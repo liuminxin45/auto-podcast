@@ -1,0 +1,226 @@
+{
+  "name": "分步执行 Pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "step-webhook",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "step-webhook",
+      "name": "步骤触发器",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 400]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:8000/api/pipeline/run",
+        "authentication": "none",
+        "requestMethod": "POST",
+        "jsonParameters": true,
+        "bodyParametersJson": "={{ JSON.stringify({\"step\": \"fetch\", \"episode_id\": $json.episode_id}) }}"
+      },
+      "id": "step-fetch",
+      "name": "1. 抓取新闻",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [450, 200]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:8000/api/pipeline/run",
+        "authentication": "none",
+        "requestMethod": "POST",
+        "jsonParameters": true,
+        "bodyParametersJson": "={{ JSON.stringify({\"step\": \"cluster\", \"episode_id\": $json.episode_id}) }}"
+      },
+      "id": "step-cluster",
+      "name": "2. 聚类去重",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [650, 200]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:8000/api/pipeline/run",
+        "authentication": "none",
+        "requestMethod": "POST",
+        "jsonParameters": true,
+        "bodyParametersJson": "={{ JSON.stringify({\"step\": \"select\", \"episode_id\": $json.episode_id}) }}"
+      },
+      "id": "step-select",
+      "name": "3. 选题",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [850, 200]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:8000/api/pipeline/run",
+        "authentication": "none",
+        "requestMethod": "POST",
+        "jsonParameters": true,
+        "bodyParametersJson": "={{ JSON.stringify({\"step\": \"research\", \"episode_id\": $json.episode_id}) }}"
+      },
+      "id": "step-research",
+      "name": "4. 深度研究",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1050, 200]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:8000/api/pipeline/run",
+        "authentication": "none",
+        "requestMethod": "POST",
+        "jsonParameters": true,
+        "bodyParametersJson": "={{ JSON.stringify({\"step\": \"script\", \"episode_id\": $json.episode_id}) }}"
+      },
+      "id": "step-script",
+      "name": "5. 生成脚本",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1250, 200]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:8000/api/pipeline/run",
+        "authentication": "none",
+        "requestMethod": "POST",
+        "jsonParameters": true,
+        "bodyParametersJson": "={{ JSON.stringify({\"step\": \"audio\", \"episode_id\": $json.episode_id}) }}"
+      },
+      "id": "step-audio",
+      "name": "6. 生成音频",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1450, 200]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:8000/api/pipeline/run",
+        "authentication": "none",
+        "requestMethod": "POST",
+        "jsonParameters": true,
+        "bodyParametersJson": "={{ JSON.stringify({\"step\": \"publish\", \"episode_id\": $json.episode_id}) }}"
+      },
+      "id": "step-publish",
+      "name": "7. 发布",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1650, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}"
+      },
+      "id": "respond",
+      "name": "返回最终结果",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1850, 400]
+    }
+  ],
+  "connections": {
+    "步骤触发器": {
+      "main": [
+        [
+          {
+            "node": "1. 抓取新闻",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "1. 抓取新闻": {
+      "main": [
+        [
+          {
+            "node": "2. 聚类去重",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "2. 聚类去重": {
+      "main": [
+        [
+          {
+            "node": "3. 选题",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "3. 选题": {
+      "main": [
+        [
+          {
+            "node": "4. 深度研究",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "4. 深度研究": {
+      "main": [
+        [
+          {
+            "node": "5. 生成脚本",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "5. 生成脚本": {
+      "main": [
+        [
+          {
+            "node": "6. 生成音频",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "6. 生成音频": {
+      "main": [
+        [
+          {
+            "node": "7. 发布",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "7. 发布": {
+      "main": [
+        [
+          {
+            "node": "返回最终结果",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2026-01-13T14:19:00.000Z",
+  "versionId": "1"
+}
