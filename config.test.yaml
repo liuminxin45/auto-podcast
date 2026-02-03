@@ -1,0 +1,37 @@
+# 测试配置 - 最小化配置用于快速验证
+
+fetch:
+  sources:
+    - type: rss
+      url: "https://hnrss.org/frontpage"
+  max_items_per_source: 3
+
+preprocess:
+  min_content_length: 50
+  max_content_length: 5000
+  remove_duplicates: true
+
+research:
+  enable_web_search: false
+
+topic_selection:
+  min_cluster_size: 1
+  max_topics: 1
+  use_llm_scoring: false
+
+script:
+  llm_model: "gpt-4o-mini"
+  target_duration_minutes: 3
+  num_hosts: 2
+
+tts:
+  voice_mapping:
+    主持人A: "zh-CN-XiaoxiaoNeural"
+    主持人B: "zh-CN-YunxiNeural"
+
+audio_postprocess:
+  normalize_loudness: false
+
+publish:
+  podcast_title: "测试播客"
+  podcast_description: "测试节目"

@@ -1,54 +1,39 @@
-# Auto-Podcast Project Dependencies
-# 自动播客生成系统依赖包列表
+# Auto-Podcast LangGraph Dependencies
+# 播客自动生成系统核心依赖
 #
 # 安装方式：
 #   pip install -r requirements.txt
 #
-# 依赖包说明：
-# - feedparser: RSS订阅解析
-# - requests: HTTP请求库
-# - python-dotenv: 环境变量管理
-# - PyYAML: YAML配置文件解析
-# - pydantic: 数据验证和序列化
-# - beautifulsoup4: HTML解析
-# - websocket-client: WebSocket通信
-# - edge-tts: 微软Edge TTS（可选）
-#
-# 版本要求：
-# - Python 3.8+
-# - 推荐使用虚拟环境
-#
-# 更新日期：2025-12-25
-# 作者：Auto-Podcast Team
+# 更新日期：2026-02-03
 
+# 核心框架
+langchain>=0.1.0
+langchain-core>=0.1.0
+langchain-openai>=0.0.5
+langgraph>=0.0.40
+
+# 数据处理
 feedparser>=6.0.11
 requests>=2.31.0
-python-dotenv>=1.0.1
-python-dateutil>=2.8.2
 PyYAML>=6.0.1
 pydantic>=2.7.0
 beautifulsoup4>=4.12.3
-websocket-client>=1.7.0
-edge-tts>=7.2.7
+trafilatura>=1.6.0
+python-dateutil>=2.8.2
+
+# 文本处理与聚类
 numpy>=1.24.0
 scikit-learn>=1.3.0
 simhash>=2.1.2
 jieba>=0.42.1
-trafilatura>=1.6.0
+
+# TTS 与音频处理
+edge-tts>=7.2.7
 pydub>=0.25.1
 pyloudnorm>=0.1.1
+
+# 图像处理（封面生成）
+Pillow>=10.0.0
+
+# 工具库
 rich>=13.7.0
-
-langchain>=0.1.0
-langchain-core>=0.1.0
-langgraph>=0.0.40
-
-# API Server dependencies
-fastapi>=0.115.0
-uvicorn>=0.32.0
-
-# MCP Server dependencies
-fastmcp>=0.2.0
-httpx>=0.27.0
-pytest>=8.0.0
-pytest-asyncio>=0.23.0

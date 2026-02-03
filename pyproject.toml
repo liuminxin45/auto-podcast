@@ -1,39 +1,38 @@
-# Auto-Podcast Project Configuration
-# 自动播客生成系统项目配置文件
-#
-# 这个文件定义了项目的元数据、依赖关系、构建配置和开发工具设置
-#
-# 配置说明：
-# - [project]: 项目基本信息和依赖
-# - [build-system]: 构建系统配置
-# - [tool.setuptools]: 包构建设置
-# - [tool.ruff]: 代码格式化配置
-# - [tool.pyright]: 类型检查配置
+# Auto-Podcast LangGraph Project Configuration
+# 基于 LangGraph 的播客自动生成系统
 #
 # 使用方式：
 #   pip install -e .              # 开发模式安装
-#   python -m build              # 构建分发包
-#   ruff check .                 # 代码检查
-#   pyright                      # 类型检查
+#   python main.py                # 运行主程序
 #
-# 更新日期：2025-12-25
-# 作者：Auto-Podcast Team
+# 更新日期：2026-02-03
 
 [project]
-name = "podcast-bot"
-version = "0.1.0"
-description = "Automated AI podcast production pipeline"
+name = "auto-podcast"
+version = "2.0.0"
+description = "LangGraph-based automated podcast generation pipeline"
 requires-python = ">=3.8"
 readme = "README.md"
 dependencies = [
+  "langchain>=0.1.0",
+  "langchain-core>=0.1.0",
+  "langchain-openai>=0.0.5",
+  "langgraph>=0.0.40",
   "feedparser>=6.0.11",
   "requests>=2.31.0",
-  "python-dotenv>=1.0.1",
   "PyYAML>=6.0.1",
   "pydantic>=2.7.0",
   "beautifulsoup4>=4.12.3",
-  "websocket-client>=1.7.0",
+  "trafilatura>=1.6.0",
+  "numpy>=1.24.0",
+  "scikit-learn>=1.3.0",
+  "simhash>=2.1.2",
+  "jieba>=0.42.1",
   "edge-tts>=7.2.7",
+  "pydub>=0.25.1",
+  "pyloudnorm>=0.1.1",
+  "Pillow>=10.0.0",
+  "rich>=13.7.0",
 ]
 
  [build-system]
