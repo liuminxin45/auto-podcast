@@ -1,24 +1,35 @@
-!.env.backup
-!.env.*.backup
-out/
+# Python
 __pycache__/
 *.pyc
-
-assets/
-
+*.pyo
+*.pyd
+.Python
+*.egg-info/
 .venv/
-podcast_bot.egg-info/
-build/
-dist/
+venv/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+
+# Node.js
+node_modules/
+package-lock.json
+
+# Build outputs
+out/
+dist/
+dist-electron/
+build/
+
+# IDE
 .idea/
 .vscode/
-node_modules/
-n8n_bridge/
 
-# Frontend
-frontend/node_modules/
-frontend/dist/
-frontend/.vite/
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.local
+.env.*.local

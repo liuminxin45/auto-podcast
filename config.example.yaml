@@ -20,15 +20,24 @@ research:
   enable_web_search: false
   max_search_results: 5
   llm_model: "gpt-4o-mini"
+  api_key: ""           # 留空则 fallback 到环境变量 OPENAI_API_KEY
+  api_base: ""          # 留空则 fallback 到环境变量 OPENAI_API_BASE
+  temperature: 0.5
 
 topic_selection:
   min_cluster_size: 3
   max_topics: 1
   use_llm_scoring: true
   llm_model: "gpt-4o-mini"
+  api_key: ""
+  api_base: ""
+  temperature: 0.3
 
 script:
   llm_model: "gpt-4o"
+  api_key: ""
+  api_base: ""
+  temperature: 0.7
   target_duration_minutes: 15
   dialogue_style: "conversational"
   num_hosts: 2

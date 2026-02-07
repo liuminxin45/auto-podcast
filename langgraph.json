@@ -1,7 +1,0 @@
-{
-  "dependencies": ["."],
-  "graphs": {
-    "podcast_agent": "./src/graphs/podcast_graph.py:create_podcast_graph"
-  },
-  "env": ".env"
-}

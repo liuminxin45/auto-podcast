@@ -1,0 +1,59 @@
+{
+  "name": "auto-podcast-studio",
+  "version": "2.0.0",
+  "description": "AI-powered podcast generation with visual workflow editor",
+  "main": "electron/main.js",
+  "scripts": {
+    "postinstall": "python -m pip install -e . -i https://pypi.tuna.tsinghua.edu.cn/simple",
+    "dev": "concurrently \"npm run dev:react\" \"npm run dev:electron\"",
+    "dev:react": "vite",
+    "dev:electron": "wait-on http://localhost:5173 && cross-env NODE_ENV=development electron .",
+    "build": "tsc && vite build",
+    "build:electron": "npm run build && electron-builder",
+    "start": "npm run dev",
+    "verify:nodes": "python scripts/verify_nodes.py",
+    "verify:config": "python scripts/test_config.py",
+    "verify:build": "python scripts/build_check.py",
+    "test:nodes": "python scripts/test_all_nodes.py",
+    "test:integration": "python scripts/integration_test.py",
+    "verify": "npm run verify:config && npm run verify:nodes",
+    "test": "npm run test:nodes && npm run test:integration"
+  },
+  "dependencies": {
+    "@ant-design/icons": "^5.2.6",
+    "antd": "^5.12.8",
+    "dayjs": "^1.11.10",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "reactflow": "^11.10.4",
+    "zustand": "^4.4.7"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.43",
+    "@types/react-dom": "^18.2.17",
+    "@typescript-eslint/eslint-plugin": "^6.14.0",
+    "@typescript-eslint/parser": "^6.14.0",
+    "@vitejs/plugin-react": "^4.2.1",
+    "concurrently": "^8.2.2",
+    "cross-env": "^7.0.3",
+    "electron": "^40.2.1",
+    "electron-builder": "^24.9.1",
+    "typescript": "^5.2.2",
+    "vite": "^5.0.8",
+    "wait-on": "^7.2.0"
+  },
+  "build": {
+    "appId": "com.autopodcast.studio",
+    "productName": "Auto-Podcast Studio",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "nodes/**/*",
+      "protocol/**/*",
+      "scripts/**/*"
+    ]
+  }
+}

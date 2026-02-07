@@ -1,23 +1,22 @@
-# Auto-Podcast LangGraph Project Configuration
-# 基于 LangGraph 的播客自动生成系统
+# Auto-Podcast Studio - Electron App
+# AI-powered podcast generation with visual workflow editor
 #
-# 使用方式：
-#   pip install -e .              # 开发模式安装
-#   python main.py                # 运行主程序
+# Usage:
+#   npm install                   # Install all dependencies (Node.js + Python)
+#   npm start                     # Launch Electron app
 #
-# 更新日期：2026-02-03
+# Updated: 2026-02-08
 
 [project]
 name = "auto-podcast"
 version = "2.0.0"
-description = "LangGraph-based automated podcast generation pipeline"
+description = "Electron-based podcast generation with Python workflow nodes"
 requires-python = ">=3.8"
 readme = "README.md"
 dependencies = [
   "langchain>=0.1.0",
   "langchain-core>=0.1.0",
   "langchain-openai>=0.0.5",
-  "langgraph>=0.0.40",
   "feedparser>=6.0.11",
   "requests>=2.31.0",
   "PyYAML>=6.0.1",
@@ -35,13 +34,14 @@ dependencies = [
   "rich>=13.7.0",
 ]
 
- [build-system]
- requires = ["setuptools>=68", "wheel"]
- build-backend = "setuptools.build_meta"
 
- [tool.setuptools.packages.find]
- where = ["."]
- include = ["src", "src.*"]
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["protocol", "protocol.*", "nodes", "nodes.*"]
 
 [tool.ruff]
 line-length = 100
