@@ -1,5 +1,8 @@
-import { Form, Input, InputNumber, Switch, Space, Button } from 'antd'
+import { Form, Input, InputNumber, Switch, Space, Button, Select } from 'antd'
 import { useEffect, useState } from 'react'
+import FetchSourcesConfig from './FetchSourcesConfig'
+import LLMConfigFields from './LLMConfigFields'
+import ManualNewsConfig from './ManualNewsConfig'
 
 interface FieldSchema {
   type: string
@@ -14,11 +17,6 @@ interface FieldSchema {
   items?: FieldSchema
 }
 
-interface ConfigSchema {
-  type: 'pydantic' | 'dataclass'
-  fields: Record<string, FieldSchema>
-}
-
 interface Props {
   nodeName: string
   initialValues?: Record<string, any>
@@ -26,9 +24,9 @@ interface Props {
   onChange?: (values: Record<string, any>) => void
 }
 
-export default function DynamicConfigForm({ nodeName, initialValues, onSubmit, onChange }: Props) {
+export default function DynamicConfigForm({ nodeName, initialValues, onChange, onSubmit }: Props) {
   const [form] = Form.useForm()
-  const [schema, setSchema] = useState<ConfigSchema | null>(null)
+  const [schema, setSchema] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -78,11 +76,70 @@ export default function DynamicConfigForm({ nodeName, initialValues, onSubmit, o
     }
   }
 
+  // 检测是否包含LLM配置字段组（llm_model, api_key, api_base）
+  const hasLLMFields = () => {
+    if (!schema || !schema.fields) return false
+    const fields = Object.keys(schema.fields)
+    return fields.includes('llm_model') && fields.includes('api_key') && fields.includes('api_base')
+  }
+
   const renderField = (fieldName: string, fieldSchema: FieldSchema) => {
     const label = fieldName.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
     const rules = [
       { required: fieldSchema.required && !fieldSchema.optional, message: `${label} is required` }
     ]
+
+    // 特殊处理：fetch节点的enabled_sources字段使用专门的组件
+    if (nodeName === 'fetch' && fieldName === 'enabled_sources') {
+      return (
+        <Form.Item
+          key={fieldName}
+          name={fieldName}
+          label="数据源"
+          tooltip={fieldSchema.description}
+        >
+          <FetchSourcesConfig />
+        </Form.Item>
+      )
+    }
+
+    // 特殊处理：manual节点的news_items字段使用专门的组件
+    if (nodeName === 'manual' && fieldName === 'news_items') {
+      return (
+        <Form.Item
+          key={fieldName}
+          name={fieldName}
+          label="新闻列表"
+          tooltip={fieldSchema.description}
+        >
+          <ManualNewsConfig />
+        </Form.Item>
+      )
+    }
+
+    // 特殊处理：source_selector节点的source_type字段使用Select
+    if (nodeName === 'source_selector' && fieldName === 'source_type') {
+      return (
+        <Form.Item
+          key={fieldName}
+          name={fieldName}
+          label="内容来源"
+          tooltip={fieldSchema.description}
+        >
+          <Select
+            options={[
+              { value: 'fetch', label: '🔍 自动抓取 (Fetch)' },
+              { value: 'manual', label: '✍️ 手动输入 (Manual)' }
+            ]}
+          />
+        </Form.Item>
+      )
+    }
+
+    // 跳过LLM配置字段，它们会被LLMConfigFields组件统一处理
+    if (hasLLMFields() && ['llm_model', 'api_key', 'api_base'].includes(fieldName)) {
+      return null
+    }
 
     switch (fieldSchema.type) {
       case 'boolean':
@@ -242,9 +299,11 @@ export default function DynamicConfigForm({ nodeName, initialValues, onSubmit, o
       onValuesChange={handleValuesChange}
       style={{ padding: '16px 0' }}
     >
-      {Object.entries(schema.fields).map(([fieldName, fieldSchema]) => 
-        renderField(fieldName, fieldSchema)
-      )}
+      {/* LLM配置字段组 */}
+      {hasLLMFields() && <LLMConfigFields />}
+
+      {/* 其他字段 */}
+      {schema && schema.fields && Object.entries(schema.fields).map(([fieldName, fieldSchema]) => renderField(fieldName, fieldSchema as FieldSchema))}
       
       {onSubmit && (
         <Form.Item>

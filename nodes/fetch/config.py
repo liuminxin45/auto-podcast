@@ -1,12 +1,12 @@
-from typing import Dict, Any, List
+from typing import List
 from pydantic import Field
 from protocol.config_base import NodeConfigBase
 
 
 class FetchConfig(NodeConfigBase):
-    sources: List[Dict[str, str]] = Field(
-        default_factory=lambda: [{"type": "rss", "url": "https://hnrss.org/frontpage"}]
+    """Fetch node configuration."""
+    
+    enabled_sources: List[str] = Field(
+        default_factory=lambda: ["hackernews"],
+        description="启用的数据源列表（文件名，不含.py扩展名）。勾选的数据源会被执行。"
     )
-    max_items_per_source: int = Field(default=10, ge=1, le=100)
-    timeout: int = Field(default=30, ge=5, le=300)
-    user_agent: str = Field(default="AutoPodcast/1.0")

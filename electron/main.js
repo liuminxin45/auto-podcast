@@ -1,8 +1,11 @@
 const { app, BrowserWindow, ipcMain } = require('electron')
 const path = require('path')
 const { spawn } = require('child_process')
+const ConfigManager = require('./configManager')
+const { validateNodeOutput } = require('./nodeValidator')
 
 let mainWindow = null
+let configManager = null
 
 // Python workflow state
 let currentWorkflow = null
@@ -28,7 +31,7 @@ function createWindow() {
 }
 
 // Run Python node as subprocess with timeout and error handling
-function runPythonNode(nodeName, state, timeoutMs = 300000) {
+function runPythonNode(nodeName, state, timeoutMs = 600000) {  // 增加到10分钟
   return new Promise((resolve, reject) => {
     const pythonPath = process.platform === 'win32' ? 'python' : 'python3'
     const proc = spawn(pythonPath, ['-m', `nodes.${nodeName}`], {
@@ -230,9 +233,82 @@ ipcMain.handle('node:getAllSchemas', async (event) => {
   })
 })
 
+// Config management handlers
+ipcMain.handle('config:save', async (event, nodeName, config) => {
+  if (!configManager) {
+    return { success: false, error: 'Config manager not initialized' }
+  }
+  return configManager.saveNodeConfig(nodeName, config)
+})
+
+ipcMain.handle('config:load', async (event, nodeName) => {
+  if (!configManager) {
+    return null
+  }
+  return configManager.loadNodeConfig(nodeName)
+})
+
+ipcMain.handle('config:loadAll', async (event) => {
+  if (!configManager) {
+    return {}
+  }
+  return configManager.loadAllConfigs()
+})
+
+ipcMain.handle('config:delete', async (event, nodeName) => {
+  if (!configManager) {
+    return { success: false, error: 'Config manager not initialized' }
+  }
+  return configManager.deleteNodeConfig(nodeName)
+})
+
+ipcMain.handle('config:resetAll', async (event) => {
+  if (!configManager) {
+    return { success: false, error: 'Config manager not initialized' }
+  }
+  return configManager.resetAllConfigs()
+})
+
+// Fetch sources management
+ipcMain.handle('fetch:getSources', async (event) => {
+  return new Promise((resolve, reject) => {
+    const pythonPath = process.platform === 'win32' ? 'python' : 'python3'
+    const proc = spawn(pythonPath, [
+      path.join(__dirname, '..', 'scripts', 'get_fetch_sources.py')
+    ], {
+      cwd: path.join(__dirname, '..'),
+      env: { ...process.env, PYTHONIOENCODING: 'utf-8' }
+    })
+
+    let stdout = ''
+    let stderr = ''
+
+    proc.stdout.on('data', (data) => {
+      stdout += data.toString()
+    })
+
+    proc.stderr.on('data', (data) => {
+      stderr += data.toString()
+    })
+
+    proc.on('close', (code) => {
+      if (code !== 0) {
+        reject(new Error(`Failed to get fetch sources: ${stderr}`))
+      } else {
+        try {
+          const sources = JSON.parse(stdout)
+          resolve(sources)
+        } catch (e) {
+          reject(new Error(`Failed to parse sources JSON: ${e.message}`))
+        }
+      }
+    })
+  })
+})
+
 async function runWorkflow(workflowId, resumeFrom = null) {
   const nodes = [
-    'fetch', 'preprocess', 'research', 'topic_selection',
+    'source_selector', 'fetch', 'manual', 'preprocess', 'research', 'topic_selection',
     'script', 'stages', 'tts', 'audio_postprocess',
     'assets', 'store', 'publish'
   ]
@@ -242,20 +318,6 @@ async function runWorkflow(workflowId, resumeFrom = null) {
   for (let i = startIndex; i < nodes.length; i++) {
     const nodeName = nodes[i]
     
-    // Check if script node requires approval
-    if (nodeName === 'script' && !currentWorkflow.approvals?.script) {
-      currentWorkflow.status = 'waiting_approval'
-      currentWorkflow.currentNode = nodeName
-      currentWorkflow.nodeExecutions[nodeName] = {
-        status: 'waiting_approval',
-        startedAt: new Date().toISOString()
-      }
-      if (mainWindow) {
-        mainWindow.webContents.send('workflow:update', currentWorkflow)
-      }
-      return // Pause
-    }
-
     currentWorkflow.currentNode = nodeName
     currentWorkflow.nodeExecutions[nodeName] = {
       status: 'running',
@@ -267,6 +329,15 @@ async function runWorkflow(workflowId, resumeFrom = null) {
     }
 
     try {
+      // 加载节点配置
+      const nodeConfig = configManager ? configManager.loadNodeConfig(nodeName) : null
+      
+      // 如果有配置，将其添加到state中传递给Python节点
+      if (nodeConfig) {
+        currentWorkflow.state.runtime_config = currentWorkflow.state.runtime_config || {}
+        currentWorkflow.state.runtime_config[nodeName] = nodeConfig
+      }
+      
       const startTime = Date.now()
       const result = await runPythonNode(nodeName, currentWorkflow.state)
       const duration = (Date.now() - startTime) / 1000
@@ -276,6 +347,9 @@ async function runWorkflow(workflowId, resumeFrom = null) {
       }
 
       currentWorkflow.state = result
+      
+      validateNodeOutput(nodeName, result)
+      
       currentWorkflow.nodeExecutions[nodeName] = {
         status: 'completed',
         startedAt: currentWorkflow.nodeExecutions[nodeName].startedAt,
@@ -289,6 +363,35 @@ async function runWorkflow(workflowId, resumeFrom = null) {
 
       if (mainWindow) {
         mainWindow.webContents.send('workflow:update', currentWorkflow)
+      }
+
+      // 检查是否需要审批（针对script节点）
+      if (nodeName === 'script' && !currentWorkflow.approvals?.script) {
+        // 加载script节点配置，检查是否需要审批
+        const scriptConfig = configManager ? configManager.loadNodeConfig('script') : null
+        console.log('[Approval Check] Script config:', scriptConfig)
+        const requireApproval = scriptConfig?.require_approval ?? false
+        console.log('[Approval Check] Require approval:', requireApproval)
+
+        if (requireApproval) {
+          console.log('[Approval] Pausing workflow for approval')
+          currentWorkflow.status = 'waiting_approval'
+          currentWorkflow.nodeExecutions[nodeName].status = 'waiting_approval'
+          
+          if (mainWindow) {
+            mainWindow.webContents.send('workflow:update', currentWorkflow)
+            // 发送审批请求事件
+            console.log('[Approval] Sending needApproval event to frontend')
+            mainWindow.webContents.send('workflow:needApproval', {
+              workflowId,
+              nodeName,
+              data: currentWorkflow.state
+            })
+          }
+          return // 暂停工作流，等待审批
+        } else {
+          console.log('[Approval] Auto-approval mode, continuing workflow')
+        }
       }
     } catch (error) {
       console.error(`Node ${nodeName} failed:`, error)
@@ -321,7 +424,10 @@ async function runWorkflow(workflowId, resumeFrom = null) {
   }
 }
 
-app.whenReady().then(createWindow)
+app.whenReady().then(() => {
+  configManager = new ConfigManager()
+  createWindow()
+})
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {

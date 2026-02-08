@@ -38,9 +38,23 @@ def _generate_script(topic: Dict, materials: list, config: ScriptConfig) -> Dict
     api_key = config.api_key or os.environ.get("OPENAI_API_KEY", "")
     api_base = config.api_base or os.environ.get("OPENAI_API_BASE", None)
 
-    kwargs = {"model": config.llm_model, "api_key": api_key, "temperature": config.temperature}
+    # 检查API密钥
+    if not api_key:
+        raise ValueError(
+            "API key is required for script generation. "
+            "Please set api_key in script node config or OPENAI_API_KEY environment variable."
+        )
+
+    kwargs = {
+        "model": config.llm_model, 
+        "api_key": api_key, 
+        "temperature": config.temperature,
+        "timeout": config.timeout,
+        "max_retries": config.max_retries
+    }
     if api_base:
         kwargs["base_url"] = api_base
+    
     llm = ChatOpenAI(**kwargs)
 
     materials_text = "\n\n".join([

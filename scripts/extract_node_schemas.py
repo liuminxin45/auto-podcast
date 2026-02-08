@@ -60,55 +60,55 @@ def get_type_info(type_hint) -> Dict[str, Any]:
 
 
 def extract_pydantic_schema(config_class) -> Dict[str, Any]:
-    """Extract schema from Pydantic model."""
+    """Extract schema from Pydantic model (v2)."""
     schema = {
         'type': 'pydantic',
         'fields': {}
     }
     
     try:
-        # Get model fields
-        if hasattr(config_class, 'model_fields'):
-            # Pydantic v2
-            for field_name, field_info in config_class.model_fields.items():
-                field_schema = {
-                    'description': field_info.description or '',
-                    'default': field_info.default if field_info.default is not None else None,
-                    'required': field_info.is_required()
-                }
-                
-                # Extract type info
-                type_info = get_type_info(field_info.annotation)
-                field_schema.update(type_info)
-                
-                # Extract constraints
-                if hasattr(field_info, 'metadata'):
-                    for constraint in field_info.metadata:
-                        if hasattr(constraint, 'ge'):
-                            field_schema['min'] = constraint.ge
-                        if hasattr(constraint, 'le'):
-                            field_schema['max'] = constraint.le
-                        if hasattr(constraint, 'min_length'):
-                            field_schema['minLength'] = constraint.min_length
-                        if hasattr(constraint, 'max_length'):
-                            field_schema['maxLength'] = constraint.max_length
-                
-                schema['fields'][field_name] = field_schema
-        else:
-            # Pydantic v1
-            for field_name, field_info in config_class.__fields__.items():
-                field_schema = {
-                    'description': field_info.field_info.description or '',
-                    'default': field_info.default if field_info.default is not None else None,
-                    'required': field_info.required
-                }
-                
-                type_info = get_type_info(field_info.outer_type_)
-                field_schema.update(type_info)
-                
-                schema['fields'][field_name] = field_schema
+        # Use model_fields for Pydantic v2
+        if not hasattr(config_class, 'model_fields'):
+            return {'error': 'Not a Pydantic v2 model'}
+        
+        for field_name, field_info in config_class.model_fields.items():
+            # Get type mapping
+            type_map = {
+                'str': 'string',
+                'int': 'integer',
+                'float': 'number',
+                'bool': 'boolean',
+            }
+            
+            type_name = field_info.annotation.__name__ if hasattr(field_info.annotation, '__name__') else str(field_info.annotation)
+            field_type = type_map.get(type_name, type_name)
+            
+            # Build field schema
+            field_schema = {
+                'type': field_type,
+                'description': field_info.description or '',
+                'default': field_info.default,
+                'required': field_info.is_required()
+            }
+            
+            # Extract constraints from metadata
+            if hasattr(field_info, 'metadata') and field_info.metadata:
+                for constraint in field_info.metadata:
+                    if hasattr(constraint, 'ge'):
+                        field_schema['min'] = constraint.ge
+                    if hasattr(constraint, 'le'):
+                        field_schema['max'] = constraint.le
+                    if hasattr(constraint, 'min_length'):
+                        field_schema['minLength'] = constraint.min_length
+                    if hasattr(constraint, 'max_length'):
+                        field_schema['maxLength'] = constraint.max_length
+            
+            schema['fields'][field_name] = field_schema
+            
     except Exception as e:
         print(f"Error extracting Pydantic schema: {e}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
     
     return schema
 
@@ -149,18 +149,35 @@ def extract_node_config_schema(node_name: str) -> Dict[str, Any]:
         # Import the config module
         config_module = importlib.import_module(f'nodes.{node_name}.config')
         
-        # Find the config class
+        # Find the config class - look for the node-specific config class
+        # Priority: NodeNameConfig > *Config (excluding base classes)
         config_class = None
+        target_class_name = f'{node_name.capitalize()}Config'
+        
+        # First try to find exact match
         for name, obj in inspect.getmembers(config_module):
-            if inspect.isclass(obj) and 'Config' in name:
+            if inspect.isclass(obj) and name == target_class_name:
                 config_class = obj
                 break
+        
+        # If not found, find any Config class that's not a base class or mixin
+        if not config_class:
+            for name, obj in inspect.getmembers(config_module):
+                if inspect.isclass(obj) and 'Config' in name:
+                    # Skip base classes and mixins
+                    if name in ['NodeConfigBase', 'LLMConfigMixin', 'Config']:
+                        continue
+                    # Skip imported classes from other modules
+                    if obj.__module__ != config_module.__name__:
+                        continue
+                    config_class = obj
+                    break
         
         if not config_class:
             return {'error': f'No config class found for {node_name}'}
         
         # Check if it's Pydantic or dataclass
-        if hasattr(config_class, '__fields__') or hasattr(config_class, 'model_fields'):
+        if hasattr(config_class, 'model_fields'):
             return extract_pydantic_schema(config_class)
         elif is_dataclass(config_class):
             return extract_dataclass_schema(config_class)

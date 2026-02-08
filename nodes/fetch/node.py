@@ -1,67 +1,128 @@
 from typing import Dict, Any, List
+from pathlib import Path
+import importlib.util
+import sys
 from nodes.fetch.config import FetchConfig
 
 
 def run(state: Dict[str, Any], config: FetchConfig = None) -> Dict[str, Any]:
+    """Run fetch node with dynamic source loading."""
     config = config or FetchConfig()
     logs = state.get("logs", [])
     errors = state.get("errors", [])
 
     logs.append("[FetchNode] Starting fetch")
-    raw_contents = []
-
-    try:
-        for source in config.sources:
-            source_type = source.get("type", "rss")
-            source_url = source.get("url", "")
-            if not source_url:
+    logs.append(f"[FetchNode] Enabled sources: {config.enabled_sources}")
+    
+    # 获取sources目录路径
+    sources_dir = Path(__file__).parent / "sources"
+    
+    if not sources_dir.exists():
+        errors.append({
+            "node": "fetch",
+            "message": "Sources directory not found",
+            "detail": f"Directory {sources_dir} does not exist"
+        })
+        state["raw_contents"] = []
+        state["logs"] = logs
+        state["errors"] = errors
+        return state
+    
+    # 收集所有数据
+    all_contents = []
+    
+    # 遍历启用的数据源
+    for source_name in config.enabled_sources:
+        source_file = sources_dir / f"{source_name}.py"
+        
+        if not source_file.exists():
+            logs.append(f"[FetchNode] Warning: Source file '{source_name}.py' not found, skipping")
+            continue
+        
+        try:
+            # 动态加载数据源模块
+            logs.append(f"[FetchNode] Loading source: {source_name}")
+            source_module = _load_source_module(source_name, source_file)
+            
+            if not hasattr(source_module, 'source'):
+                logs.append(f"[FetchNode] Warning: Source '{source_name}' has no 'source' instance, skipping")
                 continue
-
-            if source_type == "rss":
-                items = _fetch_rss(source_url)
-            elif source_type == "web":
-                items = _fetch_web(source_url, config)
-            else:
-                logs.append(f"[FetchNode] Unknown source type: {source_type}")
-                continue
-
-            raw_contents.extend(items[:config.max_items_per_source])
-    except Exception as e:
-        errors.append({"node": "fetch", "message": f"Fetch failed: {str(e)}", "detail": str(e)})
-
-    state["raw_contents"] = raw_contents
-    logs.append(f"[FetchNode] Fetched {len(raw_contents)} items")
+            
+            source_instance = source_module.source
+            
+            # 执行fetch
+            logs.append(f"[FetchNode] Fetching from: {source_instance.name}")
+            items = source_instance.fetch()
+            
+            logs.append(f"[FetchNode] Fetched {len(items)} items from {source_name}")
+            all_contents.extend(items)
+            
+        except Exception as e:
+            error_msg = f"Failed to fetch from {source_name}: {str(e)}"
+            logs.append(f"[FetchNode] Error: {error_msg}")
+            errors.append({
+                "node": "fetch",
+                "source": source_name,
+                "message": error_msg,
+                "detail": str(e)
+            })
+    
+    state["raw_contents"] = all_contents
+    logs.append(f"[FetchNode] Total items fetched: {len(all_contents)}")
     state["logs"] = logs
     state["errors"] = errors
     return state
 
 
-def _fetch_rss(url: str) -> List[Dict[str, Any]]:
-    import feedparser
-    feed = feedparser.parse(url)
-    items = []
-    for entry in feed.entries:
-        items.append({
-            "title": entry.get("title", ""),
-            "content": entry.get("summary", ""),
-            "url": entry.get("link", ""),
-            "published": entry.get("published", ""),
-            "source": url,
-            "type": "rss",
-        })
-    return items
+def _load_source_module(source_name: str, source_file: Path):
+    """Dynamically load a source module."""
+    spec = importlib.util.spec_from_file_location(f"nodes.fetch.sources.{source_name}", source_file)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
-def _fetch_web(url: str, config: FetchConfig) -> List[Dict[str, Any]]:
-    import requests
-    from trafilatura import extract
-    response = requests.get(url, timeout=config.timeout, headers={"User-Agent": config.user_agent})
-    content = extract(response.text)
-    return [{
-        "title": "",
-        "content": content or "",
-        "url": url,
-        "published": "",
-        "source": url,
-        "type": "web",
-    }]
+def get_available_sources() -> List[Dict[str, Any]]:
+    """Get list of available data sources."""
+    sources_dir = Path(__file__).parent / "sources"
+    
+    if not sources_dir.exists():
+        return []
+    
+    available = []
+    
+    for source_file in sources_dir.glob("*.py"):
+        # 跳过特殊文件
+        if source_file.name.startswith("_") or source_file.name == "base.py":
+            continue
+        
+        source_name = source_file.stem
+        
+        try:
+            # 尝试加载模块获取元数据
+            module = _load_source_module(source_name, source_file)
+            
+            if hasattr(module, 'source'):
+                source_instance = module.source
+                available.append({
+                    "id": source_name,
+                    "name": source_instance.name,
+                    "description": source_instance.description,
+                })
+            else:
+                # 如果没有source实例，只返回基本信息
+                available.append({
+                    "id": source_name,
+                    "name": source_name,
+                    "description": "No description available",
+                })
+        except Exception as e:
+            # 加载失败，返回基本信息
+            available.append({
+                "id": source_name,
+                "name": source_name,
+                "description": f"Error loading: {str(e)}",
+            })
+    
+    return available

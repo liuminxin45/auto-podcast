@@ -7,19 +7,22 @@ import ReactFlow, {
   useEdgesState,
   type Node,
   type Edge,
-  type ReactFlowInstance
+  type ReactFlowInstance,
+  Position
 } from 'reactflow'
 import 'reactflow/dist/style.css'
 import type { Workflow } from '../types/workflow'
 
 const NODE_SEQUENCE = [
-  'fetch', 'preprocess', 'research', 'topic_selection',
+  'source_selector', 'fetch', 'manual', 'preprocess', 'research', 'topic_selection',
   'script', 'stages', 'tts', 'audio_postprocess',
   'assets', 'store', 'publish'
 ]
 
 const NODE_LABELS: Record<string, string> = {
+  source_selector: 'Source',
   fetch: 'Fetch',
+  manual: 'Manual',
   preprocess: 'Preprocess',
   research: 'Research',
   topic_selection: 'Topic',
@@ -48,7 +51,13 @@ function getNodeStyle(status: string) {
 }
 
 function buildNodes(workflow: Workflow | null): Node[] {
-  return NODE_SEQUENCE.map((name, index) => {
+  const nodes: Node[] = []
+  let xPos = 50
+  const yBase = 80
+  const xSpacing = 160
+
+  for (let i = 0; i < NODE_SEQUENCE.length; i++) {
+    const name = NODE_SEQUENCE[i]
     const execution = workflow?.nodeExecutions?.[name]
     const status = execution?.status || 'pending'
     const { bg, border, emoji } = getNodeStyle(status)
@@ -56,13 +65,25 @@ function buildNodes(workflow: Workflow | null): Node[] {
       ? `${execution.duration.toFixed(1)}s`
       : ''
 
-    return {
+    let yPos = yBase
+    
+    // fetch和manual并行显示
+    if (name === 'fetch') {
+      yPos = yBase - 60  // fetch在上方
+    } else if (name === 'manual') {
+      yPos = yBase + 60  // manual在下方
+      xPos -= xSpacing  // manual与fetch同一个x坐标
+    }
+
+    nodes.push({
       id: name,
       type: 'default',
       data: {
         label: `${emoji} ${NODE_LABELS[name]}${durationText ? '\n' + durationText : ''}`
       },
-      position: { x: 50 + index * 160, y: 80 },
+      position: { x: xPos, y: yPos },
+      sourcePosition: Position.Right,  // 连线从右侧出发
+      targetPosition: Position.Left,   // 连线从左侧进入
       style: {
         background: bg,
         border: `2px solid ${border}`,
@@ -72,18 +93,64 @@ function buildNodes(workflow: Workflow | null): Node[] {
         fontSize: '13px',
         textAlign: 'center' as const,
       }
-    }
-  })
+    })
+
+    xPos += xSpacing
+  }
+
+  return nodes
 }
 
 function buildEdges(workflow: Workflow | null): Edge[] {
-  return NODE_SEQUENCE.slice(0, -1).map((name, i) => ({
-    id: `${name}-${NODE_SEQUENCE[i + 1]}`,
-    source: name,
-    target: NODE_SEQUENCE[i + 1],
-    animated: workflow?.currentNode === name,
+  const edges: Edge[] = []
+  
+  // source_selector 分支到 fetch 和 manual
+  edges.push({
+    id: 'source_selector-fetch',
+    source: 'source_selector',
+    target: 'fetch',
+    animated: workflow?.currentNode === 'source_selector',
     style: { stroke: '#999', strokeWidth: 2 }
-  }))
+  })
+  
+  edges.push({
+    id: 'source_selector-manual',
+    source: 'source_selector',
+    target: 'manual',
+    animated: workflow?.currentNode === 'source_selector',
+    style: { stroke: '#999', strokeWidth: 2 }
+  })
+  
+  // fetch 和 manual 都连接到 preprocess
+  edges.push({
+    id: 'fetch-preprocess',
+    source: 'fetch',
+    target: 'preprocess',
+    animated: workflow?.currentNode === 'fetch',
+    style: { stroke: '#999', strokeWidth: 2 }
+  })
+  
+  edges.push({
+    id: 'manual-preprocess',
+    source: 'manual',
+    target: 'preprocess',
+    animated: workflow?.currentNode === 'manual',
+    style: { stroke: '#999', strokeWidth: 2 }
+  })
+  
+  // preprocess 之后的节点顺序连接
+  const remainingNodes = NODE_SEQUENCE.slice(3)  // 从 preprocess 开始
+  for (let i = 0; i < remainingNodes.length - 1; i++) {
+    edges.push({
+      id: `${remainingNodes[i]}-${remainingNodes[i + 1]}`,
+      source: remainingNodes[i],
+      target: remainingNodes[i + 1],
+      animated: workflow?.currentNode === remainingNodes[i],
+      style: { stroke: '#999', strokeWidth: 2 }
+    })
+  }
+  
+  return edges
 }
 
 const initialNodes = buildNodes(null)
