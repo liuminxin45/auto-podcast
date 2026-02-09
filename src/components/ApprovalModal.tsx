@@ -55,7 +55,7 @@ export default function ApprovalModal({ visible, approvalData, onApprove, onReje
           <div style={{ 
             marginBottom: 16, 
             padding: 12, 
-            background: 'var(--bg-elevated)', 
+            background: 'var(--bg-primary)', 
             borderRadius: 6,
             border: '1px solid var(--border-color)'
           }}>
@@ -70,7 +70,7 @@ export default function ApprovalModal({ visible, approvalData, onApprove, onReje
 
         {/* 脚本内容 */}
         <div style={{
-          background: 'var(--bg-primary)',
+          background: 'var(--bg-tertiary)',
           color: 'var(--text-secondary)',
           padding: 16,
           borderRadius: 6,
@@ -102,7 +102,7 @@ export default function ApprovalModal({ visible, approvalData, onApprove, onReje
             <div style={{ 
               marginTop: 8, 
               padding: 12, 
-              background: 'rgba(24, 144, 255, 0.1)', 
+              background: 'var(--info-bg)', 
               borderRadius: 6,
               border: '1px solid var(--info-color)'
             }}>
@@ -126,7 +126,7 @@ export default function ApprovalModal({ visible, approvalData, onApprove, onReje
                   style={{ 
                     marginBottom: 8, 
                     padding: 10, 
-                    background: 'var(--bg-elevated)', 
+                    background: 'var(--bg-primary)', 
                     borderRadius: 6,
                     border: '1px solid var(--border-color)',
                     fontSize: 12
@@ -169,7 +169,7 @@ export default function ApprovalModal({ visible, approvalData, onApprove, onReje
       maskClosable={false}
       styles={{
         header: {
-          background: 'var(--bg-elevated)',
+          background: 'var(--bg-secondary)',
           borderBottom: '1px solid var(--border-color)',
           padding: '16px 24px',
           borderRadius: '8px 8px 0 0',
@@ -183,7 +183,7 @@ export default function ApprovalModal({ visible, approvalData, onApprove, onReje
           background: 'var(--bg-secondary)',
           borderRadius: '8px',
           border: '1px solid var(--border-color)',
-          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.5)'
+          boxShadow: 'var(--shadow-lg)'
         }
       }}
     >
@@ -224,7 +224,7 @@ export default function ApprovalModal({ visible, approvalData, onApprove, onReje
             style={{ 
               background: 'var(--success-color)', 
               borderColor: 'var(--success-color)',
-              boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+              boxShadow: 'var(--shadow-sm)'
             }}
           >
             Approve & Continue

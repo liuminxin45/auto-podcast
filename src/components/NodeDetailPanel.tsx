@@ -67,9 +67,11 @@ export default function NodeDetailPanel({ nodeName, workflow, onClose }: Props) 
         color={colors[status] || 'default'} 
         icon={icons[status]}
         style={{ 
-          fontSize: '14px', 
-          padding: '4px 12px',
-          borderRadius: '4px'
+          fontSize: '13px', 
+          padding: '2px 10px',
+          borderRadius: '4px',
+          border: 'none',
+          fontWeight: 500
         }}
       >
         {status ? status.toUpperCase() : 'UNKNOWN'}
@@ -221,7 +223,7 @@ export default function NodeDetailPanel({ nodeName, workflow, onClose }: Props) 
           color: 'var(--text-tertiary)',
         }}>
           <div style={{ textAlign: 'center' }}>
-            <CodeOutlined style={{ fontSize: 48, marginBottom: 16, opacity: 0.2 }} />
+            <CodeOutlined style={{ fontSize: 48, marginBottom: 16, opacity: 0.1 }} />
             <div>{title === 'Input' ? 'No input data available' : 'No output data produced'}</div>
           </div>
         </div>
@@ -229,32 +231,38 @@ export default function NodeDetailPanel({ nodeName, workflow, onClose }: Props) 
     }
 
     return (
-      <div style={{ padding: 24, paddingBottom: 64 }}>
+      <div style={{ padding: 20, paddingBottom: 64 }}>
         {Object.entries(data).map(([key, value]) => (
           <div key={key} style={{ marginBottom: 24 }}>
             <div style={{ 
               display: 'flex',
               alignItems: 'center',
               marginBottom: 8,
-              padding: '6px 12px',
-              background: 'var(--bg-elevated)',
-              borderRadius: '6px',
-              borderLeft: '3px solid var(--accent-primary)'
+              padding: '6px 0',
             }}>
-              <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{key}</span>
+              <span style={{ 
+                fontWeight: 600, 
+                color: 'var(--text-primary)',
+                fontSize: '13px',
+                background: 'var(--bg-tertiary)',
+                padding: '4px 8px',
+                borderRadius: '4px',
+                border: '1px solid var(--border-color)'
+              }}>{key}</span>
             </div>
             <div style={{
-              background: 'var(--bg-primary)',
+              background: 'var(--bg-tertiary)',
               color: 'var(--text-secondary)',
               padding: 16,
               borderRadius: 8,
               maxHeight: 400,
               overflow: 'auto',
               fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
-              fontSize: 13,
+              fontSize: 12,
               whiteSpace: 'pre-wrap',
               wordBreak: 'break-word',
-              border: '1px solid var(--border-color)'
+              border: '1px solid var(--border-color)',
+              lineHeight: 1.5
             }}>
               {typeof value === 'object' 
                 ? JSON.stringify(value, null, 2)
@@ -276,27 +284,34 @@ export default function NodeDetailPanel({ nodeName, workflow, onClose }: Props) 
         </span>
       ),
       children: (
-        <div style={{ padding: 24, overflow: 'auto', height: '100%' }}>
+        <div style={{ padding: 20, overflow: 'auto', height: '100%' }}>
           {execution ? (
             <Space direction="vertical" style={{ width: '100%' }} size="large">
               
               {/* Header Info Card */}
-              <Card size="small" style={{ background: 'var(--bg-elevated)', borderColor: 'var(--border-color)' }}>
+              <Card 
+                size="small" 
+                bordered={false} 
+                style={{ 
+                  background: 'var(--bg-tertiary)', 
+                  boxShadow: 'none'
+                }}
+              >
                 <Row gutter={24}>
                   <Col span={12}>
                      <Statistic 
-                        title="Execution Status" 
+                        title={<span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Status</span>}
                         value={execution.status} 
                         formatter={() => getStatusTag(execution.status)}
                       />
                   </Col>
                   <Col span={12}>
                     <Statistic 
-                      title="Duration" 
+                      title={<span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Duration</span>}
                       value={execution.duration ? execution.duration.toFixed(2) : 0} 
                       precision={2}
                       suffix="s"
-                      prefix={<ClockCircleOutlined />}
+                      valueStyle={{ fontSize: 18, fontWeight: 600, color: 'var(--text-primary)' }}
                     />
                   </Col>
                 </Row>
@@ -304,20 +319,20 @@ export default function NodeDetailPanel({ nodeName, workflow, onClose }: Props) 
 
               {isWaitingApproval && (
                 <div style={{ 
-                  padding: 24, 
-                  background: 'rgba(250, 173, 20, 0.1)', 
+                  padding: 20, 
+                  background: 'var(--warning-bg)', 
                   border: '1px solid var(--warning-color)', 
                   borderRadius: 8,
                   textAlign: 'center'
                 }}>
-                  <Title level={4} style={{ color: 'var(--warning-color)', marginTop: 0 }}>
+                  <Title level={5} style={{ color: 'var(--warning-color)', marginTop: 0 }}>
                     <SettingOutlined spin style={{ marginRight: 8 }} />
                     Awaiting Approval
                   </Title>
-                  <Paragraph style={{ color: 'var(--text-primary)', maxWidth: 500, margin: '0 auto 24px' }}>
-                    This node requires manual approval to proceed. Please review the outputs and logs, then decide whether to continue the workflow.
+                  <Paragraph style={{ color: 'var(--text-primary)', maxWidth: 400, margin: '0 auto 20px', fontSize: 13 }}>
+                    This node requires manual approval to proceed. Please review the outputs and logs.
                   </Paragraph>
-                  <Space size="large">
+                  <Space size="middle">
                     <Button 
                       type="primary" 
                       size="large"
@@ -326,7 +341,7 @@ export default function NodeDetailPanel({ nodeName, workflow, onClose }: Props) 
                       style={{ 
                         background: 'var(--success-color)', 
                         borderColor: 'var(--success-color)',
-                        minWidth: 120
+                        minWidth: 100
                       }}
                     >
                       Approve
@@ -336,7 +351,7 @@ export default function NodeDetailPanel({ nodeName, workflow, onClose }: Props) 
                       size="large"
                       icon={<CloseOutlined />}
                       onClick={handleReject}
-                      style={{ minWidth: 120 }}
+                      style={{ minWidth: 100 }}
                     >
                       Reject
                     </Button>
@@ -347,14 +362,14 @@ export default function NodeDetailPanel({ nodeName, workflow, onClose }: Props) 
               {execution.error && (
                 <div style={{ 
                   padding: 16, 
-                  background: 'rgba(255, 77, 79, 0.1)', 
+                  background: 'var(--error-bg)', 
                   border: '1px solid var(--error-color)', 
                   borderRadius: 8 
                 }}>
                   <Title level={5} style={{ color: 'var(--error-color)', marginTop: 0 }}>Execution Error</Title>
                   <Paragraph style={{ 
                     fontFamily: "'JetBrains Mono', 'Fira Code', monospace", 
-                    fontSize: 13,
+                    fontSize: 12,
                     color: 'var(--text-primary)',
                     marginBottom: 0,
                     whiteSpace: 'pre-wrap'
@@ -373,7 +388,7 @@ export default function NodeDetailPanel({ nodeName, workflow, onClose }: Props) 
               color: 'var(--text-tertiary)',
             }}>
               <div style={{ textAlign: 'center' }}>
-                <ClockCircleOutlined style={{ fontSize: 48, marginBottom: 16, opacity: 0.2 }} />
+                <ClockCircleOutlined style={{ fontSize: 40, marginBottom: 12, opacity: 0.2 }} />
                 <div>Node has not been executed yet</div>
               </div>
             </div>
@@ -414,10 +429,10 @@ export default function NodeDetailPanel({ nodeName, workflow, onClose }: Props) 
         <div style={{ 
           height: '100%',
           overflow: 'auto',
-          background: 'var(--bg-primary)', 
+          background: 'var(--bg-tertiary)', 
           padding: 16, 
           fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
-          fontSize: 13,
+          fontSize: 12,
           lineHeight: 1.6,
         }}>
           {state.logs?.filter((log: string) => log.includes(`[${nodeName}]`) || log.includes(nodeName)).length > 0 ? (
@@ -426,7 +441,7 @@ export default function NodeDetailPanel({ nodeName, workflow, onClose }: Props) 
               .map((log: string, i: number) => (
                 <div key={i} style={{ 
                   padding: '4px 0',
-                  borderBottom: '1px solid var(--bg-elevated)',
+                  borderBottom: '1px solid var(--border-color)',
                   color: log.includes('Error') ? 'var(--error-color)' : 'var(--text-secondary)'
                 }}>{log}</div>
               ))
@@ -471,11 +486,10 @@ export default function NodeDetailPanel({ nodeName, workflow, onClose }: Props) 
       flexDirection: 'column', 
       background: 'var(--bg-secondary)',
       borderLeft: '1px solid var(--border-color)',
-      boxShadow: '-4px 0 12px rgba(0,0,0,0.1)'
     }}>
       {/* Header */}
       <div style={{ 
-        padding: '16px 24px', 
+        padding: '12px 20px', 
         borderBottom: '1px solid var(--border-color)',
         background: 'var(--bg-secondary)',
         display: 'flex', 
@@ -483,9 +497,9 @@ export default function NodeDetailPanel({ nodeName, workflow, onClose }: Props) 
         alignItems: 'center',
         flexShrink: 0
       }}>
-        <Space size="middle">
-          <span style={{ fontSize: '18px', fontWeight: 600, color: 'var(--text-primary)' }}>{nodeName}</span>
-          <Tag color="blue" bordered={false}>NODE</Tag>
+        <Space size="small">
+          <span style={{ fontSize: '16px', fontWeight: 600, color: 'var(--text-primary)' }}>{nodeName}</span>
+          <Tag bordered={false} style={{ color: 'var(--text-secondary)', background: 'var(--bg-tertiary)' }}>NODE</Tag>
         </Space>
         <Space>
           <Tooltip title="Copy node information">
@@ -493,6 +507,7 @@ export default function NodeDetailPanel({ nodeName, workflow, onClose }: Props) 
               type="text"
               icon={<CopyOutlined />}
               onClick={handleCopyNodeInfo}
+              style={{ color: 'var(--text-secondary)' }}
             />
           </Tooltip>
           <Tooltip title="Close panel">
@@ -500,6 +515,7 @@ export default function NodeDetailPanel({ nodeName, workflow, onClose }: Props) 
               type="text"
               icon={<CloseOutlined />}
               onClick={onClose}
+              style={{ color: 'var(--text-secondary)' }}
             />
           </Tooltip>
         </Space>
@@ -512,12 +528,12 @@ export default function NodeDetailPanel({ nodeName, workflow, onClose }: Props) 
           onChange={setActiveTab}
           items={tabItems}
           type="line"
-          size="middle"
+          size="small"
           style={{ height: '100%' }}
           tabBarStyle={{ 
-            padding: '0 24px', 
+            padding: '0 20px', 
             margin: 0,
-            background: 'var(--bg-elevated)',
+            background: 'var(--bg-secondary)',
             borderBottom: '1px solid var(--border-color)'
           }}
         />

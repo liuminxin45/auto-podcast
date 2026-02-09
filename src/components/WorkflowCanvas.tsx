@@ -8,7 +8,8 @@ import ReactFlow, {
   type Node,
   type Edge,
   type ReactFlowInstance,
-  Position
+  Position,
+  MarkerType
 } from 'reactflow'
 import 'reactflow/dist/style.css'
 import type { Workflow } from '../types/workflow'
@@ -36,43 +37,85 @@ const NODE_LABELS: Record<string, string> = {
 }
 
 function getNodeStyle(status: string) {
+  const baseStyle = {
+    background: 'var(--bg-secondary)',
+    borderRadius: '12px',
+    padding: '12px 16px',
+    width: 160,
+    color: 'var(--text-primary)',
+    fontSize: '13px',
+    fontWeight: 500,
+    boxShadow: 'var(--shadow-md)',
+    transition: 'all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1)',
+    textAlign: 'left' as const,
+  }
+
   switch (status) {
     case 'completed':
-      return { bg: 'var(--bg-elevated)', border: 'var(--success-color)', emoji: '✓', shadow: '0 0 10px rgba(82, 196, 26, 0.2)' }
+      return { 
+        ...baseStyle, 
+        border: '1px solid var(--success-color)',
+        boxShadow: '0 4px 12px rgba(16, 185, 129, 0.15)',
+        statusColor: 'var(--success-color)',
+        icon: '✓'
+      }
     case 'running':
-      return { bg: 'var(--bg-elevated)', border: 'var(--warning-color)', emoji: '⏳', shadow: '0 0 15px rgba(250, 173, 20, 0.4)' }
+      return { 
+        ...baseStyle, 
+        border: '1px solid var(--accent-primary)',
+        boxShadow: '0 4px 15px rgba(37, 99, 235, 0.2)',
+        statusColor: 'var(--accent-primary)',
+        icon: '⚡'
+      }
     case 'failed':
-      return { bg: 'var(--bg-elevated)', border: 'var(--error-color)', emoji: '❌', shadow: '0 0 10px rgba(255, 77, 79, 0.2)' }
+      return { 
+        ...baseStyle, 
+        border: '1px solid var(--error-color)',
+        boxShadow: '0 4px 12px rgba(239, 68, 68, 0.15)',
+        statusColor: 'var(--error-color)',
+        icon: '✕'
+      }
     case 'waiting_approval':
-      return { bg: 'var(--bg-elevated)', border: 'var(--info-color)', emoji: '👤', shadow: '0 0 10px rgba(24, 144, 255, 0.2)' }
+      return { 
+        ...baseStyle, 
+        border: '1px solid var(--warning-color)',
+        boxShadow: '0 4px 12px rgba(245, 158, 11, 0.15)',
+        statusColor: 'var(--warning-color)',
+        icon: '👤'
+      }
     default:
-      return { bg: 'var(--bg-elevated)', border: 'var(--border-color)', emoji: '⏸', shadow: 'none' }
+      return { 
+        ...baseStyle, 
+        border: '1px solid var(--border-color)',
+        statusColor: 'var(--text-tertiary)',
+        icon: '○'
+      }
   }
 }
 
 function buildNodes(workflow: Workflow | null): Node[] {
   const nodes: Node[] = []
   let xPos = 50
-  const yBase = 150
-  const xSpacing = 200
+  const yBase = 200
+  const xSpacing = 240 // Wider spacing for cleaner look
 
   for (let i = 0; i < NODE_SEQUENCE.length; i++) {
     const name = NODE_SEQUENCE[i]
     const execution = workflow?.nodeExecutions?.[name]
     const status = execution?.status || 'pending'
-    const { bg, border, emoji, shadow } = getNodeStyle(status)
+    const { statusColor, icon, ...style } = getNodeStyle(status)
     const durationText = execution?.duration
       ? `${execution.duration.toFixed(1)}s`
       : ''
 
     let yPos = yBase
     
-    // fetch和manual并行显示
+    // Parallel branches
     if (name === 'fetch') {
-      yPos = yBase - 80  // fetch在上方
+      yPos = yBase - 100 
     } else if (name === 'manual') {
-      yPos = yBase + 80  // manual在下方
-      xPos -= xSpacing  // manual与fetch同一个x坐标
+      yPos = yBase + 100
+      xPos -= xSpacing 
     }
 
     nodes.push({
@@ -80,25 +123,38 @@ function buildNodes(workflow: Workflow | null): Node[] {
       type: 'default',
       data: {
         label: (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <div style={{ fontSize: '14px', fontWeight: 500 }}>{emoji} {NODE_LABELS[name]}</div>
-            {durationText && <div style={{ fontSize: '10px', opacity: 0.7 }}>{durationText}</div>}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{ 
+              width: '32px', 
+              height: '32px', 
+              borderRadius: '8px', 
+              background: `${statusColor}15`, // 10% opacity
+              color: statusColor,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '16px',
+              flexShrink: 0
+            }}>
+              {icon}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                {NODE_LABELS[name]}
+              </div>
+              {durationText && (
+                <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '2px' }}>
+                  {durationText}
+                </div>
+              )}
+            </div>
           </div>
         )
       },
       position: { x: xPos, y: yPos },
       sourcePosition: Position.Right,
       targetPosition: Position.Left,
-      style: {
-        background: bg,
-        border: `1px solid ${border}`,
-        borderRadius: '8px',
-        padding: '12px',
-        width: 140,
-        color: 'var(--text-primary)',
-        boxShadow: shadow,
-        transition: 'all 0.3s ease',
-      }
+      style: style
     })
 
     xPos += xSpacing
@@ -110,57 +166,47 @@ function buildNodes(workflow: Workflow | null): Node[] {
 function buildEdges(workflow: Workflow | null): Edge[] {
   const edges: Edge[] = []
   
-  const commonEdgeStyle = { stroke: 'var(--border-light)', strokeWidth: 2 }
+  const commonEdgeStyle = { stroke: 'var(--border-color)', strokeWidth: 1.5 }
   const activeEdgeStyle = { stroke: 'var(--accent-primary)', strokeWidth: 2 }
+  
+  // Custom marker
+  const markerEnd = {
+    type: MarkerType.ArrowClosed,
+    width: 20,
+    height: 20,
+    color: 'var(--border-color)',
+  }
+  
+  const activeMarkerEnd = {
+    ...markerEnd,
+    color: 'var(--accent-primary)',
+  }
 
-  // source_selector 分支到 fetch 和 manual
-  edges.push({
-    id: 'source_selector-fetch',
-    source: 'source_selector',
-    target: 'fetch',
-    animated: workflow?.currentNode === 'source_selector',
-    style: workflow?.currentNode === 'source_selector' ? activeEdgeStyle : commonEdgeStyle
-  })
-  
-  edges.push({
-    id: 'source_selector-manual',
-    source: 'source_selector',
-    target: 'manual',
-    animated: workflow?.currentNode === 'source_selector',
-    style: workflow?.currentNode === 'source_selector' ? activeEdgeStyle : commonEdgeStyle
-  })
-  
-  // fetch 和 manual 都连接到 preprocess
-  edges.push({
-    id: 'fetch-preprocess',
-    source: 'fetch',
-    target: 'preprocess',
-    animated: workflow?.currentNode === 'fetch',
-    style: workflow?.currentNode === 'fetch' ? activeEdgeStyle : commonEdgeStyle
-  })
-  
-  edges.push({
-    id: 'manual-preprocess',
-    source: 'manual',
-    target: 'preprocess',
-    animated: workflow?.currentNode === 'manual',
-    style: workflow?.currentNode === 'manual' ? activeEdgeStyle : commonEdgeStyle
-  })
-  
-  // preprocess 之后的节点顺序连接
-  const remainingNodes = NODE_SEQUENCE.slice(3)  // 从 preprocess 开始
-  for (let i = 0; i < remainingNodes.length - 1; i++) {
-    const source = remainingNodes[i]
-    const target = remainingNodes[i + 1]
-    const isActive = workflow?.currentNode === source
+  const addEdge = (source: string, target: string) => {
+    const isActive = workflow?.currentNode === source || 
+                    (workflow?.nodeExecutions?.[source]?.status === 'completed' && workflow?.currentNode === target)
     
     edges.push({
       id: `${source}-${target}`,
-      source: source,
-      target: target,
+      source,
+      target,
       animated: isActive,
-      style: isActive ? activeEdgeStyle : commonEdgeStyle
+      style: isActive ? activeEdgeStyle : commonEdgeStyle,
+      type: 'smoothstep', // Cleaner lines (n8n style)
+      markerEnd: isActive ? activeMarkerEnd : markerEnd,
     })
+  }
+
+  // Define connections
+  addEdge('source_selector', 'fetch')
+  addEdge('source_selector', 'manual')
+  addEdge('fetch', 'preprocess')
+  addEdge('manual', 'preprocess')
+  
+  // Linear sequence
+  const remainingNodes = NODE_SEQUENCE.slice(3) // From preprocess
+  for (let i = 0; i < remainingNodes.length - 1; i++) {
+    addEdge(remainingNodes[i], remainingNodes[i+1])
   }
   
   return edges
@@ -184,11 +230,11 @@ export default function WorkflowCanvas({ workflow, onNodeClick }: Props) {
   }, [workflow, setNodes, setEdges])
 
   const onInit = useCallback((instance: ReactFlowInstance) => {
-    setTimeout(() => instance.fitView({ padding: 0.2 }), 100)
+    setTimeout(() => instance.fitView({ padding: 0.2, duration: 800 }), 100)
   }, [])
 
   return (
-    <div style={{ position: 'absolute', inset: 0 }}>
+    <div style={{ position: 'absolute', inset: 0, background: 'var(--bg-primary)' }}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -200,10 +246,37 @@ export default function WorkflowCanvas({ workflow, onNodeClick }: Props) {
         maxZoom={2}
         nodesDraggable={false}
         nodesConnectable={false}
+        defaultEdgeOptions={{ type: 'smoothstep' }}
+        fitView
       >
-        <Background />
-        <Controls />
-        <MiniMap />
+        <Background color="var(--border-color)" gap={20} size={1} />
+        <Controls 
+          style={{ 
+            background: 'var(--bg-secondary)', 
+            border: '1px solid var(--border-color)',
+            boxShadow: 'var(--shadow-md)',
+            borderRadius: '8px',
+            padding: '4px'
+          }} 
+          showInteractive={false}
+        />
+        <MiniMap 
+          style={{ 
+            background: 'var(--bg-secondary)',
+            border: '1px solid var(--border-color)',
+            borderRadius: '8px',
+            boxShadow: 'var(--shadow-md)'
+          }}
+          maskColor="var(--bg-primary)"
+          nodeColor={(n) => {
+             // simplified color mapping for minimap
+             const style = n.style || {}
+             if (style.border && (style.border as string).includes('success')) return 'var(--success-color)'
+             if (style.border && (style.border as string).includes('accent')) return 'var(--accent-primary)'
+             if (style.border && (style.border as string).includes('error')) return 'var(--error-color)'
+             return 'var(--border-color)'
+          }}
+        />
       </ReactFlow>
     </div>
   )

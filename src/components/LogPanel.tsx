@@ -16,13 +16,14 @@ export default function LogPanel({ workflow, collapsed, onToggle }: Props) {
     <div style={{ height: '100%', background: 'var(--bg-secondary)', display: 'flex', flexDirection: 'column' }}>
       <Tabs
         defaultActiveKey="logs"
+        size="small"
         tabBarExtraContent={
           <Button 
             type="text" 
             icon={collapsed ? <UpOutlined /> : <DownOutlined />} 
             onClick={onToggle}
             size="small"
-            style={{ marginRight: 16, color: 'var(--text-secondary)' }}
+            style={{ marginRight: 12, color: 'var(--text-secondary)' }}
           >
             {collapsed ? 'Expand' : 'Collapse'}
           </Button>
@@ -31,10 +32,10 @@ export default function LogPanel({ workflow, collapsed, onToggle }: Props) {
           {
             key: 'logs',
             label: (
-              <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px' }}>
                 <FileTextOutlined />
                 <span>Execution Logs</span>
-                <Badge count={logs.length} overflowCount={999} style={{ backgroundColor: 'var(--bg-elevated)', color: 'var(--text-secondary)', boxShadow: 'none' }} />
+                <Badge count={logs.length} overflowCount={999} style={{ backgroundColor: 'var(--bg-tertiary)', color: 'var(--text-secondary)', boxShadow: 'none' }} />
               </span>
             ),
             children: (
@@ -43,7 +44,7 @@ export default function LogPanel({ workflow, collapsed, onToggle }: Props) {
                 overflow: 'auto', 
                 padding: '12px 16px',
                 fontFamily: "'JetBrains Mono', 'Fira Code', Consolas, monospace",
-                fontSize: '13px',
+                fontSize: '12px',
                 color: 'var(--text-secondary)',
                 lineHeight: '1.6',
                 background: 'var(--bg-primary)',
@@ -56,15 +57,17 @@ export default function LogPanel({ workflow, collapsed, onToggle }: Props) {
                   logs.map((log: string, i: number) => (
                     <div key={i} style={{ 
                       padding: '2px 0',
-                      borderBottom: '1px solid var(--bg-elevated)',
-                      color: log.includes('Error') || log.includes('Failed') ? 'var(--error-color)' : 'inherit'
+                      borderBottom: '1px solid var(--border-light)',
+                      color: log.includes('Error') || log.includes('Failed') ? 'var(--error-color)' : 'inherit',
+                      display: 'flex',
+                      gap: '12px'
                     }}>
-                      <span style={{ opacity: 0.5, marginRight: '8px' }}>{i + 1}</span>
-                      {log}
+                      <span style={{ opacity: 0.4, minWidth: '24px', textAlign: 'right', userSelect: 'none' }}>{i + 1}</span>
+                      <span>{log}</span>
                     </div>
                   ))
                 ) : (
-                  <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No logs available" style={{ margin: '40px 0' }} />
+                  <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No logs available" style={{ margin: '20px 0' }} />
                 )}
               </div>
             )
@@ -72,7 +75,7 @@ export default function LogPanel({ workflow, collapsed, onToggle }: Props) {
           {
             key: 'errors',
             label: (
-              <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px' }}>
                 <WarningOutlined style={{ color: errors.length > 0 ? 'var(--error-color)' : 'inherit' }} />
                 <span style={{ color: errors.length > 0 ? 'var(--error-color)' : 'inherit' }}>Errors</span>
                 {errors.length > 0 && <Badge count={errors.length} style={{ backgroundColor: 'var(--error-color)' }} />}
@@ -94,19 +97,19 @@ export default function LogPanel({ workflow, collapsed, onToggle }: Props) {
                     <div key={i} style={{ 
                       padding: '8px 12px', 
                       marginBottom: '8px',
-                      background: 'rgba(255, 77, 79, 0.1)',
-                      border: '1px solid rgba(255, 77, 79, 0.2)',
+                      background: 'var(--error-bg)',
+                      border: '1px solid var(--error-color)',
                       borderRadius: '4px',
                       color: 'var(--text-primary)'
                     }}>
-                      <div style={{ fontWeight: 'bold', color: 'var(--error-color)', marginBottom: '4px' }}>
+                      <div style={{ fontWeight: '600', color: 'var(--error-color)', marginBottom: '4px', fontSize: '13px' }}>
                         [{err.node}] Error
                       </div>
-                      <div style={{ fontFamily: 'monospace', fontSize: '13px' }}>{err.message}</div>
+                      <div style={{ fontFamily: 'monospace', fontSize: '12px' }}>{err.message}</div>
                     </div>
                   ))
                 ) : (
-                  <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No errors found" style={{ margin: '40px 0' }} />
+                  <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No errors found" style={{ margin: '20px 0' }} />
                 )}
               </div>
             )
@@ -117,7 +120,8 @@ export default function LogPanel({ workflow, collapsed, onToggle }: Props) {
           background: 'var(--bg-secondary)', 
           margin: 0, 
           padding: '0 16px',
-          borderBottom: collapsed ? 'none' : '1px solid var(--border-color)'
+          borderBottom: collapsed ? 'none' : '1px solid var(--border-color)',
+          minHeight: '40px'
         }}
       />
     </div>

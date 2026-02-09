@@ -82,18 +82,20 @@ function App() {
     }
   }
 
-  const logPanelHeight = logPanelCollapsed ? '46px' : '240px'
+  const logPanelHeight = logPanelCollapsed ? '40px' : '200px'
 
   return (
     <ConfigProvider
       theme={{
-        algorithm: theme.darkAlgorithm,
+        algorithm: theme.defaultAlgorithm,
         token: {
-          colorPrimary: '#1890ff',
-          colorBgBase: '#121212',
-          colorBgContainer: '#1e1e1e',
-          colorBgElevated: '#2d2d2d',
-          colorBorder: '#333333',
+          colorPrimary: '#2563eb',
+          colorBgBase: '#ffffff',
+          colorBgContainer: '#ffffff',
+          colorBgElevated: '#ffffff',
+          colorBorder: '#e5e7eb',
+          fontFamily: "'Inter', sans-serif",
+          borderRadius: 6,
         },
       }}
     >
@@ -104,25 +106,28 @@ function App() {
           justifyContent: 'space-between',
           background: 'var(--bg-secondary)',
           borderBottom: '1px solid var(--border-color)',
-          padding: '0 24px',
-          height: '64px'
+          padding: '0 20px',
+          height: '52px',
+          lineHeight: '52px',
+          zIndex: 20
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <span style={{ fontSize: '24px' }}>🎙️</span>
-            <Title level={4} style={{ color: 'var(--text-primary)', margin: 0, fontWeight: 600 }}>
+            <span style={{ fontSize: '20px' }}>🎙️</span>
+            <Title level={5} style={{ color: 'var(--text-primary)', margin: 0, fontWeight: 600 }}>
               Auto-Podcast Studio
             </Title>
           </div>
-          <Space size="middle">
+          <Space size="small">
             <Button 
               type="primary" 
               icon={<PlayCircleOutlined />}
               onClick={handleStart}
-              size="large"
               style={{ 
                 background: 'var(--accent-primary)',
                 borderColor: 'var(--accent-primary)',
-                boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+                boxShadow: 'var(--shadow-sm)',
+                height: '32px',
+                fontSize: '13px'
               }}
             >
               Create New Episode
@@ -131,8 +136,9 @@ function App() {
               icon={<SettingOutlined />} 
               style={{ 
                 background: 'transparent', 
-                borderColor: 'var(--border-light)',
-                color: 'var(--text-primary)'
+                borderColor: 'var(--border-color)',
+                color: 'var(--text-secondary)',
+                height: '32px'
               }}
             >
               Settings
@@ -144,7 +150,7 @@ function App() {
           <Content style={{ 
             position: 'relative', 
             overflow: 'hidden', 
-            height: `calc(100vh - 64px - ${logPanelHeight})`,
+            height: `calc(100vh - 52px - ${logPanelHeight})`,
             display: 'flex',
             flexDirection: 'row',
             transition: 'height 0.3s ease'
@@ -155,13 +161,13 @@ function App() {
             
             {selectedNode && (
               <div style={{ 
-                width: '600px', 
+                width: '500px', 
                 height: '100%', 
                 borderLeft: '1px solid var(--border-color)',
                 background: 'var(--bg-secondary)',
-                boxShadow: '-4px 0 16px rgba(0, 0, 0, 0.2)',
+                boxShadow: 'var(--shadow-lg)',
                 zIndex: 20,
-                animation: 'slideIn 0.3s ease-out'
+                animation: 'slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1)'
               }}>
                 <NodeDetailPanel 
                   nodeName={selectedNode} 
@@ -179,7 +185,8 @@ function App() {
             borderTop: '1px solid var(--border-color)',
             zIndex: 10,
             transition: 'height 0.3s ease',
-            overflow: 'hidden'
+            overflow: 'hidden',
+            boxShadow: '0 -2px 10px rgba(0,0,0,0.02)'
           }}>
             <LogPanel 
               workflow={workflow} 
@@ -196,12 +203,6 @@ function App() {
           onReject={handleReject}
         />
       </Layout>
-      <style>{`
-        @keyframes slideIn {
-          from { transform: translateX(100%); opacity: 0; }
-          to { transform: translateX(0); opacity: 1; }
-        }
-      `}</style>
     </ConfigProvider>
   )
 }

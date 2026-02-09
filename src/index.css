@@ -1,25 +1,35 @@
 :root {
-  /* Color Palette - Dark Theme */
-  --bg-primary: #121212;
-  --bg-secondary: #1e1e1e;
-  --bg-tertiary: #252526;
-  --bg-elevated: #2d2d2d;
+  /* Color Palette - Light Theme (Dify/n8n inspired) */
+  --bg-primary: #f9fafb;     /* Main app background - Very light cool gray */
+  --bg-secondary: #ffffff;   /* Surface/Card background - White */
+  --bg-tertiary: #f3f4f6;    /* Hover states / Secondary surfaces */
+  --bg-elevated: #ffffff;    /* Modals/Dropdowns */
   
-  --text-primary: #e0e0e0;
-  --text-secondary: #a0a0a0;
-  --text-tertiary: #606060;
+  --text-primary: #111827;   /* Almost black */
+  --text-secondary: #4b5563; /* Cool dark gray */
+  --text-tertiary: #9ca3af;  /* Light gray */
   
-  --accent-primary: #1890ff;
-  --accent-hover: #40a9ff;
-  --accent-active: #096dd9;
+  --accent-primary: #2563eb; /* Modern Blue */
+  --accent-hover: #1d4ed8;
+  --accent-active: #1e40af;
+  --accent-light: #eff6ff;   /* Very light blue for backgrounds */
   
-  --border-color: #333333;
-  --border-light: #444444;
+  --border-color: #e5e7eb;   /* Light gray border */
+  --border-light: #f3f4f6;   /* Very light border */
+  --border-active: #bfdbfe;  /* Active border */
 
-  --success-color: #52c41a;
-  --warning-color: #faad14;
-  --error-color: #ff4d4f;
-  --info-color: #1890ff;
+  --success-color: #10b981;  /* Emerald */
+  --success-bg: #ecfdf5;
+  --warning-color: #f59e0b;  /* Amber */
+  --warning-bg: #fffbeb;
+  --error-color: #ef4444;    /* Red */
+  --error-bg: #fef2f2;
+  --info-color: #3b82f6;     /* Blue */
+  --info-bg: #eff6ff;
+  
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
 }
 
 * {
@@ -29,13 +39,14 @@
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
     'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   background-color: var(--bg-primary);
   color: var(--text-primary);
+  font-size: 13px; /* Compact font size */
 }
 
 #root {
@@ -45,27 +56,26 @@ body {
   flex-direction: column;
 }
 
-/* Scrollbar Styling */
+/* Scrollbar Styling - Thinner & Cleaner */
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--bg-primary);
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--bg-elevated);
-  border-radius: 5px;
-  border: 2px solid var(--bg-primary);
+  background: #d1d5db;
+  border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #555;
+  background: #9ca3af;
 }
 
-/* Ant Design Overrides for Dark Mode */
+/* Ant Design Overrides for Light Mode - Cleaner */
 .ant-layout {
   background: var(--bg-primary) !important;
 }
@@ -73,7 +83,9 @@ body {
 .ant-layout-header {
   background: var(--bg-secondary) !important;
   border-bottom: 1px solid var(--border-color);
-  padding-inline: 24px !important;
+  padding-inline: 16px !important; /* Compact padding */
+  box-shadow: var(--shadow-sm);
+  z-index: 10;
 }
 
 .ant-layout-content {
@@ -86,71 +98,108 @@ body {
   border-top: 1px solid var(--border-color) !important;
 }
 
-.ant-drawer-content, .ant-drawer-header, .ant-drawer-body {
+/* Drawer & Modals */
+.ant-drawer-content, .ant-drawer-header, .ant-drawer-body,
+.ant-modal-content, .ant-modal-header {
   background-color: var(--bg-secondary) !important;
   color: var(--text-primary) !important;
 }
 
-.ant-drawer-title {
+.ant-drawer-title, .ant-modal-title {
   color: var(--text-primary) !important;
+  font-weight: 600 !important;
 }
 
+/* Descriptions */
 .ant-descriptions-item-label {
   color: var(--text-secondary) !important;
-  background-color: var(--bg-tertiary) !important;
+  background-color: var(--bg-primary) !important;
 }
 
 .ant-descriptions-item-content {
   color: var(--text-primary) !important;
 }
 
+/* Tabs */
 .ant-tabs-tab {
   color: var(--text-secondary) !important;
+  font-size: 13px !important;
+}
+
+.ant-tabs-tab:hover {
+  color: var(--accent-primary) !important;
 }
 
 .ant-tabs-tab.ant-tabs-tab-active .ant-tabs-tab-btn {
   color: var(--accent-primary) !important;
+  font-weight: 500;
 }
 
+/* Cards */
 .ant-card {
   background: var(--bg-secondary) !important;
   border-color: var(--border-color) !important;
+  box-shadow: var(--shadow-sm);
+  border-radius: 8px !important;
 }
 
 .ant-card-head {
   border-bottom-color: var(--border-color) !important;
   color: var(--text-primary) !important;
+  font-size: 14px !important;
+  min-height: 48px !important;
 }
 
-.ant-modal-content, .ant-modal-header {
-  background-color: var(--bg-elevated) !important;
-}
-
-.ant-modal-title {
-  color: var(--text-primary) !important;
-}
-
-/* React Flow Overrides */
+/* React Flow Overrides for Modern Look */
 .react-flow__node-default {
   background: var(--bg-secondary);
   color: var(--text-primary);
-  border-color: var(--border-color);
+  border: 1px solid var(--border-color);
+  border-radius: 12px; /* More rounded */
+  box-shadow: var(--shadow-md);
+  padding: 0; /* Let content handle padding */
+  overflow: hidden;
+}
+
+.react-flow__node-default.selected {
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 2px var(--accent-active);
 }
 
 .react-flow__controls-button {
-  background: var(--bg-elevated);
+  background: var(--bg-secondary);
   border-bottom: 1px solid var(--border-color);
-  fill: var(--text-primary);
+  fill: var(--text-secondary);
+  box-shadow: var(--shadow-sm);
 }
 
 .react-flow__controls-button:hover {
   background: var(--bg-tertiary);
+  fill: var(--accent-primary);
 }
 
 .react-flow__minimap {
-  background: var(--bg-elevated);
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  box-shadow: var(--shadow-md);
 }
 
 .react-flow__attribution {
   display: none;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideInRight {
+  from { transform: translateX(20px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
 }
