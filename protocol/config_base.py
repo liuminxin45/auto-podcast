@@ -8,7 +8,7 @@ class NodeConfigBase(BaseModel):
     """Base class for all node configurations with validation."""
     
     class Config:
-        extra = "forbid"
+        extra = "ignore"
         validate_assignment = True
     
     @classmethod

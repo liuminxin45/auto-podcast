@@ -11,13 +11,19 @@ let configManager = null
 // Python workflow state
 let currentWorkflow = null
 
+// TrendRadar daemon process
+let trendradarDaemon = null
+
 const DEFAULT_RADAR_STATE = {
   enabled: false,
   intervalMin: 30,
-  keepLast: 100,
+  keepLast: 500,
   lastRunAt: null,
   lastError: null,
+  lastNewCount: 0,
+  lastFetchedCount: 0,
   running: false,
+  runStartedAt: null,
   contents: []
 }
 
@@ -147,7 +153,7 @@ function applyRadarDefaults(config = {}) {
   return {
     monitor_enabled: false,
     monitor_interval_min: 30,
-    monitor_keep_last: 100,
+    monitor_keep_last: 500,
     ...config
   }
 }
@@ -178,7 +184,18 @@ function scheduleRadar() {
 }
 
 async function runRadarOnce(configOverride = null) {
-  if (radarState.running) return radarState
+  // Guard: reset stuck running state after 5 minutes
+  if (radarState.running && radarState.runStartedAt) {
+    const elapsed = Date.now() - radarState.runStartedAt
+    if (elapsed > 5 * 60 * 1000) {
+      console.warn('[Radar] Force-resetting stuck running state after', Math.round(elapsed / 1000), 's')
+      radarState.running = false
+    }
+  }
+  if (radarState.running) {
+    console.warn('[Radar] Already running, skipping')
+    return radarState
+  }
   const fetchConfig = applyRadarDefaults(
     configOverride || (configManager ? configManager.loadNodeConfig('fetch') : null) || {}
   )
@@ -186,6 +203,7 @@ async function runRadarOnce(configOverride = null) {
   radarState.intervalMin = fetchConfig.monitor_interval_min || radarState.intervalMin
   radarState.keepLast = fetchConfig.monitor_keep_last || radarState.keepLast
   radarState.running = true
+  radarState.runStartedAt = Date.now()
   broadcastRadarUpdate()
 
   try {
@@ -213,12 +231,26 @@ async function runRadarOnce(configOverride = null) {
     if (result?.errors?.length) {
       console.warn('[Radar] Errors from fetch node:', result.errors)
     }
+    // Count genuinely new items (not duplicates of what we already had)
+    const existingKeys = new Set((radarState.contents || []).map(item =>
+      `${item?.url || ''}|${item?.title || ''}|${item?.source || ''}`
+    ))
+    const newCount = incoming.filter(item => {
+      const key = `${item?.url || ''}|${item?.title || ''}|${item?.source || ''}`
+      return !existingKeys.has(key)
+    }).length
     radarState.contents = mergeRadarContents(radarState.contents || [], incoming, radarState.keepLast)
+    radarState.lastNewCount = newCount
+    radarState.lastFetchedCount = incoming.length
     radarState.lastRunAt = new Date().toISOString()
     radarState.lastError = null
+    console.log(`[Radar] New: ${radarState.lastNewCount}, Total fetched: ${incoming.length}, Total stored: ${radarState.contents.length}`)
   } catch (error) {
     console.error('[Radar] Fetch failed:', error.message)
+    console.error('[Radar] Stack:', error.stack)
     radarState.lastError = error.message
+    radarState.lastNewCount = 0
+    radarState.lastFetchedCount = 0
   } finally {
     radarState.running = false
     saveRadarCache()
@@ -449,6 +481,119 @@ ipcMain.handle('radar:runOnce', async (event, config) => {
   return radarState
 })
 
+ipcMain.handle('radar:clearContents', async () => {
+  radarState.contents = []
+  radarState.lastNewCount = 0
+  radarState.lastFetchedCount = 0
+  saveRadarCache()
+  broadcastRadarUpdate()
+  return radarState
+})
+
+ipcMain.handle('radar:updateContents', async (event, contents) => {
+  radarState.contents = contents || []
+  saveRadarCache()
+  broadcastRadarUpdate()
+  return radarState
+})
+
+// === TrendRadar Daemon Management ===
+
+function startTrendRadarDaemon(intervalMin = 30) {
+  if (trendradarDaemon) {
+    console.log('[TrendRadar] Daemon already running (PID:', trendradarDaemon.pid, ')')
+    return
+  }
+
+  const projectRoot = path.join(__dirname, '..')
+  const trendradarDir = path.join(projectRoot, 'engine', 'trendradar')
+  if (!fs.existsSync(trendradarDir)) {
+    console.log('[TrendRadar] Skipping daemon start — engine/trendradar not found (clone the submodule first)')
+    return
+  }
+
+  const pythonPath = process.platform === 'win32' ? 'python' : 'python3'
+
+  trendradarDaemon = spawn(pythonPath, [
+    '-m', 'engine.daemon',
+    '--interval', String(intervalMin)
+  ], {
+    cwd: projectRoot,
+    env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+    detached: false
+  })
+
+  console.log(`[TrendRadar] Daemon started (PID=${trendradarDaemon.pid}, interval=${intervalMin}min)`)
+
+  trendradarDaemon.stdout.on('data', (data) => {
+    const lines = data.toString().trim().split('\n')
+    for (const line of lines) {
+      console.log('[TrendRadar]', line)
+    }
+    // Notify frontend of daemon activity
+    if (mainWindow) {
+      mainWindow.webContents.send('trendradar:log', data.toString())
+    }
+  })
+
+  trendradarDaemon.stderr.on('data', (data) => {
+    console.error('[TrendRadar:err]', data.toString().trim())
+  })
+
+  trendradarDaemon.on('close', (code) => {
+    console.log(`[TrendRadar] Daemon exited (code=${code})`)
+    trendradarDaemon = null
+    if (mainWindow) {
+      mainWindow.webContents.send('trendradar:status', { status: 'stopped', code })
+    }
+  })
+
+  trendradarDaemon.on('error', (err) => {
+    console.error('[TrendRadar] Daemon spawn error:', err.message)
+    trendradarDaemon = null
+  })
+}
+
+function stopTrendRadarDaemon() {
+  if (!trendradarDaemon) return
+  console.log('[TrendRadar] Stopping daemon (PID:', trendradarDaemon.pid, ')')
+  trendradarDaemon.kill('SIGTERM')
+  // Force kill after 5s if not exited
+  setTimeout(() => {
+    if (trendradarDaemon) {
+      trendradarDaemon.kill('SIGKILL')
+      trendradarDaemon = null
+    }
+  }, 5000)
+}
+
+ipcMain.handle('trendradar:start', async (event, intervalMin) => {
+  startTrendRadarDaemon(intervalMin || 30)
+  return { running: !!trendradarDaemon, pid: trendradarDaemon?.pid }
+})
+
+ipcMain.handle('trendradar:stop', async () => {
+  stopTrendRadarDaemon()
+  return { running: false }
+})
+
+ipcMain.handle('trendradar:status', async () => {
+  // Read daemon status file for detailed info
+  const statusPath = path.join(__dirname, '..', 'engine', 'trendradar_data', 'status.json')
+  let daemonStatus = { status: 'not_running' }
+  try {
+    if (fs.existsSync(statusPath)) {
+      daemonStatus = JSON.parse(fs.readFileSync(statusPath, 'utf-8'))
+    }
+  } catch (e) { /* ignore */ }
+  return {
+    processRunning: !!trendradarDaemon,
+    pid: trendradarDaemon?.pid || null,
+    ...daemonStatus
+  }
+})
+
 // Fetch sources management
 ipcMain.handle('fetch:getSources', async (event) => {
   return new Promise((resolve, reject) => {
@@ -625,6 +770,14 @@ app.whenReady().then(() => {
     saveRadarCache()
     broadcastRadarUpdate()
   }
+
+  // Auto-start TrendRadar daemon for background data collection
+  const trendradarInterval = fetchConfig.trendradar_interval_min || 30
+  startTrendRadarDaemon(trendradarInterval)
+})
+
+app.on('before-quit', () => {
+  stopTrendRadarDaemon()
 })
 
 app.on('window-all-closed', () => {

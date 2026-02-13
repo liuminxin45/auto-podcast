@@ -1,5 +1,5 @@
 import { Modal, Slider, Switch, Tag, message, Input, Button } from 'antd'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   SearchOutlined,
   SettingOutlined,
@@ -37,7 +37,6 @@ interface FetchConfig {
   freshness: number     // 1-5: maps to time_range
   // Advanced - Sources
   enabled_sources: string[]
-  auto_discover: boolean
   // Advanced - Content
   min_relevance: number // 1-5
   allow_duplicates: boolean
@@ -76,7 +75,7 @@ interface Props {
   onSave: (config: Record<string, any>) => void
   sources: FetchSource[]
   radarState?: RadarState | null
-  onRunOnce?: (config: Record<string, any>) => Promise<void>
+  onRunOnce?: (config: Record<string, any>) => Promise<any>
 }
 
 // ============================================================
@@ -104,7 +103,7 @@ const PRESETS: Preset[] = [
       quality: 4,
       freshness: 5,
       min_relevance: 4,
-      max_articles: 8,
+      max_articles: 30,
       group_by_topic: false,
       include_summary: true,
       event_detection: false,
@@ -122,7 +121,7 @@ const PRESETS: Preset[] = [
       quality: 3,
       freshness: 4,
       min_relevance: 3,
-      max_articles: 15,
+      max_articles: 50,
       group_by_topic: true,
       include_summary: true,
       event_detection: true,
@@ -140,7 +139,7 @@ const PRESETS: Preset[] = [
       quality: 2,
       freshness: 3,
       min_relevance: 2,
-      max_articles: 30,
+      max_articles: 200,
       group_by_topic: true,
       include_summary: false,
       event_detection: true,
@@ -158,7 +157,7 @@ const PRESETS: Preset[] = [
       quality: 3,
       freshness: 5,
       min_relevance: 4,
-      max_articles: 20,
+      max_articles: 80,
       group_by_topic: true,
       include_summary: true,
       event_detection: true,
@@ -176,7 +175,7 @@ const PRESETS: Preset[] = [
       quality: 4,
       freshness: 3,
       min_relevance: 4,
-      max_articles: 12,
+      max_articles: 50,
       group_by_topic: true,
       include_summary: true,
       event_detection: false,
@@ -195,7 +194,6 @@ const DEFAULT_CONFIG: FetchConfig = {
   quality: 3,
   freshness: 4,
   enabled_sources: [],
-  auto_discover: true,
   min_relevance: 3,
   allow_duplicates: false,
   prefer_original: true,
@@ -204,7 +202,7 @@ const DEFAULT_CONFIG: FetchConfig = {
   exclude_keywords: [],
   event_detection: true,
   trending_boost: false,
-  max_articles: 15,
+  max_articles: 50,
   group_by_topic: true,
   include_summary: true,
   activePreset: 'daily',
@@ -246,6 +244,7 @@ const FRESHNESS_LABELS: Record<number, { text: string; desc: string }> = {
 // ============================================================
 
 const SOURCE_ICONS: Record<string, React.ReactNode> = {
+  newsnow: <span style={{ fontSize: 18 }}>🔥</span>,
   hackernews: <span style={{ fontSize: 18 }}>🟠</span>,
   techcrunch: <span style={{ fontSize: 18 }}>💚</span>,
   ai_news_daily: <span style={{ fontSize: 18 }}>🤖</span>,
@@ -272,24 +271,81 @@ export default function FetchConfigModal({
   const [excludeInput, setExcludeInput] = useState('')
   const [saving, setSaving] = useState(false)
   const [runningOnce, setRunningOnce] = useState(false)
+  const lastVisibleRef = useRef(false)
+  const configDirtyRef = useRef(false)
 
-  // Load initial config
-  useEffect(() => {
-    if (initialConfig && visible) {
-      setConfig(prev => ({
-        ...DEFAULT_CONFIG,
-        ...prev,
-        ...initialConfig,
-        enabled_sources: initialConfig.enabled_sources || prev.enabled_sources || DEFAULT_CONFIG.enabled_sources,
-      }))
-      if (initialConfig.activePreset) {
-        // Keep preset selection
-      }
+  const sanitizeConfig = useCallback((input: FetchConfig): FetchConfig => {
+    const sourceSet = new Set(sources.map(s => s.id))
+    const fallbackSources = sources
+      .filter(s => s.id !== 'example_custom')
+      .map(s => s.id)
+
+    const enabledSources = Array.from(new Set((input.enabled_sources || []).filter(id => sourceSet.has(id))))
+
+    const excludeKeywords = Array.from(
+      new Set((input.exclude_keywords || []).map(k => String(k || '').trim()).filter(Boolean)),
+    )
+
+    const excludeLower = new Set(excludeKeywords.map(k => k.toLowerCase()))
+    const keywords = Array.from(
+      new Set((input.keywords || []).map(k => String(k || '').trim()).filter(Boolean)),
+    ).filter(k => !excludeLower.has(k.toLowerCase()))
+
+    const clamp = (val: number, min: number, max: number, fallback: number) => {
+      const n = Number(val)
+      if (!Number.isFinite(n)) return fallback
+      return Math.max(min, Math.min(max, n))
     }
-  }, [initialConfig, visible])
+
+    return {
+      ...input,
+      topic: String(input.topic || '').trim(),
+      enabled_sources: enabledSources.length > 0 ? enabledSources : fallbackSources,
+      keywords,
+      exclude_keywords: excludeKeywords,
+      breadth: clamp(input.breadth, 1, 5, DEFAULT_CONFIG.breadth),
+      quality: clamp(input.quality, 1, 5, DEFAULT_CONFIG.quality),
+      freshness: clamp(input.freshness, 1, 5, DEFAULT_CONFIG.freshness),
+      min_relevance: clamp(input.min_relevance, 1, 5, DEFAULT_CONFIG.min_relevance),
+      max_articles: clamp(input.max_articles, 10, 200, DEFAULT_CONFIG.max_articles),
+      monitor_interval_min: clamp(input.monitor_interval_min, 5, 720, DEFAULT_CONFIG.monitor_interval_min),
+      monitor_keep_last: clamp(input.monitor_keep_last, 50, 500, DEFAULT_CONFIG.monitor_keep_last),
+    }
+  }, [sources])
+
+  // Load config only on modal open (rising edge of visible)
+  useEffect(() => {
+    const justOpened = visible && !lastVisibleRef.current
+    lastVisibleRef.current = visible
+
+    if (justOpened) {
+      // Merge: DEFAULT for missing fields, then saved config wins
+      const saved = initialConfig || {}
+      const existingSources = saved.enabled_sources?.length
+        ? saved.enabled_sources
+        : sources
+            .filter(s => s.id !== 'example_custom')
+            .map(s => s.id)
+      const merged = sanitizeConfig({ ...DEFAULT_CONFIG, ...saved, enabled_sources: existingSources } as FetchConfig)
+      setConfig(merged)
+      configDirtyRef.current = false
+    }
+  }, [visible, initialConfig, sources, sanitizeConfig])
+
+  // Auto-save when modal closes if user made changes
+  useEffect(() => {
+    if (!visible && configDirtyRef.current) {
+      const nextConfig = sanitizeConfig(config)
+      configDirtyRef.current = false
+      void Promise.resolve(onSave(nextConfig as any)).catch(() => {
+        // silent fail on close to avoid interrupting user flow
+      })
+    }
+  }, [visible, config, onSave, sanitizeConfig])
 
   // Apply preset
   const applyPreset = useCallback((preset: Preset) => {
+    configDirtyRef.current = true
     setConfig(prev => ({
       ...prev,
       ...preset.config,
@@ -302,6 +358,7 @@ export default function FetchConfigModal({
 
   // Update config field
   const updateConfig = useCallback((field: keyof FetchConfig, value: any) => {
+    configDirtyRef.current = true
     setConfig(prev => ({
       ...prev,
       [field]: value,
@@ -311,6 +368,7 @@ export default function FetchConfigModal({
 
   // Toggle source
   const toggleSource = useCallback((sourceId: string) => {
+    configDirtyRef.current = true
     setConfig(prev => {
       const sources = prev.enabled_sources.includes(sourceId)
         ? prev.enabled_sources.filter(s => s !== sourceId)
@@ -321,18 +379,26 @@ export default function FetchConfigModal({
 
   // Add keyword
   const addKeyword = useCallback((type: 'keywords' | 'exclude_keywords', value: string) => {
-    const trimmed = value.trim()
-    if (!trimmed) return
+    const entries = value
+      .split(/[\n,，]/)
+      .map(v => v.trim())
+      .filter(Boolean)
+    if (entries.length === 0) return
+
+    configDirtyRef.current = true
     setConfig(prev => {
-      if (prev[type].includes(trimmed)) return prev
-      return { ...prev, [type]: [...prev[type], trimmed], activePreset: null }
+      const set = new Set(prev[type])
+      entries.forEach(e => set.add(e))
+      return { ...prev, [type]: Array.from(set), activePreset: null }
     })
+
     if (type === 'keywords') setKeywordInput('')
     else setExcludeInput('')
   }, [])
 
   // Remove keyword
   const removeKeyword = useCallback((type: 'keywords' | 'exclude_keywords', value: string) => {
+    configDirtyRef.current = true
     setConfig(prev => ({
       ...prev,
       [type]: prev[type].filter(k => k !== value),
@@ -342,9 +408,19 @@ export default function FetchConfigModal({
 
   // Save
   const handleSave = async () => {
+    const nextConfig = sanitizeConfig(config)
+    if (!nextConfig.enabled_sources.length) {
+      setShowAdvanced(true)
+      setAdvancedSection('sources')
+      message.warning('请至少选择一个信息来源')
+      return
+    }
+
     setSaving(true)
     try {
-      await onSave(config as any)
+      await onSave(nextConfig as any)
+      setConfig(nextConfig)
+      configDirtyRef.current = false
       message.success('配置已保存')
       onClose()
     } catch (e: any) {
@@ -356,10 +432,31 @@ export default function FetchConfigModal({
 
   const handleRunOnce = async () => {
     if (!onRunOnce || runningOnce) return
+
+    const runConfig = sanitizeConfig(config)
+    if (!runConfig.enabled_sources.length) {
+      setShowAdvanced(true)
+      setAdvancedSection('sources')
+      message.warning('请至少选择一个信息来源后再执行采集')
+      return
+    }
+
     setRunningOnce(true)
     try {
-      await onRunOnce(config as any)
-      message.success('已触发一次采集')
+      const result = await onRunOnce(runConfig as any)
+      const newCount = result?.lastNewCount ?? 0
+      const fetchedCount = result?.lastFetchedCount ?? 0
+      const totalCount = result?.contents?.length ?? 0
+      const lastError = result?.lastError
+      if (lastError) {
+        message.error(`采集出错：${lastError}`, 6)
+      } else if (newCount > 0) {
+        message.success(`采集完成：本次获取 ${fetchedCount} 条，新增 ${newCount} 条，总计 ${totalCount} 条`)
+      } else if (fetchedCount > 0) {
+        message.info(`采集完成：本次获取 ${fetchedCount} 条，无新增内容（均为已有数据）`)
+      } else {
+        message.warning('采集完成，但未获取到数据，请检查数据源配置或重启应用')
+      }
     } catch (e: any) {
       message.error(`执行失败: ${e.message}`)
     } finally {
@@ -836,30 +933,6 @@ export default function FetchConfigModal({
         </div>
       </div>
 
-      {/* Auto Discover Toggle */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '14px 16px',
-        borderRadius: 10,
-        background: 'var(--bg-primary)',
-        border: '1px solid var(--border-light)',
-      }}>
-        <div>
-          <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)' }}>
-            自动发现新来源
-          </div>
-          <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>
-            系统会根据你的兴趣自动推荐新渠道
-          </div>
-        </div>
-        <Switch
-          checked={config.auto_discover}
-          onChange={(v) => updateConfig('auto_discover', v)}
-          style={{ background: config.auto_discover ? 'var(--accent-primary)' : undefined }}
-        />
-      </div>
     </div>
   )
 
@@ -1086,7 +1159,7 @@ export default function FetchConfigModal({
         {
           key: 'event_detection' as const,
           title: '事件聚合',
-          desc: '自动识别并归类同一事件的多篇报道',
+          desc: '自动识别多来源报道同一事件，标记事件规模',
           value: config.event_detection,
         },
         {
@@ -1130,12 +1203,14 @@ export default function FetchConfigModal({
   // -- Output Section --
   const renderOutputSection = () => {
     const ARTICLE_LABELS: Record<number, string> = {
-      5: '极简 · 5篇',
-      8: '精简 · 8篇',
-      10: '简约 · 10篇',
-      15: '标准 · 15篇',
-      20: '丰富 · 20篇',
-      30: '全面 · 30篇',
+      10: '极简 · 10篇',
+      20: '精简 · 20篇',
+      30: '简约 · 30篇',
+      50: '标准 · 50篇',
+      80: '丰富 · 80篇',
+      100: '广泛 · 100篇',
+      150: '全面 · 150篇',
+      200: '海量 · 200篇',
     }
 
     return (
@@ -1163,13 +1238,14 @@ export default function FetchConfigModal({
             </Tag>
           </div>
           <Slider
-            min={5} max={30} step={5}
+            min={10} max={200} step={10}
             value={config.max_articles}
             onChange={(v) => updateConfig('max_articles', v)}
             marks={{
-              5: { label: <span style={{ fontSize: 10 }}>5</span> },
-              15: { label: <span style={{ fontSize: 10 }}>15</span> },
-              30: { label: <span style={{ fontSize: 10 }}>30</span> },
+              10: { label: <span style={{ fontSize: 10 }}>10</span> },
+              50: { label: <span style={{ fontSize: 10 }}>50</span> },
+              100: { label: <span style={{ fontSize: 10 }}>100</span> },
+              200: { label: <span style={{ fontSize: 10 }}>200</span> },
             }}
             tooltip={{ formatter: (v) => v ? (ARTICLE_LABELS[v] || `${v}篇`) : '' }}
             styles={{
@@ -1189,8 +1265,8 @@ export default function FetchConfigModal({
           },
           {
             key: 'include_summary' as const,
-            title: '生成摘要',
-            desc: '为每条内容自动生成简短摘要',
+            title: '提取摘要',
+            desc: '从正文中提取首句或首段作为摘要',
             value: config.include_summary,
           },
         ].map(item => (
@@ -1249,6 +1325,9 @@ export default function FetchConfigModal({
     if (config.enabled_sources.length > 0) {
       items.push(`📰 ${config.enabled_sources.length}个来源`)
     }
+    if (config.monitor_enabled) {
+      items.push(`🔁 每${config.monitor_interval_min}分钟`)
+    }
 
     return (
       <div style={{
@@ -1290,9 +1369,35 @@ export default function FetchConfigModal({
         color: 'var(--text-tertiary)',
       }}>
         <ExperimentOutlined />
-        <span>系统会持续学习你的偏好</span>
+        <span>配置保存后将应用到后续采集</span>
       </div>
       <div style={{ display: 'flex', gap: 10 }}>
+        <button
+          onClick={() => {
+            configDirtyRef.current = true
+            const reset = sanitizeConfig({
+              ...DEFAULT_CONFIG,
+              topic: config.topic,
+              enabled_sources: config.enabled_sources,
+            })
+            setConfig(reset)
+            setShowAdvanced(false)
+            message.info('已恢复推荐默认参数（保留主题与来源）')
+          }}
+          style={{
+            padding: '8px 14px',
+            borderRadius: 8,
+            border: '1px dashed var(--border-color)',
+            background: 'var(--bg-primary)',
+            color: 'var(--text-secondary)',
+            cursor: 'pointer',
+            fontSize: 12,
+            fontWeight: 500,
+            transition: 'all 0.2s ease',
+          }}
+        >
+          恢复默认
+        </button>
         <button
           onClick={onClose}
           style={{
@@ -1326,7 +1431,7 @@ export default function FetchConfigModal({
             opacity: saving ? 0.7 : 1,
           }}
         >
-          {saving ? '保存中...' : '开始采集'}
+          {saving ? '保存中...' : '保存配置'}
         </button>
       </div>
     </div>

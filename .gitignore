@@ -38,3 +38,8 @@ Thumbs.db
 tests/debug/
 *.test.json
 script_schema*.json
+fetch_stderr.log
+
+# External engines (cloned separately, update via git pull)
+engine/trendradar/
+engine/trendradar_data/

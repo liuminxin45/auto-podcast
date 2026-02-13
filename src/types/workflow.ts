@@ -32,6 +32,16 @@ export interface ContentItem {
   published?: string
   source?: string
   type?: string
+  /** Whether this item has been classified/tagged by LLM or keyword */
+  _tagged?: boolean
+  /** Classification result stored directly on the item */
+  _classification?: {
+    categoryId: string
+    categoryLabel: string
+    priority: 'high' | 'normal' | 'low'
+    reason: string
+    fromLLM: boolean
+  }
 }
 
 export interface Topic {

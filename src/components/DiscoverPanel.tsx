@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import { Input, Button, Tag, Badge, Tooltip, message } from 'antd'
 import {
   SearchOutlined,
@@ -23,6 +23,12 @@ import {
   LikeOutlined,
   DislikeOutlined,
   CaretUpOutlined,
+  AppstoreOutlined,
+  UnorderedListOutlined,
+  LoadingOutlined,
+  TagOutlined,
+  RobotOutlined,
+  CaretDownOutlined,
 } from '@ant-design/icons'
 import FetchConfigModal from './FetchConfigModal'
 import type { ContentItem } from '../types/workflow'
@@ -32,7 +38,15 @@ import {
   getRelevanceTag, 
   getSignalStrength, 
   getSignalColor,
-  formatTimeAgo 
+  formatTimeAgo,
+  tagUntaggedItems,
+  loadLLMConfig,
+  groupByCategory,
+  getPriorityDisplay,
+  getCategoryDisplay,
+  countUntagged,
+  type ClassifyProgress,
+  type LLMConfig,
 } from '../utils'
 
 const { TextArea } = Input
@@ -44,6 +58,42 @@ const { TextArea } = Input
 type CardStatus = 'new' | 'candidate' | 'later' | 'ignored'
 type SensitivityLevel = 'focused' | 'balanced' | 'wide'
 type FreshnessFilter = 'realtime' | 'today' | 'recent'
+type ViewMode = 'list' | 'grouped'
+type SmartRankMode = 'balanced' | 'freshness' | 'topic'
+
+type DiscoverPrefs = {
+  sensitivity: SensitivityLevel
+  freshness: FreshnessFilter
+  viewMode: ViewMode
+  llmAutoTagEnabled: boolean
+  smartRankMode: SmartRankMode
+}
+
+const DISCOVER_PREFS_KEY = 'discover.panel.prefs.v1'
+
+function loadDiscoverPrefs(): Partial<DiscoverPrefs> {
+  try {
+    if (typeof window === 'undefined') return {}
+    const raw = window.localStorage.getItem(DISCOVER_PREFS_KEY)
+    if (!raw) return {}
+    return JSON.parse(raw)
+  } catch {
+    return {}
+  }
+}
+
+function saveDiscoverPrefs(prefs: Partial<DiscoverPrefs>) {
+  try {
+    if (typeof window === 'undefined') return
+    window.localStorage.setItem(DISCOVER_PREFS_KEY, JSON.stringify(prefs))
+  } catch {
+    // ignore localStorage failures
+  }
+}
+
+function getContentIdentity(item: ContentItem): string {
+  return `${item.url || ''}|${item.title || ''}|${item.source || ''}|${item.published || ''}`
+}
 
 interface EnrichedItem extends ContentItem {
   _source_channel?: 'auto' | 'manual'
@@ -53,7 +103,7 @@ interface EnrichedItem extends ContentItem {
 }
 
 interface HighlightItem extends ContentItem {
-  _originalIndex: number
+  _itemKey: string
   _score: number
   _reasons: string[]
   _category?: { id: string; label: string; color: string; bg: string }
@@ -86,7 +136,9 @@ interface Props {
     lastError: string | null
     running: boolean
   } | null
-  onRadarRunOnce?: (config: Record<string, any>) => Promise<void>
+  onRadarRunOnce?: (config: Record<string, any>) => Promise<any>
+  onClearContents?: () => Promise<void>
+  onUpdateContents?: (contents: ContentItem[]) => Promise<void>
 }
 
 function detectAnomalyTrends(items: ContentItem[]): AnomalyTrend[] {
@@ -357,8 +409,27 @@ function selectTodayHighlights(
   items: ContentItem[],
   topic: string,
   maxCount = 3,
+  feedbackMap?: Map<string, FeedbackType>,
+  allItems?: ContentItem[],
 ): HighlightItem[] {
   if (items.length === 0) return []
+
+  // Build feedback category preferences from user feedback
+  const categoryBoost = new Map<string, number>()
+  if (feedbackMap && allItems) {
+    const sourceByKey = new Map<string, ContentItem>()
+    for (const sourceItem of allItems) {
+      sourceByKey.set(getContentIdentity(sourceItem), sourceItem)
+    }
+    feedbackMap.forEach((type, itemKey) => {
+      const feedbackItem = sourceByKey.get(itemKey)
+      if (!feedbackItem) return
+      const cat = detectCategory(feedbackItem)
+      const catId = cat?.id || '_general'
+      const current = categoryBoost.get(catId) || 0
+      categoryBoost.set(catId, current + (type === 'more' ? 15 : -20))
+    })
+  }
 
   const scored = items.map((item, index) => {
     let score = 0
@@ -381,6 +452,10 @@ function selectTodayHighlights(
     const strength = getSignalStrength(index, items.length)
     if (strength === 'hot') score += 15
     else if (strength === 'warm') score += 5
+
+    // Apply user feedback: boost/demote by category preference
+    const catId = category?.id || '_general'
+    score += (categoryBoost.get(catId) || 0)
 
     return { item, index, score, relevance, category }
   })
@@ -408,7 +483,7 @@ function selectTodayHighlights(
 
   return selected.map(s => ({
     ...s.item,
-    _originalIndex: s.index,
+    _itemKey: getContentIdentity(s.item),
     _score: s.score,
     _reasons: generateHighlightReasons(s.item, s.relevance, s.category, topic),
     _category: s.category || undefined,
@@ -442,7 +517,6 @@ function SignalCard({
 }) {
   const strength = getSignalStrength(index, total)
   const barColor = getSignalColor(strength)
-  const category = detectCategory(item)
   const relevance = computeRelevance(item, topic)
   const relTag = getRelevanceTag(relevance)
   const timeAgo = formatTimeAgo(item.published)
@@ -526,12 +600,25 @@ function SignalCard({
               {item.source}
             </Tag>
           )}
-          {category && (
+          {/* AI classification tag — pure LLM, no keyword fallback */}
+          {item._tagged && item._classification ? (() => {
+            const cls = item._classification
+            const display = getCategoryDisplay(cls.categoryId)
+            return (
+              <Tag bordered={false} style={{
+                fontSize: 10, padding: '0 6px', lineHeight: '18px', borderRadius: 4,
+                background: display.bg, color: display.color, margin: 0,
+              }}>
+                <TagOutlined style={{ fontSize: 8, marginRight: 2 }} />
+                {cls.categoryLabel}
+              </Tag>
+            )
+          })() : (
             <Tag bordered={false} style={{
               fontSize: 10, padding: '0 6px', lineHeight: '18px', borderRadius: 4,
-              background: category.bg, color: category.color, margin: 0,
+              background: '#f3f4f6', color: '#9ca3af', margin: 0,
             }}>
-              {category.label}
+              未分类
             </Tag>
           )}
           {relevance !== 'low' && (
@@ -696,18 +783,26 @@ export default function DiscoverPanel({
   onFetchConfigSave,
   radarState,
   onRadarRunOnce,
+  onClearContents,
+  onUpdateContents,
 }: Props) {
+  const initialPrefs = loadDiscoverPrefs()
+
   // Config modal
   const [fetchModalVisible, setFetchModalVisible] = useState(false)
 
   // Inline controls
-  const [sensitivity, setSensitivity] = useState<SensitivityLevel>('balanced')
-  const [freshness, setFreshness] = useState<FreshnessFilter>('today')
+  const [sensitivity, setSensitivity] = useState<SensitivityLevel>(
+    (initialPrefs.sensitivity as SensitivityLevel) || 'balanced',
+  )
+  const [freshness, setFreshness] = useState<FreshnessFilter>(
+    (initialPrefs.freshness as FreshnessFilter) || 'recent',
+  )
   const [search, setSearch] = useState('')
 
   // Radar state
-  const [starredSet, setStarredSet] = useState<Set<number>>(new Set())
-  const [candidateSet, setCandidateSet] = useState<Set<number>>(new Set())
+  const [starredSet, setStarredSet] = useState<Set<string>>(new Set())
+  const [candidateSet, setCandidateSet] = useState<Set<string>>(new Set())
 
   // Inbox state
   const [inboxExpanded, setInboxExpanded] = useState(false)
@@ -715,16 +810,251 @@ export default function DiscoverPanel({
   const [savedToInbox, setSavedToInbox] = useState<EnrichedItem[]>([])
   const [quickPasteText, setQuickPasteText] = useState('')
   const [quickPasteVisible, setQuickPasteVisible] = useState(false)
+  const [runningRadarOnce, setRunningRadarOnce] = useState(false)
 
   // Trend Radar feedback
-  const [feedbackMap, setFeedbackMap] = useState<Map<number, FeedbackType>>(new Map())
+  const [feedbackMap, setFeedbackMap] = useState<Map<string, FeedbackType>>(new Map())
+
+  // LLM Classification state
+  const [viewMode, setViewMode] = useState<ViewMode>((initialPrefs.viewMode as ViewMode) || 'list')
+  const [smartRankMode, setSmartRankMode] = useState<SmartRankMode>(
+    (initialPrefs.smartRankMode as SmartRankMode) || 'balanced',
+  )
+  const [classifyProgress, setClassifyProgress] = useState<ClassifyProgress>({ total: 0, tagged: 0, untagged: 0, status: 'idle' })
+  const [llmConfig, setLlmConfig] = useState<LLMConfig | null>(null)
+  const [llmConfigReady, setLlmConfigReady] = useState(false) // true after config load attempt completes
+  const llmConfigLoaded = useRef(false)
+  const taggingInProgress = useRef(false)
+  const fetchContentsRef = useRef(fetchContents)
+  const abortControllerRef = useRef<AbortController | null>(null)
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
+  const [tagVersion, setTagVersion] = useState(0) // bump to force re-render after tagging
+  const [llmAutoTagEnabled, setLlmAutoTagEnabled] = useState(Boolean(initialPrefs.llmAutoTagEnabled))
+  const [retryTrigger, setRetryTrigger] = useState(0) // bump to force auto-tag re-trigger on retry
+  const [taggingCycle, setTaggingCycle] = useState(0) // bump when a tagging run fully settles
 
   // User's configured topic
   const userTopic = (fetchConfig?.topic as string) || ''
 
+  // Derived: count untagged items
+  const untaggedCount = useMemo(() => countUntagged(fetchContents), [fetchContents, tagVersion])
+
+  useEffect(() => {
+    fetchContentsRef.current = fetchContents
+  }, [fetchContents])
+
+  // ── Load LLM config on mount ──────────────────────────────
+  useEffect(() => {
+    if (llmConfigLoaded.current || !visible) return
+    llmConfigLoaded.current = true
+    loadLLMConfig().then(config => {
+      if (config) {
+        console.log('[DiscoverPanel] LLM config loaded:', config.model)
+        setLlmConfig(config)
+      } else {
+        console.log('[DiscoverPanel] No LLM config found')
+      }
+    }).catch(err => {
+      console.warn('[DiscoverPanel] Failed to load LLM config:', err)
+    }).finally(() => {
+      setLlmConfigReady(true)
+    })
+  }, [visible])
+
+  // Persist discover panel interaction preferences
+  useEffect(() => {
+    saveDiscoverPrefs({ sensitivity, freshness, viewMode, llmAutoTagEnabled, smartRankMode })
+  }, [sensitivity, freshness, viewMode, llmAutoTagEnabled, smartRankMode])
+
+  // ── Auto-tag: ONLY when toggle is ON + LLM config ready ───
+  useEffect(() => {
+    if (!visible || !llmAutoTagEnabled || !llmConfigReady || fetchContentsRef.current.length === 0) return
+    if (taggingInProgress.current) return
+
+    // Must have LLM config to auto-tag (no silent keyword fallback)
+    if (!llmConfig) {
+      console.log('[DiscoverPanel] LLM auto-tag enabled but no LLM config available')
+      return
+    }
+
+    const items = fetchContentsRef.current
+    const currentUntagged = countUntagged(items)
+    if (currentUntagged === 0) {
+      setClassifyProgress({ total: items.length, tagged: items.length, untagged: 0, status: 'done', detail: '无需分类' })
+      return
+    }
+
+    console.log(`[DiscoverPanel] Auto-tag: ${currentUntagged} untagged items, starting LLM classification...`)
+    taggingInProgress.current = true
+    const ac = new AbortController()
+    abortControllerRef.current = ac
+
+    const doTag = async () => {
+      try {
+        const itemsToTag = fetchContentsRef.current
+        const newlyTagged = await tagUntaggedItems(itemsToTag, llmConfig, (progress) => {
+          setClassifyProgress(progress)
+        }, ac.signal)
+        console.log(`[DiscoverPanel] Auto-tag complete: ${newlyTagged} items tagged`)
+        setTagVersion(v => v + 1)
+        // Save tagged state back to backend
+        if (onUpdateContents && newlyTagged > 0) {
+          onUpdateContents(itemsToTag).catch(err =>
+            console.warn('[DiscoverPanel] Failed to save tagged state:', err)
+          )
+        }
+      } catch (err: any) {
+        if (err?.name === 'AbortError' || ac.signal.aborted) {
+          console.log('[DiscoverPanel] Tagging stopped by user')
+        } else {
+          console.warn('[DiscoverPanel] Auto-tag failed:', err)
+          setClassifyProgress(prev => ({ ...prev, status: 'error', error: String(err) }))
+        }
+      } finally {
+        taggingInProgress.current = false
+        abortControllerRef.current = null
+        setTaggingCycle(v => v + 1)
+      }
+    }
+
+    const timer = setTimeout(doTag, 500)
+    return () => clearTimeout(timer)
+  }, [visible, llmAutoTagEnabled, llmConfigReady, llmConfig, untaggedCount, onUpdateContents, retryTrigger, taggingCycle])
+
+  // Abort active tagging only when auto-tag is turned off or panel is hidden
+  useEffect(() => {
+    if (visible && llmAutoTagEnabled) return
+    if (!abortControllerRef.current) return
+    abortControllerRef.current.abort()
+    abortControllerRef.current = null
+    setClassifyProgress(prev =>
+      prev.status === 'running'
+        ? { ...prev, status: 'stopped', detail: '已暂停（关闭了AI标签）' }
+        : prev,
+    )
+  }, [visible, llmAutoTagEnabled])
+
+  // ── Stop tagging handler ──────────────────────────────────
+  const handleStopTagging = useCallback(() => {
+    setLlmAutoTagEnabled(false) // Turn off toggle to prevent re-trigger
+    setClassifyProgress(prev => ({ ...prev, status: 'stopped', detail: '已手动暂停，可点击继续' }))
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+      abortControllerRef.current = null
+      console.log('[DiscoverPanel] User requested stop tagging')
+    }
+  }, [])
+
+  // ── Update progress display when items change ─────────────
+  useEffect(() => {
+    if (fetchContents.length === 0) {
+      setClassifyProgress({ total: 0, tagged: 0, untagged: 0, status: 'idle' })
+      return
+    }
+    const tagged = fetchContents.length - countUntagged(fetchContents)
+    const untagged = fetchContents.length - tagged
+    if (!taggingInProgress.current) {
+      setClassifyProgress(prev => ({
+        ...prev,
+        total: fetchContents.length,
+        tagged,
+        untagged,
+        status: tagged > 0 && untagged === 0
+          ? 'done'
+          : (prev.status === 'running' || prev.status === 'stopped' || prev.status === 'error')
+            ? prev.status
+            : 'idle',
+      }))
+    }
+  }, [fetchContents, tagVersion])
+
+  // Prune stale keyed state when feed changes
+  useEffect(() => {
+    const validKeys = new Set(fetchContents.map(getContentIdentity))
+
+    setStarredSet(prev => {
+      let changed = false
+      const next = new Set<string>()
+      prev.forEach(k => {
+        if (validKeys.has(k)) next.add(k)
+        else changed = true
+      })
+      return changed ? next : prev
+    })
+
+    setCandidateSet(prev => {
+      let changed = false
+      const next = new Set<string>()
+      prev.forEach(k => {
+        if (validKeys.has(k)) next.add(k)
+        else changed = true
+      })
+      return changed ? next : prev
+    })
+
+    setFeedbackMap(prev => {
+      let changed = false
+      const next = new Map<string, FeedbackType>()
+      prev.forEach((v, k) => {
+        if (validKeys.has(k)) next.set(k, v)
+        else changed = true
+      })
+      return changed ? next : prev
+    })
+  }, [fetchContents])
+
+  // ── Handlers ──────────────────────────────────────────────
+  const handleClearAllContents = useCallback(async () => {
+    if (!onClearContents) return
+    try {
+      await onClearContents()
+      setTagVersion(v => v + 1)
+      setClassifyProgress({ total: 0, tagged: 0, untagged: 0, status: 'idle' })
+      message.success('已清空所有新闻')
+    } catch (err) {
+      message.error('清空失败')
+    }
+  }, [onClearContents])
+
+  const handleClearTags = useCallback(async () => {
+    // Clear all tags so items can be re-classified
+    for (const item of fetchContents) {
+      item._tagged = undefined
+      item._classification = undefined
+    }
+    setTagVersion(v => v + 1)
+    setClassifyProgress({ total: fetchContents.length, tagged: 0, untagged: fetchContents.length, status: 'idle' })
+    if (onUpdateContents) {
+      onUpdateContents(fetchContents).catch(() => {})
+    }
+    message.success('已清除所有标签，可重新分类')
+  }, [fetchContents, onUpdateContents])
+
+  const handleQuickRunRadar = useCallback(async () => {
+    if (!onRadarRunOnce || runningRadarOnce) return
+    setRunningRadarOnce(true)
+    try {
+      const result = await onRadarRunOnce(fetchConfig)
+      const newCount = result?.lastNewCount ?? 0
+      const fetchedCount = result?.lastFetchedCount ?? 0
+      if (result?.lastError) {
+        message.error(`采集失败：${result.lastError}`)
+      } else if (newCount > 0) {
+        message.success(`采集完成：新增 ${newCount} 条（共抓取 ${fetchedCount} 条）`)
+      } else {
+        message.info(`采集完成：抓取 ${fetchedCount} 条，无新增`)
+      }
+    } catch (err: any) {
+      message.error(`采集失败：${err?.message || String(err)}`)
+    } finally {
+      setRunningRadarOnce(false)
+    }
+  }, [onRadarRunOnce, runningRadarOnce, fetchConfig])
+
   // ── Filtered signals ──────────────────────────────────────
   const filteredSignals = useMemo(() => {
     let items = [...fetchContents]
+    console.log(`[DiscoverPanel] fetchContents: ${fetchContents.length}, sensitivity: ${sensitivity}, freshness: ${freshness}`)
 
     // Text search
     if (search.trim()) {
@@ -735,20 +1065,31 @@ export default function DiscoverPanel({
       )
     }
 
-    // Sensitivity filter (only when user has a topic configured)
-    if (userTopic && sensitivity !== 'wide') {
-      items = items.filter(item => {
-        const rel = computeRelevance(item, userTopic)
-        if (sensitivity === 'focused') return rel === 'high'
-        return rel !== 'low'
-      })
+    // Sensitivity filter
+    if (sensitivity !== 'wide') {
+      if (userTopic) {
+        items = items.filter(item => {
+          const rel = computeRelevance(item, userTopic)
+          if (sensitivity === 'focused') return rel === 'high'
+          return rel !== 'low'
+        })
+      } else {
+        // Without a topic, use content richness as sensitivity proxy
+        if (sensitivity === 'focused') {
+          items = items.filter(item => {
+            const hasContent = (item.content || '').length > 80
+            const hasCat = !!detectCategory(item)
+            return hasContent || hasCat
+          })
+        }
+      }
     }
 
     // Freshness filter (client-side best-effort)
     if (freshness !== 'recent') {
       const now = new Date()
       items = items.filter(item => {
-        if (!item.published) return true
+        if (!item.published) return freshness !== 'realtime'
         try {
           const h = (now.getTime() - new Date(item.published).getTime()) / 3600000
           if (freshness === 'realtime') return h < 6
@@ -758,8 +1099,68 @@ export default function DiscoverPanel({
       })
     }
 
+    // Intelligent ranking (phase 2): relevance + freshness + feedback + signal strength
+    const catBoost = new Map<string, number>()
+    if (feedbackMap.size > 0) {
+      const sourceByKey = new Map<string, ContentItem>()
+      for (const sourceItem of fetchContents) {
+        sourceByKey.set(getContentIdentity(sourceItem), sourceItem)
+      }
+      feedbackMap.forEach((type, itemKey) => {
+        const fi = sourceByKey.get(itemKey)
+        if (!fi) return
+        const cat = detectCategory(fi)
+        const catId = cat?.id || '_general'
+        const cur = catBoost.get(catId) || 0
+        catBoost.set(catId, cur + (type === 'more' ? 1 : -1))
+      })
+    }
+
+    const now = Date.now()
+    const scoreItem = (item: ContentItem, idx: number) => {
+      let score = 0
+
+      const relevance = userTopic ? computeRelevance(item, userTopic) : 'low'
+      if (relevance === 'high') score += smartRankMode === 'topic' ? 50 : 36
+      else if (relevance === 'medium') score += smartRankMode === 'topic' ? 24 : 16
+
+      if (item.published) {
+        try {
+          const h = (now - new Date(item.published).getTime()) / 3600000
+          if (h < 6) score += smartRankMode === 'freshness' ? 40 : 26
+          else if (h < 24) score += smartRankMode === 'freshness' ? 24 : 16
+          else if (h < 72) score += 8
+        } catch {
+          // ignore time parse error
+        }
+      }
+
+      const cat = detectCategory(item)
+      if (cat) score += 6
+      score += (catBoost.get(cat?.id || '_general') || 0) * 12
+
+      const signalStrength = getSignalStrength(idx, Math.max(items.length, 1))
+      if (signalStrength === 'hot') score += 12
+      else if (signalStrength === 'warm') score += 5
+
+      if (item._tagged) score += 5
+
+      return score
+    }
+
+    const scoreByKey = new Map<string, number>()
+    items.forEach((item, idx) => {
+      scoreByKey.set(getContentIdentity(item), scoreItem(item, idx))
+    })
+
+    items.sort((a, b) => {
+      const sa = scoreByKey.get(getContentIdentity(a)) || 0
+      const sb = scoreByKey.get(getContentIdentity(b)) || 0
+      return sb - sa
+    })
+
     return items
-  }, [fetchContents, search, sensitivity, freshness, userTopic])
+  }, [fetchContents, search, sensitivity, freshness, userTopic, feedbackMap, tagVersion, smartRankMode])
 
   // ── Stats ─────────────────────────────────────────────────
   const stats = useMemo(() => {
@@ -770,10 +1171,46 @@ export default function DiscoverPanel({
     return { total, highRelevance }
   }, [filteredSignals, userTopic])
 
+  // ── Observability metrics (phase 2) ───────────────────────
+  const sourceStats = useMemo(() => {
+    const counts = new Map<string, number>()
+    let recent6h = 0
+    const now = Date.now()
+    for (const item of filteredSignals) {
+      const src = item.source || 'unknown'
+      counts.set(src, (counts.get(src) || 0) + 1)
+      if (item.published) {
+        try {
+          const h = (now - new Date(item.published).getTime()) / 3600000
+          if (h < 6) recent6h++
+        } catch {
+          // ignore date parse errors
+        }
+      }
+    }
+    let topSource = ''
+    let topSourceCount = 0
+    counts.forEach((count, src) => {
+      if (count > topSourceCount) {
+        topSource = src
+        topSourceCount = count
+      }
+    })
+    const tagged = filteredSignals.filter(i => i._tagged).length
+    return {
+      sourceCount: counts.size,
+      topSource,
+      topSourceCount,
+      recent6h,
+      tagged,
+      total: filteredSignals.length,
+    }
+  }, [filteredSignals])
+
   // ── Today's Highlights ──────────────────────────────────────
   const todayHighlights = useMemo(() => {
-    return selectTodayHighlights(filteredSignals, userTopic, 3)
-  }, [filteredSignals, userTopic])
+    return selectTodayHighlights(filteredSignals, userTopic, 3, feedbackMap, fetchContents)
+  }, [filteredSignals, userTopic, feedbackMap, fetchContents])
 
   // ── Anomaly Trends ─────────────────────────────────────────
   const anomalyTrends = useMemo(() => {
@@ -793,12 +1230,16 @@ export default function DiscoverPanel({
   const unprocessedInbox = allInbox.filter((_, i) => !inboxStatuses.has(i)).length
 
   // ── Actions ───────────────────────────────────────────────
-  const toggleStar = useCallback((idx: number) => {
-    setStarredSet(prev => { const n = new Set(prev); n.has(idx) ? n.delete(idx) : n.add(idx); return n })
+  const toggleStar = useCallback((itemKey: string) => {
+    setStarredSet(prev => {
+      const next = new Set(prev)
+      next.has(itemKey) ? next.delete(itemKey) : next.add(itemKey)
+      return next
+    })
   }, [])
 
-  const addCandidate = useCallback((idx: number) => {
-    setCandidateSet(prev => new Set(prev).add(idx))
+  const addCandidate = useCallback((itemKey: string) => {
+    setCandidateSet(prev => new Set(prev).add(itemKey))
     message.success({ content: '已加入本期候选', duration: 1.5, style: { marginTop: 60 } })
   }, [])
 
@@ -827,13 +1268,13 @@ export default function DiscoverPanel({
     message.success({ content: '已添加到收集箱', duration: 1.5, style: { marginTop: 60 } })
   }, [quickPasteText])
 
-  const handleFeedback = useCallback((originalIdx: number, type: FeedbackType) => {
+  const handleFeedback = useCallback((itemKey: string, type: FeedbackType) => {
     setFeedbackMap(prev => {
       const next = new Map(prev)
-      if (next.get(originalIdx) === type) {
-        next.delete(originalIdx)
+      if (next.get(itemKey) === type) {
+        next.delete(itemKey)
       } else {
-        next.set(originalIdx, type)
+        next.set(itemKey, type)
       }
       return next
     })
@@ -846,15 +1287,52 @@ export default function DiscoverPanel({
 
   const handleProceed = useCallback(() => {
     const candidates: EnrichedItem[] = []
-    candidateSet.forEach(idx => {
-      if (fetchContents[idx]) candidates.push({ ...fetchContents[idx], _source_channel: 'auto' })
-    })
+    const seen = new Set<string>()
+    for (const item of fetchContents) {
+      const key = getContentIdentity(item)
+      if (candidateSet.has(key) && !seen.has(key)) {
+        seen.add(key)
+        candidates.push({ ...item, _source_channel: 'auto' })
+      }
+    }
     inboxStatuses.forEach((status, idx) => {
-      if (status === 'candidate' && allInbox[idx]) candidates.push(allInbox[idx])
+      if (status === 'candidate' && allInbox[idx]) {
+        candidates.push(allInbox[idx])
+      }
     })
     onProceedToOrganize?.(candidates)
     onClose()
   }, [candidateSet, inboxStatuses, fetchContents, allInbox, onProceedToOrganize, onClose])
+
+  const handleAddHighlightsToCandidates = useCallback(() => {
+    if (todayHighlights.length === 0) return
+    let added = 0
+    setCandidateSet(prev => {
+      const next = new Set(prev)
+      const before = next.size
+      for (const h of todayHighlights) next.add(h._itemKey)
+      added = next.size - before
+      return next
+    })
+    if (added > 0) message.success(`已加入 ${added} 条重点到候选`)
+    else message.info('今日重点已全部在候选中')
+  }, [todayHighlights])
+
+  const handleClearCandidates = useCallback(() => {
+    setCandidateSet(new Set())
+    setInboxStatuses(prev => {
+      const next = new Map(prev)
+      let changed = false
+      prev.forEach((status, idx) => {
+        if (status === 'candidate') {
+          next.delete(idx)
+          changed = true
+        }
+      })
+      return changed ? next : prev
+    })
+    message.info('已清空本期候选')
+  }, [])
 
   const handleFetchConfigSave = async (values: Record<string, any>) => {
     if (onFetchConfigSave) await onFetchConfigSave(values)
@@ -909,6 +1387,16 @@ export default function DiscoverPanel({
               style={{ color: 'var(--accent-primary)', borderRadius: 8 }}
             />
           </Tooltip>
+          <Tooltip title="立即采集">
+            <Button
+              type="text"
+              loading={runningRadarOnce}
+              icon={<LoadingOutlined spin={runningRadarOnce} />}
+              onClick={handleQuickRunRadar}
+              disabled={!onRadarRunOnce}
+              style={{ color: 'var(--text-secondary)', borderRadius: 8 }}
+            />
+          </Tooltip>
           <Tooltip title="返回">
             <Button type="text" icon={<CloseOutlined />} onClick={onClose} style={{ color: 'var(--text-tertiary)' }} />
           </Tooltip>
@@ -956,6 +1444,38 @@ export default function DiscoverPanel({
             {/* Divider */}
             <div style={{ width: 1, height: 16, background: 'var(--border-color)' }} />
 
+            {/* Smart rank mode (phase 2) */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: 11, color: 'var(--text-tertiary)', whiteSpace: 'nowrap' }}>排序</span>
+              <div style={{ display: 'flex', gap: 4 }}>
+                {([
+                  ['balanced', '均衡'],
+                  ['topic', '话题'],
+                  ['freshness', '时效'],
+                ] as Array<[SmartRankMode, string]>).map(([mode, label]) => {
+                  const active = smartRankMode === mode
+                  return (
+                    <Tag
+                      key={mode}
+                      bordered={false}
+                      onClick={() => setSmartRankMode(mode)}
+                      style={{
+                        fontSize: 10, borderRadius: 5, padding: '2px 8px', cursor: 'pointer', margin: 0,
+                        background: active ? 'var(--accent-light)' : 'var(--bg-tertiary)',
+                        color: active ? 'var(--accent-primary)' : 'var(--text-tertiary)',
+                        fontWeight: active ? 600 : 400,
+                      }}
+                    >
+                      {label}
+                    </Tag>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* Divider */}
+            <div style={{ width: 1, height: 16, background: 'var(--border-color)' }} />
+
             {/* Freshness toggle */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <span style={{ fontSize: 11, color: 'var(--text-tertiary)', whiteSpace: 'nowrap' }}>时间</span>
@@ -980,8 +1500,176 @@ export default function DiscoverPanel({
               </div>
             </div>
 
+            {/* Divider */}
+            <div style={{ width: 1, height: 16, background: 'var(--border-color)' }} />
+
+            {/* View mode toggle */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: 11, color: 'var(--text-tertiary)', whiteSpace: 'nowrap' }}>视图</span>
+              <div style={{ display: 'flex', background: 'var(--bg-tertiary)', borderRadius: 6, padding: 2 }}>
+                <Tooltip title="时间线">
+                  <div
+                    onClick={() => setViewMode('list')}
+                    style={{
+                      padding: '3px 8px', borderRadius: 5, cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', gap: 4,
+                      background: viewMode === 'list' ? 'var(--bg-secondary)' : 'transparent',
+                      boxShadow: viewMode === 'list' ? 'var(--shadow-sm)' : 'none',
+                      color: viewMode === 'list' ? 'var(--accent-primary)' : 'var(--text-tertiary)',
+                      fontSize: 12, transition: 'all 0.2s ease',
+                    }}
+                  >
+                    <UnorderedListOutlined style={{ fontSize: 11 }} />
+                  </div>
+                </Tooltip>
+                <Tooltip title="分组查看">
+                  <div
+                    onClick={() => setViewMode('grouped')}
+                    style={{
+                      padding: '3px 8px', borderRadius: 5, cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', gap: 4,
+                      background: viewMode === 'grouped' ? 'var(--bg-secondary)' : 'transparent',
+                      boxShadow: viewMode === 'grouped' ? 'var(--shadow-sm)' : 'none',
+                      color: viewMode === 'grouped' ? 'var(--accent-primary)' : 'var(--text-tertiary)',
+                      fontSize: 12, transition: 'all 0.2s ease',
+                    }}
+                  >
+                    <AppstoreOutlined style={{ fontSize: 11 }} />
+                  </div>
+                </Tooltip>
+              </div>
+            </div>
+
+            {/* Divider */}
+            <div style={{ width: 1, height: 16, background: 'var(--border-color)' }} />
+
+            {/* LLM Auto-Tag Toggle */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+              <Tooltip title={llmAutoTagEnabled
+                ? `AI自动标签已开启${llmConfig ? ` (${llmConfig.model})` : ' (无LLM配置)'}`
+                : '开启后，新采集的新闻将自动用AI分类打标签'
+              }>
+                <div
+                  onClick={() => {
+                    if (llmAutoTagEnabled) {
+                      handleStopTagging()
+                    } else {
+                      setLlmAutoTagEnabled(true)
+                      setClassifyProgress(prev => ({ ...prev, status: 'idle', detail: '准备恢复自动分类...' }))
+                      setRetryTrigger(n => n + 1)
+                    }
+                  }}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 4,
+                    padding: '3px 8px', borderRadius: 5, cursor: 'pointer',
+                    background: llmAutoTagEnabled ? 'var(--accent-light)' : 'var(--bg-tertiary)',
+                    border: llmAutoTagEnabled ? '1px solid var(--accent-primary)' : '1px solid transparent',
+                    transition: 'all 0.2s ease',
+                  }}
+                >
+                  <RobotOutlined style={{
+                    fontSize: 11,
+                    color: llmAutoTagEnabled ? 'var(--accent-primary)' : 'var(--text-tertiary)',
+                  }} />
+                  <span style={{
+                    fontSize: 10, fontWeight: llmAutoTagEnabled ? 600 : 400, whiteSpace: 'nowrap',
+                    color: llmAutoTagEnabled ? 'var(--accent-primary)' : 'var(--text-tertiary)',
+                  }}>
+                    AI标签
+                  </span>
+                  {llmAutoTagEnabled && classifyProgress.status === 'running' && (
+                    <LoadingOutlined style={{ fontSize: 9, color: 'var(--accent-primary)' }} />
+                  )}
+                </div>
+              </Tooltip>
+              {/* Untagged count badge */}
+              {untaggedCount > 0 && (
+                <span style={{
+                  fontSize: 9, color: '#f59e0b', fontWeight: 600,
+                  display: 'flex', alignItems: 'center', gap: 2,
+                }}>
+                  {untaggedCount} 未标
+                </span>
+              )}
+              {/* Clear tags */}
+              {classifyProgress.tagged > 0 && (
+                <Tooltip title="清除所有标签，可重新分类">
+                  <span
+                    onClick={handleClearTags}
+                    style={{
+                      fontSize: 9, color: 'var(--text-tertiary)', cursor: 'pointer',
+                      textDecoration: 'underline', whiteSpace: 'nowrap',
+                    }}
+                  >
+                    清除标签
+                  </span>
+                </Tooltip>
+              )}
+            </div>
+
             {/* Spacer */}
             <div style={{ flex: 1 }} />
+
+            {/* Filter count badge + bulk delete */}
+            {fetchContents.length > 0 && (
+              <div style={{
+                fontSize: 11, color: 'var(--text-tertiary)',
+                display: 'flex', alignItems: 'center', gap: 4,
+                whiteSpace: 'nowrap',
+              }}>
+                <span style={{
+                  fontWeight: 600,
+                  color: filteredSignals.length < fetchContents.length ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                }}>
+                  {filteredSignals.length}
+                </span>
+                <span>/</span>
+                <span>{fetchContents.length}</span>
+                <span>条</span>
+                <span style={{ marginLeft: 6, color: 'var(--text-tertiary)' }}>
+                  源{sourceStats.sourceCount}
+                </span>
+                <span style={{ color: 'var(--text-tertiary)' }}>
+                  6h内{sourceStats.recent6h}
+                </span>
+                <span style={{ color: 'var(--text-tertiary)' }}>
+                  标签{sourceStats.total > 0 ? Math.round((sourceStats.tagged / sourceStats.total) * 100) : 0}%
+                </span>
+                {filteredSignals.length < fetchContents.length && sensitivity !== 'wide' && (
+                  <span
+                    onClick={() => setSensitivity('wide')}
+                    style={{
+                      color: 'var(--accent-primary)', cursor: 'pointer',
+                      textDecoration: 'underline', marginLeft: 2,
+                    }}
+                  >
+                    显示全部
+                  </span>
+                )}
+                {onClearContents && (
+                  <Tooltip title="清空所有新闻">
+                    <span
+                      onClick={() => {
+                        if (window.confirm(`确定要清空全部 ${fetchContents.length} 条新闻吗？此操作不可撤销。`)) {
+                          handleClearAllContents()
+                        }
+                      }}
+                      style={{
+                        color: '#dc2626', cursor: 'pointer', marginLeft: 4,
+                        fontSize: 10, textDecoration: 'underline',
+                      }}
+                    >
+                      清空
+                    </span>
+                  </Tooltip>
+                )}
+                {radarState?.running && (
+                  <span style={{ color: 'var(--accent-primary)', marginLeft: 4 }}>
+                    · 采集中
+                  </span>
+                )}
+              </div>
+            )}
 
             {/* Search */}
             <div style={{ width: 180 }}>
@@ -995,6 +1683,167 @@ export default function DiscoverPanel({
               />
             </div>
           </div>
+
+          {/* ── Persistent Classification Banner ── */}
+          {fetchContents.length > 0 && (classifyProgress.status === 'running' || classifyProgress.status === 'stopped' || classifyProgress.status === 'error' || (classifyProgress.status === 'done' && classifyProgress.tagged > 0) || (!llmAutoTagEnabled && untaggedCount > 0)) && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              padding: '6px 20px',
+              background: classifyProgress.status === 'running'
+                ? 'linear-gradient(90deg, #2563eb08 0%, #7c3aed08 100%)'
+                : classifyProgress.status === 'error'
+                  ? '#fef2f2'
+                  : classifyProgress.status === 'stopped'
+                    ? '#fffbeb'
+                    : !llmAutoTagEnabled && untaggedCount > 0
+                      ? '#fffbeb'
+                      : '#f0fdf4',
+              borderBottom: '1px solid var(--border-light)',
+              fontSize: 11, minHeight: 32, flexShrink: 0,
+            }}>
+              {classifyProgress.status === 'running' ? (
+                <>
+                  <LoadingOutlined style={{ fontSize: 12, color: 'var(--accent-primary)' }} spin />
+                  <span style={{ color: 'var(--accent-primary)', fontWeight: 500 }}>
+                    正在批量打标签...
+                  </span>
+                  <span style={{ color: 'var(--text-tertiary)' }}>
+                    {classifyProgress.tagged}/{classifyProgress.total}
+                  </span>
+                  {classifyProgress.detail && (
+                    <span style={{ color: 'var(--text-tertiary)', fontSize: 10 }}>
+                      {classifyProgress.detail}
+                    </span>
+                  )}
+                  <div style={{
+                    flex: 1, maxWidth: 120, height: 3, borderRadius: 2,
+                    background: 'var(--border-color)', overflow: 'hidden', marginLeft: 4,
+                  }}>
+                    <div style={{
+                      height: '100%', borderRadius: 2,
+                      background: 'var(--accent-primary)',
+                      width: `${classifyProgress.total > 0 ? (classifyProgress.tagged / classifyProgress.total * 100) : 0}%`,
+                      transition: 'width 0.3s ease',
+                    }} />
+                  </div>
+                  <span style={{ color: 'var(--text-tertiary)', fontSize: 10 }}>
+                    每批20条 · {llmConfig?.model || '...'}
+                  </span>
+                  <span
+                    onClick={handleStopTagging}
+                    style={{
+                      color: '#dc2626', cursor: 'pointer', marginLeft: 'auto',
+                      fontWeight: 500, fontSize: 11,
+                      padding: '2px 8px', borderRadius: 4,
+                      background: '#fef2f2', border: '1px solid #fecaca',
+                      transition: 'all 0.15s ease',
+                    }}
+                  >
+                    停止
+                  </span>
+                </>
+              ) : classifyProgress.status === 'stopped' ? (
+                <>
+                  <TagOutlined style={{ fontSize: 11, color: '#f59e0b' }} />
+                  <span style={{ color: '#92400e', fontWeight: 500 }}>
+                    已暂停
+                  </span>
+                  <span style={{ color: 'var(--text-tertiary)' }}>
+                    {classifyProgress.tagged} 条已标签，{classifyProgress.untagged} 条待处理
+                  </span>
+                  {classifyProgress.detail && (
+                    <span style={{ color: 'var(--text-tertiary)', fontSize: 10 }}>
+                      {classifyProgress.detail}
+                    </span>
+                  )}
+                  <span
+                    onClick={() => {
+                      setLlmAutoTagEnabled(true)
+                      setClassifyProgress(prev => ({ ...prev, status: 'idle', detail: '正在恢复自动分类...' }))
+                      setRetryTrigger(n => n + 1)
+                    }}
+                    style={{
+                      color: 'var(--accent-primary)', cursor: 'pointer',
+                      textDecoration: 'underline', fontWeight: 500, marginLeft: 'auto',
+                    }}
+                  >
+                    继续
+                  </span>
+                </>
+              ) : classifyProgress.status === 'error' ? (
+                <>
+                  <span style={{ color: '#dc2626', fontWeight: 500 }}>⚠ 分类失败</span>
+                  <span style={{ color: '#dc2626', fontSize: 10, flex: 1 }}>
+                    {classifyProgress.error?.slice(0, 80)}
+                  </span>
+                  {classifyProgress.tagged > 0 && (
+                    <span style={{ color: 'var(--text-tertiary)', fontSize: 10 }}>
+                      已完成 {classifyProgress.tagged} 条
+                    </span>
+                  )}
+                  <span
+                    onClick={() => { setLlmAutoTagEnabled(true); setClassifyProgress(prev => ({ ...prev, status: 'idle' })); setRetryTrigger(n => n + 1) }}
+                    style={{
+                      color: 'var(--accent-primary)', cursor: 'pointer',
+                      textDecoration: 'underline', fontWeight: 500, marginLeft: 'auto',
+                    }}
+                  >
+                    重试
+                  </span>
+                </>
+              ) : !llmAutoTagEnabled && untaggedCount > 0 ? (
+                <>
+                  <TagOutlined style={{ fontSize: 11, color: '#f59e0b' }} />
+                  <span style={{ color: '#92400e', fontWeight: 500 }}>
+                    {untaggedCount} 条新闻未分类
+                  </span>
+                  <span style={{ color: 'var(--text-tertiary)' }}>
+                    开启「AI标签」后自动分类
+                  </span>
+                  <span
+                    onClick={() => { setLlmAutoTagEnabled(true); setRetryTrigger(n => n + 1) }}
+                    style={{
+                      color: 'var(--accent-primary)', cursor: 'pointer',
+                      textDecoration: 'underline', fontWeight: 500, marginLeft: 'auto',
+                    }}
+                  >
+                    立即开启
+                  </span>
+                </>
+              ) : (
+                <>
+                  <RobotOutlined style={{ fontSize: 11, color: '#10b981' }} />
+                  <span style={{ color: '#10b981', fontWeight: 500 }}>
+                    AI分类完成
+                  </span>
+                  <span style={{ color: 'var(--text-tertiary)' }}>
+                    {classifyProgress.tagged} 条已分类
+                  </span>
+                  {classifyProgress.untagged > 0 && (
+                    <>
+                      <span style={{ color: '#f59e0b' }}>
+                        {classifyProgress.untagged} 条未成功
+                      </span>
+                      <span
+                        onClick={() => { setLlmAutoTagEnabled(true); setClassifyProgress(prev => ({ ...prev, status: 'idle' })); setRetryTrigger(n => n + 1) }}
+                        style={{
+                          color: 'var(--accent-primary)', cursor: 'pointer',
+                          textDecoration: 'underline', fontWeight: 500, marginLeft: 'auto', fontSize: 10,
+                        }}
+                      >
+                        重试未分类
+                      </span>
+                    </>
+                  )}
+                  {classifyProgress.untagged === 0 && (
+                    <span style={{ color: 'var(--text-tertiary)', marginLeft: 'auto', fontSize: 10 }}>
+                      纯AI · {llmConfig?.model || ''}
+                    </span>
+                  )}
+                </>
+              )}
+            </div>
+          )}
 
           {/* ── Signal Feed ── */}
           <div style={{ flex: 1, overflow: 'auto', padding: '12px 20px' }}>
@@ -1100,16 +1949,16 @@ export default function DiscoverPanel({
                     {/* Highlight cards */}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                       {todayHighlights.map((h, i) => (
-                        <div key={h._originalIndex} style={{
+                        <div key={`${h._itemKey}-${i}`} style={{
                           animation: `highlightCardIn 0.3s cubic-bezier(0.25, 0.8, 0.25, 1) ${i * 0.08}s both`,
                         }}>
                           <TodayHighlightCard
                             item={h}
-                            onAddCandidate={() => addCandidate(h._originalIndex)}
+                            onAddCandidate={() => addCandidate(h._itemKey)}
                             onSaveToInbox={() => saveToInbox(h)}
-                            onFeedback={(type) => handleFeedback(h._originalIndex, type)}
-                            isCandidate={candidateSet.has(h._originalIndex)}
-                            feedbackGiven={feedbackMap.get(h._originalIndex)}
+                            onFeedback={(type) => handleFeedback(h._itemKey, type)}
+                            isCandidate={candidateSet.has(h._itemKey)}
+                            feedbackGiven={feedbackMap.get(h._itemKey)}
                           />
                         </div>
                       ))}
@@ -1127,7 +1976,7 @@ export default function DiscoverPanel({
                 )}
 
                 {/* ── Section divider ── */}
-                {todayHighlights.length > 0 && (
+                {todayHighlights.length > 0 && viewMode === 'list' && (
                   <div style={{
                     display: 'flex', alignItems: 'center', gap: 10,
                     marginBottom: 12, paddingTop: 4,
@@ -1140,23 +1989,295 @@ export default function DiscoverPanel({
                   </div>
                 )}
 
-                {filteredSignals.map((item, idx) => {
-                  const originalIdx = fetchContents.indexOf(item)
+                {/* ── List View ── */}
+                {viewMode === 'list' && filteredSignals.map((item, idx) => {
+                  const itemKey = getContentIdentity(item)
                   return (
                     <SignalCard
-                      key={originalIdx}
+                      key={`${itemKey}-${idx}`}
                       item={item}
                       index={idx}
                       total={filteredSignals.length}
                       topic={userTopic}
-                      onAddCandidate={() => addCandidate(originalIdx)}
+                      onAddCandidate={() => addCandidate(itemKey)}
                       onSaveToInbox={() => saveToInbox(item)}
-                      onToggleStar={() => toggleStar(originalIdx)}
-                      isCandidate={candidateSet.has(originalIdx)}
-                      isStarred={starredSet.has(originalIdx)}
+                      onToggleStar={() => toggleStar(itemKey)}
+                      isCandidate={candidateSet.has(itemKey)}
+                      isStarred={starredSet.has(itemKey)}
                     />
                   )
                 })}
+
+                {/* ── Grouped View ── */}
+                {viewMode === 'grouped' && (() => {
+                  // groupByCategory now reads _classification directly from items
+                  const groups = groupByCategory(filteredSignals)
+                  const taggedCount = filteredSignals.filter(i => i._tagged).length
+
+                  return (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                      {/* Classification summary bar */}
+                      {taggedCount > 0 && (
+                        <div style={{
+                          display: 'flex', alignItems: 'center', gap: 6,
+                          padding: '8px 12px', borderRadius: 8,
+                          background: 'var(--bg-tertiary)',
+                          flexWrap: 'wrap',
+                        }}>
+                          <RobotOutlined style={{ fontSize: 11, color: 'var(--text-tertiary)' }} />
+                          <span style={{ fontSize: 11, color: 'var(--text-secondary)', marginRight: 4 }}>
+                            纯AI分类
+                          </span>
+                          {groups.map(g => (
+                            <Tag
+                              key={g.categoryId}
+                              bordered={false}
+                              style={{
+                                fontSize: 10, padding: '0 6px', lineHeight: '18px',
+                                borderRadius: 4, background: g.bg, color: g.color, margin: 0,
+                                cursor: 'pointer',
+                              }}
+                              onClick={() => {
+                                setCollapsedGroups(prev => {
+                                  const next = new Set(prev)
+                                  if (next.has(g.categoryId)) next.delete(g.categoryId)
+                                  else next.add(g.categoryId)
+                                  return next
+                                })
+                              }}
+                            >
+                              {g.label} {g.items.length}
+                            </Tag>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Category groups */}
+                      {groups.map(group => {
+                        const isCollapsed = collapsedGroups.has(group.categoryId)
+                        return (
+                          <div
+                            key={group.categoryId}
+                            style={{
+                              borderRadius: 10,
+                              border: '1px solid var(--border-color)',
+                              background: 'var(--bg-secondary)',
+                              overflow: 'hidden',
+                              transition: 'all 0.2s ease',
+                            }}
+                          >
+                            {/* Group header */}
+                            <div
+                              onClick={() => {
+                                setCollapsedGroups(prev => {
+                                  const next = new Set(prev)
+                                  if (next.has(group.categoryId)) next.delete(group.categoryId)
+                                  else next.add(group.categoryId)
+                                  return next
+                                })
+                              }}
+                              style={{
+                                display: 'flex', alignItems: 'center', gap: 10,
+                                padding: '10px 14px',
+                                cursor: 'pointer',
+                                borderBottom: isCollapsed ? 'none' : '1px solid var(--border-light)',
+                                transition: 'background 0.15s ease',
+                              }}
+                              onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-tertiary)')}
+                              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                            >
+                              <CaretDownOutlined style={{
+                                fontSize: 10, color: 'var(--text-tertiary)',
+                                transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)',
+                                transition: 'transform 0.2s ease',
+                              }} />
+                              <div style={{
+                                width: 6, height: 6, borderRadius: '50%',
+                                background: group.color, flexShrink: 0,
+                              }} />
+                              <span style={{
+                                fontSize: 13, fontWeight: 600, color: 'var(--text-primary)',
+                              }}>
+                                {group.label}
+                              </span>
+                              <Tag bordered={false} style={{
+                                fontSize: 10, padding: '0 6px', lineHeight: '18px',
+                                borderRadius: 4, background: group.bg, color: group.color, margin: 0,
+                              }}>
+                                {group.items.length} 条
+                              </Tag>
+                              {/* Priority breakdown */}
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: 'auto' }}>
+                                {group.highCount > 0 && (
+                                  <span style={{
+                                    fontSize: 10, color: '#dc2626',
+                                    display: 'flex', alignItems: 'center', gap: 2,
+                                  }}>
+                                    <span style={{
+                                      width: 5, height: 5, borderRadius: '50%',
+                                      background: '#dc2626', display: 'inline-block',
+                                    }} />
+                                    {group.highCount} 重要
+                                  </span>
+                                )}
+                                {group.normalCount > 0 && (
+                                  <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>
+                                    {group.normalCount} 一般
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Group items */}
+                            {!isCollapsed && (
+                              <div style={{ padding: '6px 10px 10px' }}>
+                                {group.items.map(({ item, classification }, itemIdx) => {
+                                  const itemKey = getContentIdentity(item)
+                                  const priorityDisplay = getPriorityDisplay(classification.priority)
+                                  return (
+                                    <div
+                                      key={`${itemKey}-${itemIdx}`}
+                                      className="signal-card"
+                                      style={{
+                                        display: 'flex',
+                                        marginBottom: 6,
+                                        borderRadius: 8,
+                                        border: candidateSet.has(itemKey)
+                                          ? '1.5px solid var(--success-color)'
+                                          : '1px solid var(--border-light)',
+                                        background: candidateSet.has(itemKey)
+                                          ? 'rgba(16,185,129,0.02)' : 'var(--bg-primary)',
+                                        overflow: 'hidden',
+                                        transition: 'all 0.2s ease',
+                                      }}
+                                    >
+                                      {/* Priority bar */}
+                                      <div style={{
+                                        width: 3, flexShrink: 0,
+                                        background: candidateSet.has(itemKey)
+                                          ? 'var(--success-color)'
+                                          : priorityDisplay.color,
+                                      }} />
+
+                                      <div style={{ flex: 1, padding: '10px 12px 8px', minWidth: 0 }}>
+                                        {/* Title + priority badge */}
+                                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginBottom: 4 }}>
+                                          <div style={{
+                                            flex: 1, fontSize: 12.5, fontWeight: 600, color: 'var(--text-primary)',
+                                            lineHeight: 1.4,
+                                            display: '-webkit-box', WebkitLineClamp: 2,
+                                            WebkitBoxOrient: 'vertical' as const, overflow: 'hidden',
+                                          }}>
+                                            {item.title || '无标题'}
+                                          </div>
+                                          {classification.priority === 'high' && (
+                                            <Tag bordered={false} style={{
+                                              fontSize: 9, padding: '0 5px', lineHeight: '16px',
+                                              borderRadius: 3, background: priorityDisplay.bg,
+                                              color: priorityDisplay.color, margin: 0, flexShrink: 0,
+                                            }}>
+                                              {priorityDisplay.label}
+                                            </Tag>
+                                          )}
+                                          <button
+                                            onClick={() => toggleStar(itemKey)}
+                                            style={{
+                                              background: 'none', border: 'none', cursor: 'pointer', padding: 2,
+                                              color: starredSet.has(itemKey) ? '#f59e0b' : 'var(--border-color)',
+                                              fontSize: 12, flexShrink: 0,
+                                              transition: 'color 0.15s ease',
+                                            }}
+                                          >
+                                            {starredSet.has(itemKey) ? <StarFilled /> : <StarOutlined />}
+                                          </button>
+                                        </div>
+
+                                        {/* Content snippet */}
+                                        {item.content && (
+                                          <div style={{
+                                            fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.5,
+                                            display: '-webkit-box', WebkitLineClamp: 2,
+                                            WebkitBoxOrient: 'vertical' as const, overflow: 'hidden',
+                                            marginBottom: 6,
+                                          }}>
+                                            {item.content.slice(0, 150)}
+                                          </div>
+                                        )}
+
+                                        {/* Meta + actions */}
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                          <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
+                                            {item.source && (
+                                              <Tag bordered={false} style={{
+                                                fontSize: 9, padding: '0 5px', lineHeight: '16px', borderRadius: 3,
+                                                background: 'var(--bg-tertiary)', color: 'var(--text-tertiary)', margin: 0,
+                                              }}>
+                                                <GlobalOutlined style={{ fontSize: 8, marginRight: 2 }} />
+                                                {item.source}
+                                              </Tag>
+                                            )}
+                                            {classification.fromLLM && classification.reason && (
+                                              <Tooltip title={classification.reason}>
+                                                <Tag bordered={false} style={{
+                                                  fontSize: 9, padding: '0 5px', lineHeight: '16px', borderRadius: 3,
+                                                  background: 'var(--accent-light)', color: 'var(--accent-primary)', margin: 0,
+                                                }}>
+                                                  <TagOutlined style={{ fontSize: 8, marginRight: 2 }} />
+                                                  {classification.reason}
+                                                </Tag>
+                                              </Tooltip>
+                                            )}
+                                            {formatTimeAgo(item.published) && (
+                                              <span style={{
+                                                fontSize: 9, color: 'var(--text-tertiary)',
+                                                display: 'flex', alignItems: 'center', gap: 2,
+                                              }}>
+                                                <FieldTimeOutlined style={{ fontSize: 8 }} />
+                                                {formatTimeAgo(item.published)}
+                                              </span>
+                                            )}
+                                          </div>
+
+                                          <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0, marginLeft: 8 }}>
+                                            {candidateSet.has(itemKey) ? (
+                                              <Tag color="success" bordered={false} style={{
+                                                fontSize: 9, borderRadius: 3, margin: 0, lineHeight: '16px', padding: '0 5px',
+                                              }}>
+                                                <CheckCircleOutlined /> 已入选
+                                              </Tag>
+                                            ) : (
+                                              <>
+                                                <Button
+                                                  size="small" type="primary" ghost
+                                                  onClick={() => addCandidate(itemKey)}
+                                                  style={{ fontSize: 9, height: 20, borderRadius: 4, padding: '0 6px' }}
+                                                >
+                                                  <PlusOutlined /> 候选
+                                                </Button>
+                                                <Tooltip title="保存到收集箱">
+                                                  <Button
+                                                    size="small" type="text"
+                                                    icon={<InboxOutlined style={{ fontSize: 10 }} />}
+                                                    onClick={() => saveToInbox(item)}
+                                                    style={{ fontSize: 9, height: 20, color: 'var(--text-tertiary)' }}
+                                                  />
+                                                </Tooltip>
+                                              </>
+                                            )}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )
+                })()}
               </>
             )}
           </div>
@@ -1285,6 +2406,26 @@ export default function DiscoverPanel({
           )}
           {inboxCandidateCount > 0 && (
             <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>({inboxCandidateCount} 收集箱)</span>
+          )}
+          {todayHighlights.length > 0 && (
+            <Button
+              size="small"
+              type="link"
+              onClick={handleAddHighlightsToCandidates}
+              style={{ fontSize: 10, height: 22, padding: 0 }}
+            >
+              加入今日重点
+            </Button>
+          )}
+          {totalCandidates > 0 && (
+            <Button
+              size="small"
+              type="link"
+              onClick={handleClearCandidates}
+              style={{ fontSize: 10, height: 22, padding: 0, color: '#dc2626' }}
+            >
+              清空候选
+            </Button>
           )}
 
           {unprocessedInbox > 0 && (

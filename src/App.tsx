@@ -54,6 +54,13 @@ declare global {
       radarStart: (config?: Record<string, any>) => Promise<any>
       radarStop: () => Promise<any>
       radarRunOnce: (config?: Record<string, any>) => Promise<any>
+      radarClearContents: () => Promise<any>
+      radarUpdateContents: (contents: ContentItem[]) => Promise<any>
+      trendradarStart: (intervalMin?: number) => Promise<any>
+      trendradarStop: () => Promise<any>
+      trendradarStatus: () => Promise<any>
+      onTrendradarLog: (callback: (data: string) => void) => void
+      onTrendradarStatus: (callback: (data: any) => void) => void
     }
   }
 }
@@ -110,6 +117,7 @@ function App() {
       .then((state) => setRadarState(state))
       .catch((e: any) => console.error('Failed to load radar state:', e))
     window.electronAPI.onRadarUpdate((state) => {
+      console.log(`[App] radarUpdate received: contents=${state?.contents?.length}, enabled=${state?.enabled}, error=${state?.lastError}`)
       setRadarState(state)
     })
   }, [])
@@ -330,7 +338,7 @@ function App() {
           fetchConfig={fetchConfig}
           radarState={radarState}
           onRadarRunOnce={async (values) => {
-            await window.electronAPI.radarRunOnce(values)
+            return await window.electronAPI.radarRunOnce(values)
           }}
           onFetchConfigSave={async (values) => {
             const result = await window.electronAPI.saveNodeConfig('fetch', values)
@@ -344,6 +352,12 @@ function App() {
             } else {
               throw new Error(result.error)
             }
+          }}
+          onClearContents={async () => {
+            await window.electronAPI.radarClearContents()
+          }}
+          onUpdateContents={async (contents) => {
+            await window.electronAPI.radarUpdateContents(contents)
           }}
         />
 

@@ -15,7 +15,7 @@ class FetchConfig(NodeConfigBase):
         default_factory=list,
         description="启用的数据源列表（文件名，不含.py扩展名）。"
     )
-    auto_discover: bool = Field(default=True, description="自动发现并补充信息来源")
+
 
     min_relevance: int = Field(default=3, ge=1, le=5, description="最低相关度要求 1-5")
     allow_duplicates: bool = Field(default=False, description="是否允许重复内容")
@@ -27,7 +27,7 @@ class FetchConfig(NodeConfigBase):
     event_detection: bool = Field(default=True, description="事件聚合")
     trending_boost: bool = Field(default=False, description="热度加权")
 
-    max_articles: int = Field(default=15, ge=1, le=100, description="输出数量上限")
+    max_articles: int = Field(default=50, ge=1, le=500, description="输出数量上限")
     group_by_topic: bool = Field(default=True, description="按主题分组")
     include_summary: bool = Field(default=True, description="生成摘要")
 

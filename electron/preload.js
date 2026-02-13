@@ -19,5 +19,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   radarGetState: () => ipcRenderer.invoke('radar:getState'),
   radarStart: (config) => ipcRenderer.invoke('radar:start', config),
   radarStop: () => ipcRenderer.invoke('radar:stop'),
-  radarRunOnce: (config) => ipcRenderer.invoke('radar:runOnce', config)
+  radarRunOnce: (config) => ipcRenderer.invoke('radar:runOnce', config),
+  radarClearContents: () => ipcRenderer.invoke('radar:clearContents'),
+  radarUpdateContents: (contents) => ipcRenderer.invoke('radar:updateContents', contents),
+  trendradarStart: (intervalMin) => ipcRenderer.invoke('trendradar:start', intervalMin),
+  trendradarStop: () => ipcRenderer.invoke('trendradar:stop'),
+  trendradarStatus: () => ipcRenderer.invoke('trendradar:status'),
+  onTrendradarLog: (callback) => ipcRenderer.on('trendradar:log', (_, data) => callback(data)),
+  onTrendradarStatus: (callback) => ipcRenderer.on('trendradar:status', (_, data) => callback(data))
 })

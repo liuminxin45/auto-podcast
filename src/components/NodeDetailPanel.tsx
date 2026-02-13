@@ -34,6 +34,14 @@ export default function NodeDetailPanel({ nodeName, workflow, onClose }: Props) 
   const [fetchModalVisible, setFetchModalVisible] = useState(false)
   const [fetchSources, setFetchSources] = useState<Array<{ id: string; name: string; description: string }>>([])
   const [manualModalVisible, setManualModalVisible] = useState(false)
+  const [radarState, setRadarState] = useState<{
+    enabled: boolean
+    intervalMin: number
+    keepLast: number
+    lastRunAt: string | null
+    lastError: string | null
+    running: boolean
+  } | null>(null)
 
   // 自动加载配置
   useEffect(() => {
@@ -52,12 +60,17 @@ export default function NodeDetailPanel({ nodeName, workflow, onClose }: Props) 
     loadConfig()
   }, [nodeName])
 
-  // 加载 fetch sources（仅 fetch 节点）
+  // 加载 fetch sources 和 radar state（仅 fetch 节点）
   useEffect(() => {
     if (nodeName === 'fetch') {
       window.electronAPI.getFetchSources()
         .then(sources => setFetchSources(sources))
         .catch(e => console.error('Failed to load fetch sources:', e))
+      window.electronAPI.radarGetState()
+        .then(state => setRadarState(state))
+        .catch(e => console.error('Failed to load radar state:', e))
+      const handler = (state: any) => setRadarState(state)
+      window.electronAPI.onRadarUpdate(handler)
     }
   }, [nodeName])
 
@@ -65,6 +78,14 @@ export default function NodeDetailPanel({ nodeName, workflow, onClose }: Props) 
     const result = await window.electronAPI.saveNodeConfig(nodeName, values)
     if (result.success) {
       setConfig(values)
+      // 如果是 fetch 节点，根据 monitor_enabled 启停雷达服务
+      if (nodeName === 'fetch') {
+        if (values.monitor_enabled) {
+          await window.electronAPI.radarStart(values)
+        } else {
+          await window.electronAPI.radarStop()
+        }
+      }
     } else {
       throw new Error(result.error)
     }
@@ -504,6 +525,10 @@ export default function NodeDetailPanel({ nodeName, workflow, onClose }: Props) 
               initialConfig={config}
               onSave={handleNodeConfigSave}
               sources={fetchSources}
+              radarState={radarState}
+              onRunOnce={async (values) => {
+                return await window.electronAPI.radarRunOnce(values)
+              }}
             />
           </div>
         ) : nodeName === 'manual' ? (

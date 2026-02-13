@@ -42,6 +42,9 @@ def run(state: Dict[str, Any], config: FetchConfig = None) -> Dict[str, Any]:
 
     all_contents: List[Dict[str, Any]] = []
 
+    # breadth controls per-source item cap: 1→20, 2→50, 3→100, 4→200, 5→unlimited
+    per_source_cap = {1: 20, 2: 50, 3: 100, 4: 200, 5: 0}.get(config.breadth, 100)
+
     for source_name in enabled_sources:
         source_file = sources_dir / f"{source_name}.py"
         if not source_file.exists():
@@ -60,6 +63,9 @@ def run(state: Dict[str, Any], config: FetchConfig = None) -> Dict[str, Any]:
             logs.append(f"[FetchNode] Fetching from: {source_instance.name}")
             items = source_instance.fetch()
             normalized = _normalize_items(items, source_name, logs)
+            if per_source_cap > 0 and len(normalized) > per_source_cap:
+                logs.append(f"[FetchNode] Capping {source_name} from {len(normalized)} to {per_source_cap} (breadth={config.breadth})")
+                normalized = normalized[:per_source_cap]
             logs.append(f"[FetchNode] Fetched {len(normalized)} valid items from {source_name}")
             all_contents.extend(normalized)
 
@@ -156,25 +162,16 @@ def _resolve_enabled_sources(config: FetchConfig, available: List[str]) -> List[
     if not available:
         return selected
 
-    # User has explicitly selected sources → always respect their selection
+    # User has explicitly selected sources → respect their selection
     if selected:
         return selected
 
-    # No explicit selection and auto_discover is off → return empty
-    if not config.auto_discover:
-        return selected
-
-    # No explicit selection + auto_discover on → auto-fill based on breadth
-    target_count = _breadth_to_source_count(config.breadth, len(available))
-    priority = ["hackernews", "techcrunch", "ai_news_daily", "example_custom"]
-    ordered = [s for s in priority if s in available_set] + [s for s in available if s not in priority]
-
-    resolved: List[str] = []
-    for source_name in ordered:
-        if len(resolved) >= target_count:
-            break
-        resolved.append(source_name)
-    return resolved
+    # No explicit selection → enable all real sources
+    priority = ["newsnow", "hackernews", "techcrunch", "ai_news_daily"]
+    ordered = [s for s in priority if s in available_set] + [
+        s for s in available if s not in priority and s != "example_custom"
+    ]
+    return ordered
 
 
 def _breadth_to_source_count(breadth: int, available_count: int) -> int:
@@ -225,10 +222,12 @@ def _apply_discover_filters(
     filtered = _filter_with_log(filtered, logs, "exclude_keywords", lambda i: not _match_exclude(i, config))
 
     min_len = _quality_min_length(config.quality)
-    filtered = _filter_with_log(filtered, logs, "quality", lambda i: len(i.get("content", "")) >= min_len)
+    filtered = _filter_with_log(filtered, logs, "quality",
+                                lambda i: i.get("type") == "hotlist" or len(i.get("content", "")) >= min_len)
 
     filtered = _filter_with_log(filtered, logs, "freshness", lambda i: _match_freshness(i, config))
-    filtered = _filter_with_log(filtered, logs, "relevance", lambda i: _relevance_score(i, config) >= config.min_relevance)
+    filtered = _filter_with_log(filtered, logs, "relevance",
+                                lambda i: i.get("type") == "hotlist" or _relevance_score(i, config) >= config.min_relevance)
 
     if config.prefer_original:
         filtered = _filter_with_log(filtered, logs, "prefer_original", lambda i: not _is_repost(i))
@@ -243,6 +242,9 @@ def _apply_discover_filters(
         if removed > 0:
             logs.append(f"[FetchNode] Removed {removed} duplicate items")
 
+    if config.event_detection and len(filtered) > 1:
+        filtered = _detect_events(filtered, 0.75, logs)
+
     if config.group_by_topic and len(filtered) > 1:
         filtered = _group_by_topic(filtered, 0.78)
 
@@ -254,7 +256,10 @@ def _apply_discover_filters(
     if config.include_summary:
         for item in filtered:
             if "summary" not in item:
-                item["summary"] = item.get("content", "")[:200]
+                content = item.get("content", "")
+                # Extract a meaningful first sentence or paragraph as summary
+                summary = _extract_summary(content, 200)
+                item["summary"] = summary
 
     return filtered
 
@@ -399,6 +404,40 @@ def _deduplicate(items: List[Dict[str, Any]], threshold: float) -> List[Dict[str
     return unique
 
 
+def _detect_events(items: List[Dict[str, Any]], threshold: float, logs: List[str]) -> List[Dict[str, Any]]:
+    """Cluster items about the same event across sources, tag them with _event_id and _event_size."""
+    events: List[Tuple[str, List[int]]] = []  # (representative_title, [indices])
+    for idx, item in enumerate(items):
+        key = _normalize_title(item.get("title", ""))
+        if not key:
+            continue
+        placed = False
+        for eidx, (ekey, indices) in enumerate(events):
+            if SequenceMatcher(None, key, ekey).ratio() >= threshold:
+                indices.append(idx)
+                placed = True
+                break
+        if not placed:
+            events.append((key, [idx]))
+
+    # Tag items that belong to multi-source events
+    event_count = 0
+    for ekey, indices in events:
+        if len(indices) < 2:
+            continue
+        event_count += 1
+        sources_in_event = set()
+        for i in indices:
+            items[i]["_event_id"] = event_count
+            items[i]["_event_size"] = len(indices)
+            sources_in_event.add(items[i].get("source", ""))
+        items[indices[0]]["_event_sources"] = list(sources_in_event)
+
+    if event_count > 0:
+        logs.append(f"[FetchNode] Detected {event_count} multi-source events")
+    return items
+
+
 def _group_by_topic(items: List[Dict[str, Any]], threshold: float) -> List[Dict[str, Any]]:
     groups: List[Tuple[str, List[Dict[str, Any]]]] = []
     for item in items:
@@ -472,6 +511,28 @@ def _normalize_title(title: str) -> str:
     cleaned = re.sub(r"[^a-z0-9\u4e00-\u9fff ]", "", cleaned)
     tokens = cleaned.split()
     return " ".join(tokens[:10])
+
+
+def _extract_summary(content: str, max_len: int = 200) -> str:
+    """Extract a meaningful summary: first complete sentence or paragraph."""
+    if not content:
+        return ""
+    text = content.strip()
+    # Try to find first sentence break (Chinese or English)
+    for sep in ["。", "！", "？", ". ", "! ", "? ", "\n\n", "\n"]:
+        pos = text.find(sep)
+        if 0 < pos <= max_len:
+            return text[:pos + len(sep)].strip()
+    # Fall back to word boundary near max_len
+    if len(text) <= max_len:
+        return text
+    cut = text[:max_len]
+    # Try to break at last space or punctuation
+    for ch in [" ", "，", ",", "；", "、"]:
+        last = cut.rfind(ch)
+        if last > max_len // 2:
+            return cut[:last].strip() + "…"
+    return cut.strip() + "…"
 
 
 def _tokenize(text: str) -> List[str]:
