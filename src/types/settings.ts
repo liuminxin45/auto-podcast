@@ -82,22 +82,34 @@ export type APIConnectionStatus = 'untested' | 'testing' | 'connected' | 'failed
 export interface NodeAPIConfig {
   overrideMode: NodeOverrideMode
   capabilityType: NodeCapabilityType
+  apiKey: string
   apiKeySet: boolean
   apiKeyMasked: string
+  apiBase: string
+  apiModel: string
   connectionStatus: APIConnectionStatus
   mode: TextMode
   balance: CostQualityBalance
 }
 
 export interface GlobalAPIConfig {
+  textApiKey: string
   textApiKeySet: boolean
   textApiKeyMasked: string
+  textApiBase: string
+  textApiModel: string
   textConnectionStatus: APIConnectionStatus
+  searchApiKey: string
   searchApiKeySet: boolean
   searchApiKeyMasked: string
+  searchApiBase: string
+  searchApiModel: string
   searchConnectionStatus: APIConnectionStatus
+  audioApiKey: string
   audioApiKeySet: boolean
   audioApiKeyMasked: string
+  audioApiBase: string
+  audioApiModel: string
   audioConnectionStatus: APIConnectionStatus
 }
 
@@ -130,8 +142,11 @@ export type SettingsSection =
 export const DEFAULT_NODE_API_CONFIG: NodeAPIConfig = {
   overrideMode: 'global',
   capabilityType: 'text',
+  apiKey: '',
   apiKeySet: false,
   apiKeyMasked: '',
+  apiBase: 'https://api.openai.com/v1',
+  apiModel: '',
   connectionStatus: 'untested',
   mode: 'standard',
   balance: 'balanced',
@@ -173,14 +188,23 @@ export const DEFAULT_SETTINGS: AppSettings = {
   },
   apiConfig: {
     global: {
+      textApiKey: '',
       textApiKeySet: false,
       textApiKeyMasked: '',
+      textApiBase: 'https://api.openai.com/v1',
+      textApiModel: '',
       textConnectionStatus: 'untested',
+      searchApiKey: '',
       searchApiKeySet: false,
       searchApiKeyMasked: '',
+      searchApiBase: 'https://api.openai.com/v1',
+      searchApiModel: '',
       searchConnectionStatus: 'untested',
+      audioApiKey: '',
       audioApiKeySet: false,
       audioApiKeyMasked: '',
+      audioApiBase: 'https://api.openai.com/v1',
+      audioApiModel: '',
       audioConnectionStatus: 'untested',
     },
     nodeOverrides: {

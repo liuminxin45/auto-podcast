@@ -1,4 +1,4 @@
-import { Modal, Slider, Switch, Tag, message, Input } from 'antd'
+import { Modal, Slider, Switch, Tag, message, Input, Button } from 'antd'
 import { useState, useEffect, useCallback } from 'react'
 import {
   SearchOutlined,
@@ -54,6 +54,19 @@ interface FetchConfig {
   include_summary: boolean
   // Preset
   activePreset: string | null
+  // Monitoring
+  monitor_enabled: boolean
+  monitor_interval_min: number
+  monitor_keep_last: number
+}
+
+interface RadarState {
+  enabled: boolean
+  intervalMin: number
+  keepLast: number
+  lastRunAt: string | null
+  lastError: string | null
+  running: boolean
 }
 
 interface Props {
@@ -62,6 +75,8 @@ interface Props {
   initialConfig?: Record<string, any>
   onSave: (config: Record<string, any>) => void
   sources: FetchSource[]
+  radarState?: RadarState | null
+  onRunOnce?: (config: Record<string, any>) => Promise<void>
 }
 
 // ============================================================
@@ -193,6 +208,9 @@ const DEFAULT_CONFIG: FetchConfig = {
   group_by_topic: true,
   include_summary: true,
   activePreset: 'daily',
+  monitor_enabled: false,
+  monitor_interval_min: 30,
+  monitor_keep_last: 100,
 }
 
 // ============================================================
@@ -238,13 +256,22 @@ const SOURCE_ICONS: Record<string, React.ReactNode> = {
 // Component
 // ============================================================
 
-export default function FetchConfigModal({ visible, onClose, initialConfig, onSave, sources }: Props) {
+export default function FetchConfigModal({
+  visible,
+  onClose,
+  initialConfig,
+  onSave,
+  sources,
+  radarState,
+  onRunOnce,
+}: Props) {
   const [config, setConfig] = useState<FetchConfig>({ ...DEFAULT_CONFIG })
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [advancedSection, setAdvancedSection] = useState<string>('sources')
   const [keywordInput, setKeywordInput] = useState('')
   const [excludeInput, setExcludeInput] = useState('')
   const [saving, setSaving] = useState(false)
+  const [runningOnce, setRunningOnce] = useState(false)
 
   // Load initial config
   useEffect(() => {
@@ -324,6 +351,19 @@ export default function FetchConfigModal({ visible, onClose, initialConfig, onSa
       message.error(`保存失败: ${e.message}`)
     } finally {
       setSaving(false)
+    }
+  }
+
+  const handleRunOnce = async () => {
+    if (!onRunOnce || runningOnce) return
+    setRunningOnce(true)
+    try {
+      await onRunOnce(config as any)
+      message.success('已触发一次采集')
+    } catch (e: any) {
+      message.error(`执行失败: ${e.message}`)
+    } finally {
+      setRunningOnce(false)
     }
   }
 
@@ -422,6 +462,124 @@ export default function FetchConfigModal({ visible, onClose, initialConfig, onSa
       </div>
     </div>
   )
+
+  // ============================================================
+  // Render: Monitoring Section
+  // ============================================================
+
+  const renderMonitoringSection = () => {
+    const intervalOptions = [15, 30, 60, 180]
+    const keepOptions = [50, 100, 200, 500]
+    const lastRun = radarState?.lastRunAt
+      ? new Date(radarState.lastRunAt)
+      : null
+    const lastRunText = lastRun && !Number.isNaN(lastRun.getTime())
+      ? lastRun.toLocaleString()
+      : '尚未运行'
+    const statusText = radarState?.running
+      ? '采集中...'
+      : radarState?.lastError
+        ? `异常：${radarState.lastError}`
+        : `上次：${lastRunText}`
+
+    return (
+      <div style={{
+        marginTop: 18,
+        padding: '16px 18px',
+        borderRadius: 12,
+        border: '1px solid var(--border-light)',
+        background: 'var(--bg-primary)'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <RadarChartOutlined style={{ color: 'var(--accent-primary)', fontSize: 14 }} />
+            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>持续监控</span>
+          </div>
+          <Switch
+            checked={config.monitor_enabled}
+            onChange={(v) => updateConfig('monitor_enabled', v)}
+            style={{ background: config.monitor_enabled ? 'var(--accent-primary)' : undefined }}
+          />
+        </div>
+
+        <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 12 }}>
+          {statusText}
+        </div>
+
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 8 }}>采集频率</div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {intervalOptions.map((val) => {
+              const active = config.monitor_interval_min === val
+              return (
+                <div
+                  key={val}
+                  onClick={() => updateConfig('monitor_interval_min', val)}
+                  style={{
+                    padding: '6px 10px',
+                    borderRadius: 8,
+                    fontSize: 11,
+                    cursor: 'pointer',
+                    border: active ? '1px solid var(--accent-primary)' : '1px solid var(--border-color)',
+                    background: active ? 'var(--accent-light)' : 'var(--bg-secondary)',
+                    color: active ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                    fontWeight: active ? 600 : 400,
+                    opacity: config.monitor_enabled ? 1 : 0.6,
+                    pointerEvents: config.monitor_enabled ? 'auto' : 'none'
+                  }}
+                >
+                  {val} 分钟
+                </div>
+              )
+            })}
+          </div>
+        </div>
+
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 8 }}>保留条数</div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {keepOptions.map((val) => {
+              const active = config.monitor_keep_last === val
+              return (
+                <div
+                  key={val}
+                  onClick={() => updateConfig('monitor_keep_last', val)}
+                  style={{
+                    padding: '6px 10px',
+                    borderRadius: 8,
+                    fontSize: 11,
+                    cursor: 'pointer',
+                    border: active ? '1px solid var(--accent-primary)' : '1px solid var(--border-color)',
+                    background: active ? 'var(--accent-light)' : 'var(--bg-secondary)',
+                    color: active ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                    fontWeight: active ? 600 : 400,
+                    opacity: config.monitor_enabled ? 1 : 0.6,
+                    pointerEvents: config.monitor_enabled ? 'auto' : 'none'
+                  }}
+                >
+                  {val} 条
+                </div>
+              )
+            })}
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <Button
+            size="small"
+            type="primary"
+            ghost
+            loading={runningOnce}
+            onClick={handleRunOnce}
+            disabled={!onRunOnce}
+            style={{ fontSize: 11, height: 28 }}
+          >
+            立即采集
+          </Button>
+        </div>
+      </div>
+    )
+  }
 
   // ============================================================
   // Render: Topic Input
@@ -1271,6 +1429,9 @@ export default function FetchConfigModal({ visible, onClose, initialConfig, onSa
 
         {/* Quick Mode */}
         {renderQuickMode()}
+
+        {/* Monitoring */}
+        {renderMonitoringSection()}
 
         {/* Advanced Toggle */}
         <div

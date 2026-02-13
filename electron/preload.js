@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('workflow:approve', workflowId, nodeName, approved, modifiedOutput),
   onWorkflowUpdate: (callback) => ipcRenderer.on('workflow:update', (_, data) => callback(data)),
   onNeedApproval: (callback) => ipcRenderer.on('workflow:needApproval', (_, data) => callback(data)),
+  onRadarUpdate: (callback) => ipcRenderer.on('radar:update', (_, data) => callback(data)),
   getNodeSchema: (nodeName) => ipcRenderer.invoke('node:getSchema', nodeName),
   getAllNodeSchemas: () => ipcRenderer.invoke('node:getAllSchemas'),
   saveNodeConfig: (nodeName, config) => ipcRenderer.invoke('config:save', nodeName, config),
@@ -14,5 +15,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   loadAllConfigs: () => ipcRenderer.invoke('config:loadAll'),
   deleteNodeConfig: (nodeName) => ipcRenderer.invoke('config:delete', nodeName),
   resetAllConfigs: () => ipcRenderer.invoke('config:resetAll'),
-  getFetchSources: () => ipcRenderer.invoke('fetch:getSources')
+  getFetchSources: () => ipcRenderer.invoke('fetch:getSources'),
+  radarGetState: () => ipcRenderer.invoke('radar:getState'),
+  radarStart: (config) => ipcRenderer.invoke('radar:start', config),
+  radarStop: () => ipcRenderer.invoke('radar:stop'),
+  radarRunOnce: (config) => ipcRenderer.invoke('radar:runOnce', config)
 })

@@ -12,7 +12,7 @@ import WritingLayer from './components/writing'
 import SoundStudio from './components/SoundStudio'
 import PublishLayer from './components/PublishLayer'
 import SettingsPage from './components/SettingsPage'
-import type { Workflow, WorkflowCreateResult } from './types/workflow'
+import type { Workflow, WorkflowCreateResult, ContentItem } from './types/workflow'
 
 const { Header, Content, Footer } = Layout
 const { Title } = Typography
@@ -25,6 +25,15 @@ declare global {
       approveNode: (id: string, node: string, approved: boolean, output?: any) => Promise<{ status: string }>
       onWorkflowUpdate: (callback: (data: Workflow) => void) => void
       onNeedApproval: (callback: (data: any) => void) => void
+      onRadarUpdate: (callback: (data: {
+        enabled: boolean
+        intervalMin: number
+        keepLast: number
+        lastRunAt: string | null
+        lastError: string | null
+        running: boolean
+        contents: ContentItem[]
+      }) => void) => void
       getNodeSchema: (nodeName: string) => Promise<any>
       getAllNodeSchemas: () => Promise<Record<string, any>>
       saveNodeConfig: (nodeName: string, config: Record<string, any>) => Promise<{ success: boolean; error?: string }>
@@ -33,6 +42,18 @@ declare global {
       deleteNodeConfig: (nodeName: string) => Promise<{ success: boolean; error?: string }>
       resetAllConfigs: () => Promise<{ success: boolean; error?: string }>
       getFetchSources: () => Promise<Array<{ id: string; name: string; description: string }>>
+      radarGetState: () => Promise<{
+        enabled: boolean
+        intervalMin: number
+        keepLast: number
+        lastRunAt: string | null
+        lastError: string | null
+        running: boolean
+        contents: ContentItem[]
+      }>
+      radarStart: (config?: Record<string, any>) => Promise<any>
+      radarStop: () => Promise<any>
+      radarRunOnce: (config?: Record<string, any>) => Promise<any>
     }
   }
 }
@@ -53,6 +74,15 @@ function App() {
   const [soundStudioVisible, setSoundStudioVisible] = useState(false)
   const [publishVisible, setPublishVisible] = useState(false)
   const [settingsVisible, setSettingsVisible] = useState(false)
+  const [radarState, setRadarState] = useState<{
+    enabled: boolean
+    intervalMin: number
+    keepLast: number
+    lastRunAt: string | null
+    lastError: string | null
+    running: boolean
+    contents: ContentItem[]
+  } | null>(null)
 
   // Close all full-screen panels (mutual exclusivity)
   const closeAllPanels = () => {
@@ -73,6 +103,15 @@ function App() {
     window.electronAPI.loadNodeConfig('fetch')
       .then(config => { if (config) setFetchConfig(config) })
       .catch(e => console.error('Failed to load fetch config:', e))
+  }, [])
+
+  useEffect(() => {
+    window.electronAPI.radarGetState()
+      .then((state) => setRadarState(state))
+      .catch((e: any) => console.error('Failed to load radar state:', e))
+    window.electronAPI.onRadarUpdate((state) => {
+      setRadarState(state)
+    })
   }, [])
 
   useEffect(() => {
@@ -283,14 +322,25 @@ function App() {
         <DiscoverPanel
           visible={discoverVisible}
           onClose={() => setDiscoverVisible(false)}
-          fetchContents={workflow?.state?.fetch_contents || []}
+          fetchContents={(radarState?.enabled || radarState?.contents?.length)
+            ? (radarState?.contents || [])
+            : (workflow?.state?.fetch_contents || [])}
           manualContents={workflow?.state?.manual_contents || []}
           fetchSources={fetchSources}
           fetchConfig={fetchConfig}
+          radarState={radarState}
+          onRadarRunOnce={async (values) => {
+            await window.electronAPI.radarRunOnce(values)
+          }}
           onFetchConfigSave={async (values) => {
             const result = await window.electronAPI.saveNodeConfig('fetch', values)
             if (result.success) {
               setFetchConfig(values)
+              if (values.monitor_enabled) {
+                await window.electronAPI.radarStart(values)
+              } else {
+                await window.electronAPI.radarStop()
+              }
             } else {
               throw new Error(result.error)
             }

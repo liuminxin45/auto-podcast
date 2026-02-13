@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react'
-import { Button, Input, Tooltip, message } from 'antd'
+import { AutoComplete, Button, Input, Tooltip, message } from 'antd'
 import {
   CheckOutlined,
   CloseCircleOutlined,
@@ -25,6 +25,7 @@ import type {
   TextMode,
   CostQualityBalance,
 } from '../types/settings'
+import { fetchModelsWithCache } from '../utils/modelFetcher'
 
 // ============================================================
 // Props
@@ -230,6 +231,9 @@ function NodeOverrideCard({ stageId, settings, updateSettings }: {
   const meta = STAGE_META[stageId]
   const nodeConfig = settings.apiConfig.nodeOverrides[stageId]
   const capLabel = CAPABILITY_LABELS[nodeConfig.capabilityType]
+  const modelKey = `node-${stageId}`
+  const [modelOptions, setModelOptions] = useState<Record<string, string[]>>({})
+  const [modelLoading, setModelLoading] = useState<Record<string, boolean>>({})
 
   const handleToggleMode = (mode: NodeOverrideMode) => {
     updateSettings('apiConfig', c => ({
@@ -267,6 +271,23 @@ function NodeOverrideCard({ stageId, settings, updateSettings }: {
       message.error({ content: `${meta.label}连接失败，请检查密钥`, duration: 3, style: { marginTop: 60 } })
     }
   }, [stageId, meta.label, updateSettings])
+
+  const handleFetchModels = useCallback(async () => {
+    if (!nodeConfig.apiKey || !nodeConfig.apiBase) {
+      message.warning('请先填写 API Base 与 API Key')
+      return
+    }
+    setModelLoading(prev => ({ ...prev, [modelKey]: true }))
+    try {
+      const models = await fetchModelsWithCache(nodeConfig.apiBase, nodeConfig.apiKey)
+      setModelOptions(prev => ({ ...prev, [modelKey]: models }))
+      message.success(`已获取 ${models.length} 个模型`)
+    } catch (error: any) {
+      message.error(`获取模型失败：${error?.message || '未知错误'}`)
+    } finally {
+      setModelLoading(prev => ({ ...prev, [modelKey]: false }))
+    }
+  }, [modelKey, nodeConfig.apiBase, nodeConfig.apiKey])
 
   return (
     <div style={{
@@ -479,11 +500,69 @@ function NodeOverrideCard({ stageId, settings, updateSettings }: {
                       ...c,
                       nodeOverrides: {
                         ...c.nodeOverrides,
-                        [stageId]: { ...c.nodeOverrides[stageId], apiKeySet: true, apiKeyMasked: masked },
+                        [stageId]: {
+                          ...c.nodeOverrides[stageId],
+                          apiKey: key,
+                          apiKeySet: true,
+                          apiKeyMasked: masked,
+                        },
                       },
                     }))
                   }}
                 />
+              </div>
+
+              {/* API Base */}
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 6 }}>
+                  API Base URL
+                </div>
+                <Input
+                  value={nodeConfig.apiBase}
+                  onChange={e => updateSettings('apiConfig', c => ({
+                    ...c,
+                    nodeOverrides: {
+                      ...c.nodeOverrides,
+                      [stageId]: { ...c.nodeOverrides[stageId], apiBase: e.target.value },
+                    },
+                  }))}
+                  placeholder="https://api.openai.com/v1"
+                  style={{ borderRadius: 8, fontSize: 12 }}
+                />
+              </div>
+
+              {/* Model */}
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 6 }}>
+                  Model
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <AutoComplete
+                    value={nodeConfig.apiModel}
+                    options={(modelOptions[modelKey] || []).map(model => ({ value: model, label: model }))}
+                    onChange={(val) => updateSettings('apiConfig', c => ({
+                      ...c,
+                      nodeOverrides: {
+                        ...c.nodeOverrides,
+                        [stageId]: { ...c.nodeOverrides[stageId], apiModel: val },
+                      },
+                    }))}
+                    placeholder="输入或自动获取模型"
+                    style={{ flex: 1 }}
+                    filterOption={(inputValue, option) =>
+                      option?.value.toLowerCase().includes(inputValue.toLowerCase()) || false
+                    }
+                  />
+                  <Button
+                    size="small"
+                    icon={<SearchOutlined />}
+                    loading={modelLoading[modelKey]}
+                    onClick={handleFetchModels}
+                    style={{ height: 32, borderRadius: 8, fontSize: 12 }}
+                  >
+                    自动获取
+                  </Button>
+                </div>
               </div>
 
               {/* Test connection */}
@@ -527,6 +606,9 @@ function NodeOverrideCard({ stageId, settings, updateSettings }: {
 // ============================================================
 
 export default function SettingsAPIConfig({ settings, updateSettings }: Props) {
+  const [modelOptions, setModelOptions] = useState<Record<string, string[]>>({})
+  const [modelLoading, setModelLoading] = useState<Record<string, boolean>>({})
+
   const handleTestGlobal = useCallback(async (capKey: 'text' | 'search' | 'audio') => {
     const statusKey = `${capKey}ConnectionStatus` as const
     updateSettings('apiConfig', c => ({
@@ -545,6 +627,28 @@ export default function SettingsAPIConfig({ settings, updateSettings }: Props) {
       message.error({ content: '连接失败，请检查密钥', duration: 3, style: { marginTop: 60 } })
     }
   }, [updateSettings])
+
+  const handleFetchGlobalModels = useCallback(async (
+    capKey: 'text' | 'search' | 'audio',
+    apiBase: string,
+    apiKey: string,
+  ) => {
+    const modelKey = `global-${capKey}`
+    if (!apiBase || !apiKey) {
+      message.warning('请先填写 API Base 与 API Key')
+      return
+    }
+    setModelLoading(prev => ({ ...prev, [modelKey]: true }))
+    try {
+      const models = await fetchModelsWithCache(apiBase, apiKey)
+      setModelOptions(prev => ({ ...prev, [modelKey]: models }))
+      message.success(`已获取 ${models.length} 个模型`)
+    } catch (error: any) {
+      message.error(`获取模型失败：${error?.message || '未知错误'}`)
+    } finally {
+      setModelLoading(prev => ({ ...prev, [modelKey]: false }))
+    }
+  }, [])
 
   return (
     <div style={{ animation: 'settingsContentIn 0.3s ease' }}>
@@ -578,12 +682,19 @@ export default function SettingsAPIConfig({ settings, updateSettings }: Props) {
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           {GLOBAL_CAPS.map(cap => {
+            const apiKeyKey = `${cap.key}ApiKey` as keyof typeof settings.apiConfig.global
             const apiKeySetKey = `${cap.key}ApiKeySet` as keyof typeof settings.apiConfig.global
             const apiKeyMaskedKey = `${cap.key}ApiKeyMasked` as keyof typeof settings.apiConfig.global
+            const apiBaseKey = `${cap.key}ApiBase` as keyof typeof settings.apiConfig.global
+            const apiModelKey = `${cap.key}ApiModel` as keyof typeof settings.apiConfig.global
             const statusKey = `${cap.key}ConnectionStatus` as keyof typeof settings.apiConfig.global
+            const apiKey = settings.apiConfig.global[apiKeyKey] as string
             const isSet = settings.apiConfig.global[apiKeySetKey] as boolean
             const masked = settings.apiConfig.global[apiKeyMaskedKey] as string
+            const apiBase = settings.apiConfig.global[apiBaseKey] as string
+            const apiModel = settings.apiConfig.global[apiModelKey] as string
             const status = settings.apiConfig.global[statusKey] as APIConnectionStatus
+            const modelKey = `global-${cap.key}`
 
             return (
               <div key={cap.key} style={{
@@ -610,12 +721,64 @@ export default function SettingsAPIConfig({ settings, updateSettings }: Props) {
                       ...c,
                       global: {
                         ...c.global,
+                        [apiKeyKey]: key,
                         [apiKeySetKey]: true,
                         [apiKeyMaskedKey]: m,
                       },
                     }))
                   }}
                 />
+
+                <div style={{ marginTop: 10 }}>
+                  <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 6 }}>
+                    API Base URL
+                  </div>
+                  <Input
+                    value={apiBase}
+                    onChange={e => updateSettings('apiConfig', c => ({
+                      ...c,
+                      global: {
+                        ...c.global,
+                        [apiBaseKey]: e.target.value,
+                      },
+                    }))}
+                    placeholder="https://api.openai.com/v1"
+                    style={{ borderRadius: 8, fontSize: 12 }}
+                  />
+                </div>
+
+                <div style={{ marginTop: 10 }}>
+                  <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 6 }}>
+                    Model
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <AutoComplete
+                      value={apiModel}
+                      options={(modelOptions[modelKey] || []).map(model => ({ value: model, label: model }))}
+                      onChange={(val) => updateSettings('apiConfig', c => ({
+                        ...c,
+                        global: {
+                          ...c.global,
+                          [apiModelKey]: val,
+                        },
+                      }))}
+                      placeholder="输入或自动获取模型"
+                      style={{ flex: 1 }}
+                      filterOption={(inputValue, option) =>
+                        option?.value.toLowerCase().includes(inputValue.toLowerCase()) || false
+                      }
+                    />
+                    <Button
+                      size="small"
+                      icon={<SearchOutlined />}
+                      loading={modelLoading[modelKey]}
+                      onClick={() => handleFetchGlobalModels(cap.key, apiBase, apiKey)}
+                      style={{ height: 32, borderRadius: 8, fontSize: 12 }}
+                    >
+                      自动获取
+                    </Button>
+                  </div>
+                </div>
 
                 {isSet && (
                   <div style={{ marginTop: 8 }}>

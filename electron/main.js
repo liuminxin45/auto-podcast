@@ -1,5 +1,6 @@
 const { app, BrowserWindow, ipcMain } = require('electron')
 const path = require('path')
+const fs = require('fs')
 const { spawn } = require('child_process')
 const ConfigManager = require('./configManager')
 const { validateNodeOutput } = require('./nodeValidator')
@@ -9,6 +10,19 @@ let configManager = null
 
 // Python workflow state
 let currentWorkflow = null
+
+const DEFAULT_RADAR_STATE = {
+  enabled: false,
+  intervalMin: 30,
+  keepLast: 100,
+  lastRunAt: null,
+  lastError: null,
+  running: false,
+  contents: []
+}
+
+let radarState = { ...DEFAULT_RADAR_STATE }
+let radarTimer = null
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -90,6 +104,151 @@ function runPythonNode(nodeName, state, timeoutMs = 600000) {  // 增加到10分
       reject(new Error(`Failed to write input to ${nodeName}: ${err.message}`))
     }
   })
+}
+
+function getRadarCachePath() {
+  return path.join(app.getPath('userData'), 'radar-cache.json')
+}
+
+function loadRadarCache() {
+  try {
+    const cachePath = getRadarCachePath()
+    if (fs.existsSync(cachePath)) {
+      const raw = JSON.parse(fs.readFileSync(cachePath, 'utf-8'))
+      return {
+        ...DEFAULT_RADAR_STATE,
+        ...raw,
+        running: false,
+        contents: Array.isArray(raw.contents) ? raw.contents : []
+      }
+    }
+  } catch (error) {
+    console.warn('Failed to load radar cache:', error)
+  }
+  return { ...DEFAULT_RADAR_STATE }
+}
+
+function saveRadarCache() {
+  try {
+    const cachePath = getRadarCachePath()
+    fs.writeFileSync(cachePath, JSON.stringify({ ...radarState, running: false }, null, 2), 'utf-8')
+  } catch (error) {
+    console.warn('Failed to save radar cache:', error)
+  }
+}
+
+function broadcastRadarUpdate() {
+  if (mainWindow) {
+    mainWindow.webContents.send('radar:update', radarState)
+  }
+}
+
+function applyRadarDefaults(config = {}) {
+  return {
+    monitor_enabled: false,
+    monitor_interval_min: 30,
+    monitor_keep_last: 100,
+    ...config
+  }
+}
+
+function mergeRadarContents(existing, incoming, keepLast) {
+  const combined = [...incoming, ...existing]
+  const seen = new Set()
+  const merged = []
+  const limit = Math.max(10, keepLast || 100)
+  for (const item of combined) {
+    const key = `${item?.url || ''}|${item?.title || ''}|${item?.source || ''}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    merged.push(item)
+    if (merged.length >= limit) break
+  }
+  return merged
+}
+
+function scheduleRadar() {
+  if (radarTimer) {
+    clearInterval(radarTimer)
+    radarTimer = null
+  }
+  if (!radarState.enabled) return
+  const intervalMs = Math.max(5, radarState.intervalMin || 30) * 60 * 1000
+  radarTimer = setInterval(() => runRadarOnce(), intervalMs)
+}
+
+async function runRadarOnce(configOverride = null) {
+  if (radarState.running) return radarState
+  const fetchConfig = applyRadarDefaults(
+    configOverride || (configManager ? configManager.loadNodeConfig('fetch') : null) || {}
+  )
+
+  radarState.intervalMin = fetchConfig.monitor_interval_min || radarState.intervalMin
+  radarState.keepLast = fetchConfig.monitor_keep_last || radarState.keepLast
+  radarState.running = true
+  broadcastRadarUpdate()
+
+  try {
+    console.log('[Radar] Running fetch with enabled_sources:', fetchConfig.enabled_sources || '(none, will auto-fill)')
+    const state = {
+      runtime_config: { fetch: fetchConfig },
+      logs: [],
+      errors: [],
+      fetch_contents: [],
+      manual_contents: [],
+      raw_contents: []
+    }
+    const result = await runPythonNode('fetch', state)
+    const incoming = Array.isArray(result?.fetch_contents) ? result.fetch_contents : []
+    // Log per-source counts
+    const sourceCounts = {}
+    for (const item of incoming) {
+      const src = item?.source || 'unknown'
+      sourceCounts[src] = (sourceCounts[src] || 0) + 1
+    }
+    console.log(`[Radar] Fetched ${incoming.length} items:`, sourceCounts)
+    if (result?.logs) {
+      for (const log of result.logs) console.log('[Radar:py]', log)
+    }
+    if (result?.errors?.length) {
+      console.warn('[Radar] Errors from fetch node:', result.errors)
+    }
+    radarState.contents = mergeRadarContents(radarState.contents || [], incoming, radarState.keepLast)
+    radarState.lastRunAt = new Date().toISOString()
+    radarState.lastError = null
+  } catch (error) {
+    console.error('[Radar] Fetch failed:', error.message)
+    radarState.lastError = error.message
+  } finally {
+    radarState.running = false
+    saveRadarCache()
+    broadcastRadarUpdate()
+  }
+  return radarState
+}
+
+function startRadarService(configOverride = null) {
+  const fetchConfig = applyRadarDefaults(
+    configOverride || (configManager ? configManager.loadNodeConfig('fetch') : null) || {}
+  )
+  radarState.enabled = true
+  radarState.intervalMin = fetchConfig.monitor_interval_min || 30
+  radarState.keepLast = fetchConfig.monitor_keep_last || 100
+  scheduleRadar()
+  saveRadarCache()
+  broadcastRadarUpdate()
+  runRadarOnce(fetchConfig)
+}
+
+function stopRadarService() {
+  if (radarTimer) {
+    clearInterval(radarTimer)
+    radarTimer = null
+  }
+  radarState.enabled = false
+  radarState.running = false
+  saveRadarCache()
+  broadcastRadarUpdate()
 }
 
 // IPC handlers
@@ -271,6 +430,25 @@ ipcMain.handle('config:resetAll', async (event) => {
   return configManager.resetAllConfigs()
 })
 
+ipcMain.handle('radar:getState', async () => {
+  return radarState
+})
+
+ipcMain.handle('radar:start', async (event, config) => {
+  startRadarService(config)
+  return radarState
+})
+
+ipcMain.handle('radar:stop', async () => {
+  stopRadarService()
+  return radarState
+})
+
+ipcMain.handle('radar:runOnce', async (event, config) => {
+  await runRadarOnce(config)
+  return radarState
+})
+
 // Fetch sources management
 ipcMain.handle('fetch:getSources', async (event) => {
   return new Promise((resolve, reject) => {
@@ -435,6 +613,18 @@ async function runWorkflow(workflowId, resumeFrom = null) {
 app.whenReady().then(() => {
   configManager = new ConfigManager()
   createWindow()
+
+  radarState = loadRadarCache()
+  const fetchConfig = applyRadarDefaults(configManager.loadNodeConfig('fetch') || {})
+  radarState.intervalMin = fetchConfig.monitor_interval_min || radarState.intervalMin
+  radarState.keepLast = fetchConfig.monitor_keep_last || radarState.keepLast
+  if (fetchConfig.monitor_enabled) {
+    startRadarService(fetchConfig)
+  } else {
+    radarState.enabled = false
+    saveRadarCache()
+    broadcastRadarUpdate()
+  }
 })
 
 app.on('window-all-closed', () => {
