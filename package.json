@@ -4,7 +4,7 @@
   "description": "AI-powered podcast generation with visual workflow editor",
   "main": "electron/main.js",
   "scripts": {
-    "postinstall": "python -m pip install -e . -i https://pypi.tuna.tsinghua.edu.cn/simple",
+    "postinstall": "python scripts/sync_trendradar.py && python -m pip install -e . -i https://pypi.tuna.tsinghua.edu.cn/simple",
     "dev": "concurrently \"npm run dev:react\" \"npm run dev:electron\"",
     "dev:react": "vite",
     "dev:electron": "wait-on http://localhost:5173 && cross-env NODE_ENV=development electron .",

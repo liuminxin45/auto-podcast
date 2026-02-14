@@ -5,6 +5,11 @@ const { spawn } = require('child_process')
 const ConfigManager = require('./configManager')
 const { validateNodeOutput } = require('./nodeValidator')
 
+// Python executable — use 'python' on Windows, 'python3' elsewhere.
+// shell:true is required on Windows so that .bat shims (e.g. pyenv-win) are resolved.
+const PYTHON_PATH = process.platform === 'win32' ? 'python' : 'python3'
+const SPAWN_SHELL = process.platform === 'win32'
+
 let mainWindow = null
 let configManager = null
 
@@ -53,10 +58,10 @@ function createWindow() {
 // Run Python node as subprocess with timeout and error handling
 function runPythonNode(nodeName, state, timeoutMs = 600000) {  // 增加到10分钟
   return new Promise((resolve, reject) => {
-    const pythonPath = process.platform === 'win32' ? 'python' : 'python3'
-    const proc = spawn(pythonPath, ['-m', `nodes.${nodeName}`], {
+    const proc = spawn(PYTHON_PATH, ['-m', `nodes.${nodeName}`], {
       cwd: path.join(__dirname, '..'),
-      env: { ...process.env, PYTHONIOENCODING: 'utf-8' }
+      env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
+      shell: SPAWN_SHELL
     })
 
     let stdout = ''
@@ -355,13 +360,13 @@ ipcMain.handle('workflow:approve', async (event, workflowId, nodeName, approved,
 
 ipcMain.handle('node:getSchema', async (event, nodeName) => {
   return new Promise((resolve, reject) => {
-    const pythonPath = process.platform === 'win32' ? 'python' : 'python3'
-    const proc = spawn(pythonPath, [
+    const proc = spawn(PYTHON_PATH, [
       path.join(__dirname, '..', 'scripts', 'extract_node_schemas.py'),
       nodeName
     ], {
       cwd: path.join(__dirname, '..'),
-      env: { ...process.env, PYTHONIOENCODING: 'utf-8' }
+      env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
+      shell: SPAWN_SHELL
     })
 
     let stdout = ''
@@ -392,12 +397,12 @@ ipcMain.handle('node:getSchema', async (event, nodeName) => {
 
 ipcMain.handle('node:getAllSchemas', async (event) => {
   return new Promise((resolve, reject) => {
-    const pythonPath = process.platform === 'win32' ? 'python' : 'python3'
-    const proc = spawn(pythonPath, [
+    const proc = spawn(PYTHON_PATH, [
       path.join(__dirname, '..', 'scripts', 'extract_node_schemas.py')
     ], {
       cwd: path.join(__dirname, '..'),
-      env: { ...process.env, PYTHONIOENCODING: 'utf-8' }
+      env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
+      shell: SPAWN_SHELL
     })
 
     let stdout = ''
@@ -512,16 +517,15 @@ function startTrendRadarDaemon(intervalMin = 30) {
     return
   }
 
-  const pythonPath = process.platform === 'win32' ? 'python' : 'python3'
-
-  trendradarDaemon = spawn(pythonPath, [
+  trendradarDaemon = spawn(PYTHON_PATH, [
     '-m', 'engine.daemon',
     '--interval', String(intervalMin)
   ], {
     cwd: projectRoot,
     env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
     stdio: ['ignore', 'pipe', 'pipe'],
-    detached: false
+    detached: false,
+    shell: SPAWN_SHELL
   })
 
   console.log(`[TrendRadar] Daemon started (PID=${trendradarDaemon.pid}, interval=${intervalMin}min)`)
@@ -597,12 +601,12 @@ ipcMain.handle('trendradar:status', async () => {
 // Fetch sources management
 ipcMain.handle('fetch:getSources', async (event) => {
   return new Promise((resolve, reject) => {
-    const pythonPath = process.platform === 'win32' ? 'python' : 'python3'
-    const proc = spawn(pythonPath, [
+    const proc = spawn(PYTHON_PATH, [
       path.join(__dirname, '..', 'scripts', 'get_fetch_sources.py')
     ], {
       cwd: path.join(__dirname, '..'),
-      env: { ...process.env, PYTHONIOENCODING: 'utf-8' }
+      env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
+      shell: SPAWN_SHELL
     })
 
     let stdout = ''

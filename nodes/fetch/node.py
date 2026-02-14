@@ -63,6 +63,7 @@ def run(state: Dict[str, Any], config: FetchConfig = None) -> Dict[str, Any]:
             logs.append(f"[FetchNode] Fetching from: {source_instance.name}")
             items = source_instance.fetch()
             normalized = _normalize_items(items, source_name, logs)
+
             if per_source_cap > 0 and len(normalized) > per_source_cap:
                 logs.append(f"[FetchNode] Capping {source_name} from {len(normalized)} to {per_source_cap} (breadth={config.breadth})")
                 normalized = normalized[:per_source_cap]
@@ -81,10 +82,9 @@ def run(state: Dict[str, Any], config: FetchConfig = None) -> Dict[str, Any]:
 
     logs.append(f"[FetchNode] Total items fetched: {len(all_contents)}")
 
-    filtered = _apply_discover_filters(all_contents, config, logs)
-    logs.append(f"[FetchNode] Final items after filters: {len(filtered)}")
+    logs.append(f"[FetchNode] Final items (no discover filtering): {len(all_contents)}")
 
-    state["fetch_contents"] = filtered
+    state["fetch_contents"] = all_contents
     state["logs"] = logs
     state["errors"] = errors
     return state
@@ -539,4 +539,23 @@ def _tokenize(text: str) -> List[str]:
     if not text:
         return []
     tokens = re.split(r"[,，、\s]+", text.lower())
-    return [t for t in tokens if t]
+
+    short_allow = {"ai", "ml", "llm", "ar", "vr", "5g"}
+    stopwords = {
+        "the", "and", "for", "with", "from", "that", "this", "into", "about",
+        "关注", "方向", "相关", "新闻", "资讯", "话题", "今天", "最新",
+    }
+
+    cleaned: List[str] = []
+    for token in tokens:
+        t = token.strip("._-:;!?()[]{}\"'`“”‘’")
+        if not t or t in stopwords:
+            continue
+        if re.fullmatch(r"[a-z0-9]+", t):
+            if len(t) < 3 and t not in short_allow:
+                continue
+        elif re.fullmatch(r"[\u4e00-\u9fff]+", t):
+            if len(t) < 2:
+                continue
+        cleaned.append(t)
+    return cleaned

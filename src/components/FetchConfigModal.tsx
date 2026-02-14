@@ -299,7 +299,7 @@ export default function FetchConfigModal({
 
     return {
       ...input,
-      topic: String(input.topic || '').trim(),
+      topic: '',
       enabled_sources: enabledSources.length > 0 ? enabledSources : fallbackSources,
       keywords,
       exclude_keywords: excludeKeywords,
@@ -683,7 +683,7 @@ export default function FetchConfigModal({
   // ============================================================
 
   const renderTopicInput = () => (
-    <div style={{ marginBottom: 24 }}>
+    <div style={{ marginBottom: 24, opacity: 0.55 }}>
       <div style={{
         display: 'flex',
         alignItems: 'center',
@@ -697,8 +697,9 @@ export default function FetchConfigModal({
       </div>
       <Input
         value={config.topic}
-        onChange={(e) => updateConfig('topic', e.target.value)}
-        placeholder="例如：AI 大模型、自动驾驶、开发者工具、芯片制裁..."
+        onChange={() => {}}
+        placeholder="该功能暂未启用"
+        disabled
         style={{
           height: 44,
           borderRadius: 10,
@@ -716,7 +717,7 @@ export default function FetchConfigModal({
         marginTop: 6,
         paddingLeft: 2,
       }}>
-        输入你最关心的话题，系统会围绕它智能采集
+        “我关注的方向”暂未启用，当前不会影响采集结果
       </div>
     </div>
   )
@@ -1318,7 +1319,6 @@ export default function FetchConfigModal({
 
   const renderSummaryBar = () => {
     const items: string[] = []
-    if (config.topic) items.push(`📍 ${config.topic}`)
     items.push(`📡 ${BREADTH_LABELS[config.breadth].text}`)
     items.push(`✨ ${QUALITY_LABELS[config.quality].text}`)
     items.push(`⏱ ${FRESHNESS_LABELS[config.freshness].text}`)

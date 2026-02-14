@@ -75,6 +75,8 @@ function App() {
   const [studioAutoOpened, setStudioAutoOpened] = useState(false)
   const [discoverVisible, setDiscoverVisible] = useState(false)
   const [organizeVisible, setOrganizeVisible] = useState(false)
+  const [discoverCandidates, setDiscoverCandidates] = useState<ContentItem[]>([])
+  const [organizeCandidates, setOrganizeCandidates] = useState<ContentItem[]>([])
   const [writingVisible, setWritingVisible] = useState(false)
   const [fetchSources, setFetchSources] = useState<Array<{ id: string; name: string; description: string }>>([])
   const [fetchConfig, setFetchConfig] = useState<Record<string, any>>({})
@@ -359,14 +361,22 @@ function App() {
           onUpdateContents={async (contents) => {
             await window.electronAPI.radarUpdateContents(contents)
           }}
+          onProceedToOrganize={(candidates) => {
+            setDiscoverCandidates(candidates)
+            closeAllPanels()
+            setOrganizeVisible(true)
+          }}
         />
 
         <OrganizePanel
           visible={organizeVisible}
           onClose={() => setOrganizeVisible(false)}
-          contents={workflow?.state?.raw_contents || workflow?.state?.fetch_contents || []}
+          contents={discoverCandidates.length > 0
+            ? discoverCandidates
+            : (workflow?.state?.raw_contents || workflow?.state?.fetch_contents || [])}
           userTopic={(fetchConfig?.topic as string) || ''}
-          onProceedToIdeate={(_candidates) => {
+          onProceedToIdeate={(candidates) => {
+            setOrganizeCandidates(candidates)
             closeAllPanels()
             setStudioVisible(true)
           }}
@@ -375,7 +385,9 @@ function App() {
         <CreationStudio
           visible={studioVisible}
           onClose={() => setStudioVisible(false)}
-          rawContents={workflow?.state?.raw_contents || []}
+          rawContents={organizeCandidates.length > 0
+            ? organizeCandidates
+            : (workflow?.state?.raw_contents || [])}
           selectedTopic={workflow?.state?.selected_topic}
           onConfirm={(_structure) => {
             closeAllPanels()

@@ -69,7 +69,39 @@ type DiscoverPrefs = {
   smartRankMode: SmartRankMode
 }
 
+type PersistedDiscoverCandidates = {
+  candidateItems?: EnrichedItem[]
+  savedToInbox?: EnrichedItem[]
+  inboxStatuses?: Array<[number, CardStatus]>
+}
+
+function loadPersistedDiscoverCandidates(): PersistedDiscoverCandidates {
+  try {
+    if (typeof window === 'undefined') return {}
+    const raw = window.localStorage.getItem(DISCOVER_CANDIDATES_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw)
+    return {
+      candidateItems: Array.isArray(parsed?.candidateItems) ? parsed.candidateItems : [],
+      savedToInbox: Array.isArray(parsed?.savedToInbox) ? parsed.savedToInbox : [],
+      inboxStatuses: Array.isArray(parsed?.inboxStatuses) ? parsed.inboxStatuses : [],
+    }
+  } catch {
+    return {}
+  }
+}
+
+function savePersistedDiscoverCandidates(data: PersistedDiscoverCandidates) {
+  try {
+    if (typeof window === 'undefined') return
+    window.localStorage.setItem(DISCOVER_CANDIDATES_KEY, JSON.stringify(data))
+  } catch {
+    // ignore localStorage failures
+  }
+}
+
 const DISCOVER_PREFS_KEY = 'discover.panel.prefs.v1'
+const DISCOVER_CANDIDATES_KEY = 'discover.panel.candidates.v1'
 
 function loadDiscoverPrefs(): Partial<DiscoverPrefs> {
   try {
@@ -787,6 +819,7 @@ export default function DiscoverPanel({
   onUpdateContents,
 }: Props) {
   const initialPrefs = loadDiscoverPrefs()
+  const initialCandidateState = loadPersistedDiscoverCandidates()
 
   // Config modal
   const [fetchModalVisible, setFetchModalVisible] = useState(false)
@@ -802,12 +835,17 @@ export default function DiscoverPanel({
 
   // Radar state
   const [starredSet, setStarredSet] = useState<Set<string>>(new Set())
-  const [candidateSet, setCandidateSet] = useState<Set<string>>(new Set())
+  const [candidateItems, setCandidateItems] = useState<EnrichedItem[]>(initialCandidateState.candidateItems || [])
+  const [candidateSet, setCandidateSet] = useState<Set<string>>(
+    new Set((initialCandidateState.candidateItems || []).map(getContentIdentity)),
+  )
 
   // Inbox state
   const [inboxExpanded, setInboxExpanded] = useState(false)
-  const [inboxStatuses, setInboxStatuses] = useState<Map<number, CardStatus>>(new Map())
-  const [savedToInbox, setSavedToInbox] = useState<EnrichedItem[]>([])
+  const [inboxStatuses, setInboxStatuses] = useState<Map<number, CardStatus>>(
+    new Map(initialCandidateState.inboxStatuses || []),
+  )
+  const [savedToInbox, setSavedToInbox] = useState<EnrichedItem[]>(initialCandidateState.savedToInbox || [])
   const [quickPasteText, setQuickPasteText] = useState('')
   const [quickPasteVisible, setQuickPasteVisible] = useState(false)
   const [runningRadarOnce, setRunningRadarOnce] = useState(false)
@@ -865,6 +903,15 @@ export default function DiscoverPanel({
   useEffect(() => {
     saveDiscoverPrefs({ sensitivity, freshness, viewMode, llmAutoTagEnabled, smartRankMode })
   }, [sensitivity, freshness, viewMode, llmAutoTagEnabled, smartRankMode])
+
+  // Persist candidate/inbox state locally so it survives refresh/crashes.
+  useEffect(() => {
+    savePersistedDiscoverCandidates({
+      candidateItems,
+      savedToInbox,
+      inboxStatuses: Array.from(inboxStatuses.entries()),
+    })
+  }, [candidateItems, savedToInbox, inboxStatuses])
 
   // ── Auto-tag: ONLY when toggle is ON + LLM config ready ───
   useEffect(() => {
@@ -973,16 +1020,6 @@ export default function DiscoverPanel({
     const validKeys = new Set(fetchContents.map(getContentIdentity))
 
     setStarredSet(prev => {
-      let changed = false
-      const next = new Set<string>()
-      prev.forEach(k => {
-        if (validKeys.has(k)) next.add(k)
-        else changed = true
-      })
-      return changed ? next : prev
-    })
-
-    setCandidateSet(prev => {
       let changed = false
       const next = new Set<string>()
       prev.forEach(k => {
@@ -1240,8 +1277,15 @@ export default function DiscoverPanel({
 
   const addCandidate = useCallback((itemKey: string) => {
     setCandidateSet(prev => new Set(prev).add(itemKey))
+    const sourceItem = fetchContents.find(item => getContentIdentity(item) === itemKey)
+    if (sourceItem) {
+      setCandidateItems(prev => {
+        if (prev.some(item => getContentIdentity(item) === itemKey)) return prev
+        return [...prev, { ...sourceItem, _source_channel: 'auto' }]
+      })
+    }
     message.success({ content: '已加入本期候选', duration: 1.5, style: { marginTop: 60 } })
-  }, [])
+  }, [fetchContents])
 
   const saveToInbox = useCallback((item: ContentItem) => {
     setSavedToInbox(prev => [...prev, { ...item, _source_channel: 'manual' as const, _note: '来自信号保存' }])
@@ -1288,6 +1332,13 @@ export default function DiscoverPanel({
   const handleProceed = useCallback(() => {
     const candidates: EnrichedItem[] = []
     const seen = new Set<string>()
+    for (const item of candidateItems) {
+      const key = getContentIdentity(item)
+      if (!seen.has(key)) {
+        seen.add(key)
+        candidates.push(item)
+      }
+    }
     for (const item of fetchContents) {
       const key = getContentIdentity(item)
       if (candidateSet.has(key) && !seen.has(key)) {
@@ -1297,12 +1348,16 @@ export default function DiscoverPanel({
     }
     inboxStatuses.forEach((status, idx) => {
       if (status === 'candidate' && allInbox[idx]) {
-        candidates.push(allInbox[idx])
+        const key = getContentIdentity(allInbox[idx])
+        if (!seen.has(key)) {
+          seen.add(key)
+          candidates.push(allInbox[idx])
+        }
       }
     })
     onProceedToOrganize?.(candidates)
     onClose()
-  }, [candidateSet, inboxStatuses, fetchContents, allInbox, onProceedToOrganize, onClose])
+  }, [candidateItems, candidateSet, inboxStatuses, fetchContents, allInbox, onProceedToOrganize, onClose])
 
   const handleAddHighlightsToCandidates = useCallback(() => {
     if (todayHighlights.length === 0) return
@@ -1320,6 +1375,7 @@ export default function DiscoverPanel({
 
   const handleClearCandidates = useCallback(() => {
     setCandidateSet(new Set())
+    setCandidateItems([])
     setInboxStatuses(prev => {
       const next = new Map(prev)
       let changed = false
