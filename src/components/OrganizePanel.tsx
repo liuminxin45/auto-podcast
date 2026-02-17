@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react'
-import { Input, Button, Tag, Tooltip, message } from 'antd'
+import { Input, Button, Tag, Tooltip, message, Modal, Select, Progress } from 'antd'
 import {
   SearchOutlined,
   ArrowLeftOutlined,
@@ -18,10 +18,11 @@ import {
   EditOutlined,
 } from '../icons/antdCompat'
 import type { ContentItem } from '../types/workflow'
-import { runFullAnalysis, PRIORITY_HINT_CONFIG, type AIAnalysisResult, type ItemAIHints, type TopicCluster } from './organizeAI'
+import { runFullAnalysis, PRIORITY_HINT_CONFIG, type AIAnalysisResult, type ItemAIHints, type TopicCluster } from '../utils/contentAnalysis'
 import { PRIORITY_CONFIG, prioritySortKey, type Priority } from '../constants/priorities'
 import { CATEGORY_RULES } from '../constants/categories'
 import { detectCategory, getQualitySignals } from '../utils'
+import { OrganizeAIService, type OrganizeConfig, type OrganizeResult, type OrganizeProgress } from '../services/organizeAI'
 
 type ViewMode = 'quick' | 'detailed'
 
@@ -477,6 +478,51 @@ export default function OrganizePanel({
   const [editingClusterId, setEditingClusterId] = useState<string | null>(null)
   const [clusterNames, setClusterNames] = useState<Record<string, string>>({})
 
+  // ── AI Full Organize Mode ────────────────────────────────
+  const [aiOrgMode, setAiOrgMode] = useState<'off' | 'configuring' | 'processing' | 'reviewing'>('off')
+  const [aiOrgConfig, setAiOrgConfig] = useState<Partial<OrganizeConfig>>({
+    strictness: 'medium',
+    userInstruction: '',
+  })
+  const [aiOrgResult, setAiOrgResult] = useState<OrganizeResult | null>(null)
+  const [aiProcessedContents, setAiProcessedContents] = useState<ContentItem[]>([])
+  const [llmConfig, setLlmConfig] = useState<{ apiBase: string; apiKey: string; model: string } | null>(null)
+  const [aiOrgProgress, setAiOrgProgress] = useState<OrganizeProgress | null>(null)
+
+  // Load LLM config from Settings (localStorage)
+  useEffect(() => {
+    if (!visible) return
+    try {
+      const settingsStr = localStorage.getItem('auto-podcast.settings.v1')
+      if (!settingsStr) return
+      
+      const settings = JSON.parse(settingsStr)
+      const organizeNode = settings?.apiConfig?.nodeOverrides?.organize
+      
+      // Check if organize node has custom config
+      if (organizeNode?.overrideMode === 'custom' && organizeNode.apiKeySet) {
+        setLlmConfig({
+          apiKey: organizeNode.apiKey,
+          apiBase: organizeNode.apiBase || 'https://api.openai.com/v1',
+          model: organizeNode.apiModel || 'gpt-4o-mini',
+        })
+        return
+      }
+      
+      // Otherwise use global text capability config
+      const globalText = settings?.apiConfig?.global
+      if (globalText?.textApiKeySet && globalText?.textApiKey) {
+        setLlmConfig({
+          apiKey: globalText.textApiKey,
+          apiBase: globalText.textApiBase || 'https://api.openai.com/v1',
+          model: globalText.textApiModel || 'gpt-4o-mini',
+        })
+      }
+    } catch (err) {
+      console.error('[OrganizePanel] Failed to load LLM config from Settings:', err)
+    }
+  }, [visible])
+
   // Timer for overstay nudge
   const [enterTime] = useState(() => Date.now())
   const [nudgeText, setNudgeText] = useState('')
@@ -741,6 +787,78 @@ export default function OrganizePanel({
     onProceedToIdeate?.(sortedCandidates)
   }, [sortedCandidates, onProceedToIdeate])
 
+  // ── AI Organize Handlers ──────────────────────────────
+  const handleAIOrganizeStart = useCallback(async () => {
+    setAiOrgMode('configuring')
+  }, [])
+
+  const handleAIOrganizeConfirm = useCallback(async () => {
+    if (!llmConfig || !llmConfig.apiKey) {
+      message.error({ content: '未配置 LLM，请先在 Settings → AI 能力接口 中配置', duration: 3 })
+      return
+    }
+
+    setAiOrgMode('processing')
+
+    try {
+      const fullConfig: OrganizeConfig = {
+        ...llmConfig,
+        strictness: aiOrgConfig.strictness || 'medium',
+        userInstruction: aiOrgConfig.userInstruction,
+      }
+      const service = new OrganizeAIService(fullConfig, (progress) => {
+        setAiOrgProgress(progress)
+      })
+      const result = await service.runFullOrganize(contents.map((c, i) => mapToOrganizeItem(c, i)))
+      
+      setAiOrgResult(result)
+      setAiProcessedContents(result.processed)
+      setAiOrgMode('reviewing')
+      
+      message.success({
+        content: `AI 整理完成：选入 ${result.stats.selected}，拒绝 ${result.stats.rejected}`,
+        duration: 3,
+        style: { marginTop: 60 },
+      })
+    } catch (error) {
+      console.error('AI organize failed:', error)
+      message.error({ content: `整理失败：${(error as Error).message}`, duration: 3 })
+      setAiOrgMode('off')
+    }
+  }, [aiOrgConfig, llmConfig, contents, mapToOrganizeItem])
+
+  const handleAIOrganizeAccept = useCallback(() => {
+    if (!aiOrgResult) return
+
+    const selected = aiProcessedContents.filter(i => i._ai_organize?.status === 'selected')
+    const noise = aiProcessedContents.filter(i => i._ai_organize?.status === 'noise')
+    const duplicate = aiProcessedContents.filter(i => i._ai_organize?.status === 'duplicate')
+
+    setCandidates(selected.map((item, i) => {
+      const orgItem = item as OrganizeItem
+      return {
+        ...orgItem,
+        _priority: 'backup' as Priority,
+        _order: i,
+      }
+    }))
+
+    setIgnoredIds(new Set([
+      ...noise.map(i => (i as OrganizeItem)._id),
+      ...duplicate.map(i => (i as OrganizeItem)._id),
+    ]))
+
+    setAiOrgMode('off')
+    message.success({ content: '已应用 AI 整理结果', duration: 2 })
+  }, [aiOrgResult, aiProcessedContents])
+
+  const handleAIOrganizeCancel = useCallback(() => {
+    setAiOrgMode('off')
+    setAiOrgResult(null)
+    setAiProcessedContents([])
+    setAiOrgProgress(null)
+  }, [])
+
   // ── Ignored collapsed section ──────────────────────────
   const [ignoredExpanded, setIgnoredExpanded] = useState(false)
 
@@ -789,7 +907,7 @@ export default function OrganizePanel({
           建议用时 &lt; 2 分钟
         </div>
 
-        {/* Right: mode switch + close */}
+        {/* Right: AI organize + mode switch + close */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {onBackToDiscover && (
             <Tooltip title="返回发现层">
@@ -802,6 +920,23 @@ export default function OrganizePanel({
               </Button>
             </Tooltip>
           )}
+          {/* AI Organize Button */}
+          <Button
+            type="primary"
+            icon={<RobotOutlined />}
+            onClick={handleAIOrganizeStart}
+            style={{
+              background: 'linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%)',
+              borderColor: 'transparent',
+              borderRadius: 8,
+              fontWeight: 600,
+              fontSize: 12,
+              height: 30,
+              boxShadow: '0 2px 8px rgba(139,92,246,0.25)',
+            }}
+          >
+            AI 智能整理
+          </Button>
           {/* Mode switcher */}
           <div style={{ display: 'flex', background: 'var(--bg-tertiary)', borderRadius: 6, padding: 2 }}>
             {([
@@ -1306,6 +1441,296 @@ export default function OrganizePanel({
           </Button>
         </div>
       </div>
+
+      {/* ==================== AI Organize Modals ==================== */}
+      
+      {/* 1. Configuration Modal */}
+      <Modal
+        open={aiOrgMode === 'configuring'}
+        title={<span style={{ fontSize: 16, fontWeight: 600 }}>🤖 AI 智能整理</span>}
+        onCancel={handleAIOrganizeCancel}
+        onOk={handleAIOrganizeConfirm}
+        okText="开始整理"
+        cancelText="取消"
+        width={500}
+      >
+        <div style={{ padding: '12px 0' }}>
+          {!llmConfig?.apiKey && (
+            <div style={{
+              marginBottom: 16,
+              padding: 12,
+              background: '#fff7e6',
+              border: '1px solid #ffd591',
+              borderRadius: 8,
+              fontSize: 13,
+              color: '#d46b08',
+            }}>
+              ⚠️ 未配置 LLM API，请先在 <strong>Settings → AI 能力接口</strong> 中配置
+            </div>
+          )}
+          {llmConfig?.apiKey && (
+            <div style={{
+              marginBottom: 16,
+              padding: 12,
+              background: '#f6ffed',
+              border: '1px solid #b7eb8f',
+              borderRadius: 8,
+              fontSize: 12,
+              color: '#52c41a',
+            }}>
+              ✅ LLM 配置已加载（{llmConfig.model}）
+            </div>
+          )}
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 6, display: 'block' }}>
+              严格程度
+            </label>
+            <Select
+              value={aiOrgConfig.strictness || 'medium'}
+              onChange={value => setAiOrgConfig(prev => ({ ...prev, strictness: value }))}
+              style={{ width: '100%' }}
+              options={[
+                { label: '宽松 - 尽可能保留素材', value: 'loose' },
+                { label: '适中 - 平衡质量与数量', value: 'medium' },
+                { label: '严格 - 只留高质量精品', value: 'strict' },
+              ]}
+            />
+          </div>
+          <div>
+            <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 6, display: 'block' }}>
+              本期关注方向（可选）
+            </label>
+            <Input.TextArea
+              placeholder="例如：关注 AI 在医疗领域的实际应用，忽略纯理论讨论"
+              value={aiOrgConfig.userInstruction || ''}
+              onChange={e => setAiOrgConfig(prev => ({ ...prev, userInstruction: e.target.value }))}
+              autoSize={{ minRows: 2, maxRows: 4 }}
+            />
+            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4 }}>
+              AI 将根据您的指令筛选和评分素材
+            </div>
+          </div>
+        </div>
+      </Modal>
+
+      {/* 2. Processing Modal */}
+      <Modal
+        open={aiOrgMode === 'processing'}
+        title={<span style={{ fontSize: 16, fontWeight: 600 }}>🤖 AI 正在整理...</span>}
+        footer={null}
+        closable={false}
+        width={600}
+      >
+        <div style={{ padding: '20px 0' }}>
+          {/* Progress Bar */}
+          {aiOrgProgress && (
+            <div style={{ marginBottom: 24 }}>
+              <div style={{ 
+                display: 'flex', 
+                justifyContent: 'space-between', 
+                alignItems: 'center',
+                marginBottom: 8,
+              }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
+                  {aiOrgProgress.stepLabel}
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
+                  {aiOrgProgress.progress}%
+                </div>
+              </div>
+              <Progress 
+                percent={aiOrgProgress.progress} 
+                status="active"
+                strokeColor={{
+                  '0%': '#8b5cf6',
+                  '100%': '#6366f1',
+                }}
+                showInfo={false}
+              />
+              <div style={{ 
+                fontSize: 12, 
+                color: 'var(--text-secondary)', 
+                marginTop: 6,
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}>
+                <span>{aiOrgProgress.message}</span>
+                {aiOrgProgress.currentBatch && aiOrgProgress.totalBatches && (
+                  <span style={{ 
+                    fontSize: 11, 
+                    color: 'var(--text-tertiary)',
+                    background: 'var(--bg-tertiary)',
+                    padding: '2px 8px',
+                    borderRadius: 4,
+                  }}>
+                    批次 {aiOrgProgress.currentBatch}/{aiOrgProgress.totalBatches}
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Step Indicator */}
+          <div style={{ 
+            display: 'flex', 
+            gap: 8, 
+            marginBottom: 20,
+            justifyContent: 'center',
+          }}>
+            {(['denoise', 'cluster', 'select'] as const).map((step, idx) => {
+              const labels = {
+                denoise: '去噪',
+                cluster: '聚类',
+                select: '筛选',
+              }
+              const isActive = aiOrgProgress?.step === step
+              const isPast = aiOrgProgress && ['denoise', 'cluster', 'select'].indexOf(aiOrgProgress.step) > idx
+              
+              return (
+                <div
+                  key={step}
+                  style={{
+                    flex: 1,
+                    padding: '8px 12px',
+                    borderRadius: 8,
+                    background: isActive ? 'var(--accent-light)' : isPast ? '#f0fdf4' : 'var(--bg-tertiary)',
+                    border: `1.5px solid ${isActive ? 'var(--accent-primary)' : isPast ? '#10b981' : 'var(--border-color)'}`,
+                    textAlign: 'center',
+                    transition: 'all 0.3s ease',
+                  }}
+                >
+                  <div style={{ 
+                    fontSize: 11, 
+                    fontWeight: 600,
+                    color: isActive ? 'var(--accent-primary)' : isPast ? '#10b981' : 'var(--text-tertiary)',
+                  }}>
+                    {isPast ? '✓' : isActive ? <LoadingOutlined /> : `${idx + 1}`} {labels[step]}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Logs */}
+          <div style={{
+            maxHeight: 250,
+            overflow: 'auto',
+            background: 'var(--bg-tertiary)',
+            borderRadius: 8,
+            padding: 12,
+            fontSize: 12,
+            fontFamily: 'monospace',
+            color: 'var(--text-secondary)',
+            lineHeight: 1.6,
+          }}>
+            {aiOrgResult?.logs.map((log, i) => (
+              <div key={i} style={{ marginBottom: 4 }}>
+                <span style={{ color: 'var(--text-tertiary)' }}>[{i + 1}]</span> {log}
+              </div>
+            ))}
+            {(!aiOrgResult || aiOrgResult?.logs.length === 0) && (
+              <div style={{ color: 'var(--text-tertiary)', textAlign: 'center' }}>
+                正在初始化...
+              </div>
+            )}
+          </div>
+        </div>
+      </Modal>
+
+      {/* 3. Review Modal */}
+      <Modal
+        open={aiOrgMode === 'reviewing'}
+        title={<span style={{ fontSize: 16, fontWeight: 600 }}>✅ AI 整理完成 - 请审核</span>}
+        onCancel={handleAIOrganizeCancel}
+        width={700}
+        footer={
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
+              您可以在下方查看结果，确认后应用到整理面板
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <Button onClick={handleAIOrganizeCancel}>取消</Button>
+              <Button type="primary" onClick={handleAIOrganizeAccept}>
+                应用结果
+              </Button>
+            </div>
+          </div>
+        }
+      >
+        <div style={{ padding: '12px 0' }}>
+          {/* Stats */}
+          {aiOrgResult && (
+            <div style={{
+              display: 'flex',
+              gap: 12,
+              marginBottom: 16,
+              padding: 12,
+              background: 'var(--bg-tertiary)',
+              borderRadius: 8,
+            }}>
+              <div style={{ flex: 1, textAlign: 'center' }}>
+                <div style={{ fontSize: 20, fontWeight: 700, color: '#10b981' }}>
+                  {aiOrgResult.stats.selected}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>选入</div>
+              </div>
+              <div style={{ flex: 1, textAlign: 'center' }}>
+                <div style={{ fontSize: 20, fontWeight: 700, color: '#f59e0b' }}>
+                  {aiOrgResult.stats.rejected}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>拒绝</div>
+              </div>
+              <div style={{ flex: 1, textAlign: 'center' }}>
+                <div style={{ fontSize: 20, fontWeight: 700, color: '#6b7280' }}>
+                  {aiOrgResult.stats.noise}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>低质</div>
+              </div>
+              <div style={{ flex: 1, textAlign: 'center' }}>
+                <div style={{ fontSize: 20, fontWeight: 700, color: '#ef4444' }}>
+                  {aiOrgResult.stats.duplicate}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>重复</div>
+              </div>
+            </div>
+          )}
+
+          {/* Preview */}
+          <div style={{ maxHeight: 400, overflow: 'auto' }}>
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
+              📋 选入预览 ({aiOrgResult?.stats.selected || 0} 条)
+            </div>
+            {aiProcessedContents
+              .filter(i => i._ai_organize?.status === 'selected')
+              .slice(0, 10)
+              .map((item, idx) => (
+                <div
+                  key={idx}
+                  style={{
+                    padding: '8px 10px',
+                    marginBottom: 6,
+                    borderRadius: 6,
+                    background: 'var(--bg-secondary)',
+                    border: '1px solid var(--border-color)',
+                  }}
+                >
+                  <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 2 }}>
+                    {item.title || '无标题'}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
+                    {item._ai_organize?.reason}
+                  </div>
+                </div>
+              ))}
+            {(aiOrgResult?.stats.selected || 0) > 10 && (
+              <div style={{ fontSize: 11, color: 'var(--text-tertiary)', textAlign: 'center', marginTop: 8 }}>
+                还有 {(aiOrgResult?.stats.selected || 0) - 10} 条...
+              </div>
+            )}
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }

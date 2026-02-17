@@ -13,6 +13,8 @@
 
 import type { ContentItem } from '../types/workflow'
 import { VALID_CATEGORY_IDS, getCategoryById, getCategoryListForPrompt } from '../constants/categories'
+import { llmService } from '../services/llmService'
+import { LLMError } from '../types/llm'
 
 export const MAX_NEWS_ITEMS = 500
 const BATCH_SIZE = 20
@@ -155,45 +157,33 @@ async function callLLM(
   messages: Array<{ role: string; content: string }>,
   signal?: AbortSignal,
 ): Promise<string> {
-  const baseUrl = config.apiBase.trim().replace(/\/$/, '').replace(/\/v1$/, '')
-  const url = `${baseUrl}/v1/chat/completions`
-
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT)
-
-  // Chain external abort signal
-  if (signal) {
-    if (signal.aborted) {
-      clearTimeout(timeout)
-      throw new DOMException('Aborted', 'AbortError')
-    }
-    signal.addEventListener('abort', () => controller.abort(), { once: true })
+  if (signal?.aborted) {
+    throw new DOMException('Aborted', 'AbortError')
   }
 
   try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${config.apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: config.model,
-        messages,
-        temperature: 0.05,
-        max_tokens: 2000,
-      }),
-      signal: controller.signal,
+    const response = await llmService.call({
+      apiBase: config.apiBase,
+      apiKey: config.apiKey,
+      model: config.model,
+      messages: messages.map(m => ({
+        role: m.role as 'system' | 'user' | 'assistant',
+        content: m.content,
+      })),
+      temperature: 0.05,
+      maxTokens: 2000,
+      timeout: REQUEST_TIMEOUT,
     })
 
-    if (!response.ok) {
-      throw new Error(`LLM API error: ${response.status} ${response.statusText}`)
+    return response.choices?.[0]?.message?.content || ''
+  } catch (error: any) {
+    if (signal?.aborted || error?.name === 'AbortError') {
+      throw new DOMException('Aborted', 'AbortError')
     }
-
-    const data = await response.json()
-    return data?.choices?.[0]?.message?.content || ''
-  } finally {
-    clearTimeout(timeout)
+    if (error instanceof LLMError) {
+      throw new Error(`LLM API error: ${error.message}`)
+    }
+    throw error
   }
 }
 

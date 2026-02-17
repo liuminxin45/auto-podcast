@@ -48,6 +48,21 @@ export interface LLMServiceConfig {
   retryAttempts: number
 }
 
+export interface PerformanceMetrics {
+  totalCalls: number
+  successfulCalls: number
+  failedCalls: number
+  totalDuration: number
+  averageResponseTime: number
+  failureRate: number
+}
+
+export interface RateLimitConfig {
+  maxTokens: number
+  refillRate: number
+  refillInterval: number
+}
+
 export class LLMError extends Error {
   constructor(
     message: string,

@@ -53,7 +53,7 @@ describe('useAutoTopic', () => {
         },
       ],
     })
-    ;(llmService.batchAnalyze as any).mockImplementation(async (items, batchFn) => {
+    ;(llmService.batchAnalyze as any).mockImplementation(async (items: any, batchFn: any) => {
       return await batchFn(items)
     })
   })
@@ -84,7 +84,7 @@ describe('useAutoTopic', () => {
       expect(result.current.state.stage).toBe('done')
     })
 
-    expect(result.current.state.logs.some((log) => log.includes('保留 2 条'))).toBe(true)
+    expect(result.current.state.logs.some((log: string) => log.includes('保留 2 条'))).toBe(true)
   })
 
   it('should handle missing LLM config', async () => {
@@ -179,7 +179,7 @@ describe('useAutoTopic', () => {
       expect(result.current.state.logs.length).toBeGreaterThan(0)
     })
 
-    expect(result.current.state.logs.some((log) => log.includes('开始采集'))).toBe(true)
+    expect(result.current.state.logs.some((log: string) => log.includes('开始采集'))).toBe(true)
   })
 
   it('should handle no time-filtered items', async () => {

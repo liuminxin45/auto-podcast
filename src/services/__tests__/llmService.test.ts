@@ -177,7 +177,7 @@ describe('LLMService', () => {
   describe('batchAnalyze', () => {
     it('should process items in batches', async () => {
       const items = Array.from({ length: 25 }, (_, i) => ({ id: i }))
-      const batchFn = vi.fn().mockImplementation((batch) => Promise.resolve(batch))
+      const batchFn = vi.fn().mockImplementation((batch: any) => Promise.resolve(batch))
       const onProgress = vi.fn()
 
       const result = await llmService.batchAnalyze(items, batchFn, onProgress)
@@ -190,7 +190,7 @@ describe('LLMService', () => {
 
     it('should handle batch errors gracefully', async () => {
       const items = Array.from({ length: 15 }, (_, i) => ({ id: i }))
-      const batchFn = vi.fn().mockImplementation((batch) => {
+      const batchFn = vi.fn().mockImplementation((batch: any) => {
         if (batch[0].id === 10) {
           throw new Error('Batch error')
         }
@@ -207,7 +207,7 @@ describe('LLMService', () => {
       const items = Array.from({ length: 20 }, (_, i) => ({ id: i }))
       const batchFn = vi.fn().mockResolvedValue([])
       const progressValues: number[] = []
-      const onProgress = vi.fn((p) => progressValues.push(p))
+      const onProgress = vi.fn((p: number) => progressValues.push(p))
 
       await llmService.batchAnalyze(items, batchFn, onProgress)
 

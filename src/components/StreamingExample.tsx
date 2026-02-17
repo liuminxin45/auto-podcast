@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Card, Input, Button, Alert } from 'antd'
+import { Card, Input, Button, Alert, Space } from 'antd'
 import { ThunderboltOutlined } from '@ant-design/icons'
 import { llmService } from '../services/llmService'
 import { LLMError } from '../types/llm'
@@ -7,13 +7,14 @@ import { LLMError } from '../types/llm'
 const { TextArea } = Input
 
 export default function StreamingExample() {
+  const [apiKey, setApiKey] = useState('')
   const [prompt, setPrompt] = useState('')
   const [response, setResponse] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
   const [error, setError] = useState<string>()
 
   const handleStream = async () => {
-    if (!prompt.trim()) return
+    if (!prompt.trim() || !apiKey.trim()) return
 
     setIsStreaming(true)
     setResponse('')
@@ -23,7 +24,7 @@ export default function StreamingExample() {
       await llmService.callStreaming(
         {
           apiBase: 'https://api.openai.com/v1',
-          apiKey: 'your-api-key',
+          apiKey: apiKey.trim(),
           model: 'gpt-4',
           messages: [{ role: 'user', content: prompt }],
         },
@@ -48,7 +49,21 @@ export default function StreamingExample() {
         </div>
       }
     >
-      <div style={{ marginBottom: 16 }}>
+      <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+        <Alert
+          message="安全提示"
+          description="请勿在生产环境硬编码 API 密钥。建议使用环境变量或安全的配置管理系统。"
+          type="warning"
+          showIcon
+        />
+        
+        <Input.Password
+          placeholder="输入 OpenAI API Key"
+          value={apiKey}
+          onChange={e => setApiKey(e.target.value)}
+          disabled={isStreaming}
+        />
+
         <TextArea
           rows={3}
           placeholder="输入提示词..."
@@ -56,17 +71,16 @@ export default function StreamingExample() {
           onChange={e => setPrompt(e.target.value)}
           disabled={isStreaming}
         />
-      </div>
 
-      <Button
-        type="primary"
-        onClick={handleStream}
-        loading={isStreaming}
-        disabled={!prompt.trim()}
-        style={{ marginBottom: 16 }}
-      >
-        {isStreaming ? '生成中...' : '开始生成'}
-      </Button>
+        <Button
+          type="primary"
+          onClick={handleStream}
+          loading={isStreaming}
+          disabled={!prompt.trim() || !apiKey.trim()}
+        >
+          {isStreaming ? '生成中...' : '开始生成'}
+        </Button>
+      </Space>
 
       {error && (
         <Alert

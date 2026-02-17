@@ -26,7 +26,7 @@ export default function LLMConfigFields() {
 
     setLoadingModels(true)
     try {
-      const models = await fetchModels(apiBase, apiKey)
+      const models = await fetchModelsWithCache(apiBase, apiKey)
       setAvailableModels(models)
       message.success(`已获取 ${models.length} 个模型`)
     } catch (e: any) {
@@ -37,7 +37,6 @@ export default function LLMConfigFields() {
     }
   }
 
-  // Test connection
   const handleTestConnection = async () => {
     const apiBase = form.getFieldValue('api_base')?.trim()
     const apiKey = form.getFieldValue('api_key')?.trim()
@@ -50,19 +49,12 @@ export default function LLMConfigFields() {
 
     setTestingConnection(true)
     try {
-      // Call test API
-      const testUrl = `${apiBase.replace(/\/$/, '')}/chat/completions`
-      const response = await fetch(testUrl, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          model: llmModel,
-          messages: [{ role: 'user', content: 'test' }],
-          max_tokens: 5
-        })
+      await llmService.call({
+        apiBase,
+        apiKey,
+        model: llmModel,
+        messages: [{ role: 'user', content: 'test' }],
+        maxTokens: 5,
       })
 
       if (response.ok) {

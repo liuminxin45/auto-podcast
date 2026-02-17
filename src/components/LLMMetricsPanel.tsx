@@ -2,9 +2,10 @@ import { useState, useEffect } from 'react'
 import { Card, Statistic, Row, Col, Button, Progress } from 'antd'
 import { ThunderboltOutlined, CheckCircleOutlined, CloseCircleOutlined, ClockCircleOutlined } from '@ant-design/icons'
 import { llmService } from '../services/llmService'
+import type { PerformanceMetrics } from '../types/llm'
 
 export default function LLMMetricsPanel() {
-  const [metrics, setMetrics] = useState(llmService.getMetrics())
+  const [metrics, setMetrics] = useState<PerformanceMetrics>(llmService.getMetrics())
 
   useEffect(() => {
     const interval = setInterval(() => {

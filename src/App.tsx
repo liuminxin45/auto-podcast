@@ -891,9 +891,10 @@ function App() {
               episode_brief: structure,
             })
             closeAllPanels()
-            setWritingVisible(true)
-          }}
-        />
+              setWritingVisible(true)
+            }}
+          />
+        </Suspense>
 
         <WritingLayer
           key={`writing-${workflow?.id || 'none'}`}
@@ -908,9 +909,10 @@ function App() {
           onProceedToProduction={async (patch) => {
             await updateWorkflowPatch(patch)
             closeAllPanels()
-            setSoundStudioVisible(true)
-          }}
-        />
+              setSoundStudioVisible(true)
+            }}
+          />
+        </Suspense>
 
         <SoundStudio
           key={`sound-${workflow?.id || 'none'}`}
