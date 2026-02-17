@@ -1,0 +1,60 @@
+export interface LLMMessage {
+  role: 'system' | 'user' | 'assistant'
+  content: string
+}
+
+export interface LLMCallOptions {
+  apiBase: string
+  apiKey: string
+  model: string
+  messages: LLMMessage[]
+  temperature?: number
+  maxTokens?: number
+  timeout?: number
+}
+
+export interface LLMResponse {
+  id: string
+  object: string
+  created: number
+  model: string
+  choices: Array<{
+    index: number
+    message: LLMMessage
+    finish_reason: string
+  }>
+  usage?: {
+    prompt_tokens: number
+    completion_tokens: number
+    total_tokens: number
+  }
+}
+
+export interface ModelInfo {
+  id: string
+  object: string
+  created?: number
+  owned_by?: string
+}
+
+export interface ModelsResponse {
+  object: string
+  data: ModelInfo[]
+}
+
+export interface LLMServiceConfig {
+  useElectronProxy: boolean
+  defaultTimeout: number
+  retryAttempts: number
+}
+
+export class LLMError extends Error {
+  constructor(
+    message: string,
+    public readonly code: 'NETWORK' | 'AUTH' | 'TIMEOUT' | 'PARSE' | 'UNKNOWN',
+    public readonly details?: any
+  ) {
+    super(message)
+    this.name = 'LLMError'
+  }
+}

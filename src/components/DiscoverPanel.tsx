@@ -329,6 +329,16 @@ export default function DiscoverPanel({
               采集
             </Button>
           </Tooltip>
+          <Tooltip title="AI 自动选题">
+            <Button
+              type="primary"
+              icon={<BulbOutlined />}
+              onClick={() => setAutoTopicModalVisible(true)}
+              style={{ borderRadius: 8, fontSize: 12, height: 30 }}
+            >
+              自动选题
+            </Button>
+          </Tooltip>
           <Tooltip title="返回">
             <Button icon={<ArrowLeftOutlined />} onClick={onClose} />
           </Tooltip>

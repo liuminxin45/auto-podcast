@@ -51,5 +51,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   trendradarUpdateDependency: (options) => ipcRenderer.invoke('trendradar:updateDependency', options),
   trendradarOpenReport: (reportPath) => ipcRenderer.invoke('trendradar:openReport', reportPath),
   onTrendradarLog: (callback) => ipcRenderer.on('trendradar:log', (_, data) => callback(data)),
-  onTrendradarStatus: (callback) => ipcRenderer.on('trendradar:status', (_, data) => callback(data))
+  onTrendradarStatus: (callback) => ipcRenderer.on('trendradar:status', (_, data) => callback(data)),
+  llmCall: (params) => ipcRenderer.invoke('llm:call', params),
+  llmFetchModels: (params) => ipcRenderer.invoke('llm:fetchModels', params)
 })

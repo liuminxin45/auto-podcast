@@ -5,8 +5,6 @@ const { spawn } = require('child_process')
 const ConfigManager = require('./configManager')
 const { validateNodeOutput } = require('./nodeValidator')
 
-// Python executable — use 'python' on Windows, 'python3' elsewhere.
-// shell:true is required on Windows so that .bat shims (e.g. pyenv-win) are resolved.
 const PYTHON_PATH = process.platform === 'win32' ? 'python' : 'python3'
 const PROJECT_ROOT = path.join(__dirname, '..')
 function resolveTrendRadarPythonPath() {
@@ -57,7 +55,6 @@ function getCleanSpawnEnv(extra = {}) {
 let mainWindow = null
 let configManager = null
 
-// Python workflow state
 let currentWorkflow = null
 const WORKFLOW_DIR = path.join(__dirname, '..', 'out', 'workflows')
 
@@ -302,7 +299,6 @@ function createWindow() {
     }
   })
 
-  // Load React app
   if (process.env.NODE_ENV === 'development') {
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL || 'http://127.0.0.1:5174')
     if (process.env.OPEN_DEVTOOLS === '1') {
@@ -333,8 +329,7 @@ function createWindow() {
   }
 }
 
-// Run Python node as subprocess with timeout and error handling
-function runPythonNode(nodeName, state, timeoutMs = 600000) {  // 增加到10分钟
+function runPythonNode(nodeName, state, timeoutMs = 600000) {
   return new Promise((resolve, reject) => {
     const proc = spawn(PYTHON_PATH, ['-m', `nodes.${nodeName}`], {
       cwd: path.join(__dirname, '..'),
@@ -1007,7 +1002,6 @@ ipcMain.handle('node:getAllSchemas', async (event) => {
   })
 })
 
-// Config management handlers
 ipcMain.handle('config:save', async (event, nodeName, config) => {
   if (!configManager) {
     return { success: false, error: 'Config manager not initialized' }
@@ -1079,7 +1073,123 @@ ipcMain.handle('radar:updateContents', async (event, contents) => {
   return radarState
 })
 
-// === TrendRadar Daemon Management ===
+ipcMain.handle('llm:fetchModels', async (event, { apiBase, apiKey }) => {
+  const https = require('https')
+  const http = require('http')
+  
+  const url = new URL(`${apiBase.replace(/\/$/, '')}/models`)
+  const isHttps = url.protocol === 'https:'
+  const client = isHttps ? https : http
+  
+  const headers = apiBase.includes('openai.azure.com')
+    ? { 'api-key': apiKey }
+    : { 'Authorization': `Bearer ${apiKey}` }
+  
+  const options = {
+    hostname: url.hostname,
+    port: url.port || (isHttps ? 443 : 80),
+    path: url.pathname,
+    method: 'GET',
+    headers,
+    agent: false
+  }
+  
+  return new Promise((resolve, reject) => {
+    const req = client.request(options, (res) => {
+      let data = ''
+      res.on('data', chunk => data += chunk)
+      res.on('end', () => {
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          try {
+            resolve(JSON.parse(data))
+          } catch (e) {
+            reject(new Error(`JSON parse error: ${e.message}`))
+          }
+        } else {
+          reject(new Error(`HTTP ${res.statusCode}: ${data.slice(0, 200)}`))
+        }
+      })
+    })
+    
+    req.on('error', (e) => {
+      reject(new Error(`Request failed: ${e.message}`))
+    })
+    
+    req.setTimeout(30000, () => {
+      req.destroy()
+      reject(new Error('Request timeout (30s)'))
+    })
+    
+    req.end()
+  })
+})
+
+ipcMain.handle('llm:call', async (event, { apiBase, apiKey, model, messages, temperature }) => {
+  const https = require('https')
+  const http = require('http')
+  
+  const url = new URL(`${apiBase.replace(/\/$/, '')}/chat/completions`)
+  const isHttps = url.protocol === 'https:'
+  const client = isHttps ? https : http
+  
+  const headers = {
+    'Content-Type': 'application/json'
+  }
+  
+  if (apiBase.includes('openai.azure.com')) {
+    headers['api-key'] = apiKey
+  } else {
+    headers['Authorization'] = `Bearer ${apiKey}`
+  }
+  
+  const payload = JSON.stringify({
+    model,
+    messages,
+    temperature: temperature || 0.3
+  })
+  
+  const options = {
+    hostname: url.hostname,
+    port: url.port || (isHttps ? 443 : 80),
+    path: url.pathname,
+    method: 'POST',
+    headers: {
+      ...headers,
+      'Content-Length': Buffer.byteLength(payload)
+    },
+    agent: false
+  }
+  
+  return new Promise((resolve, reject) => {
+    const req = client.request(options, (res) => {
+      let data = ''
+      res.on('data', chunk => data += chunk)
+      res.on('end', () => {
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          try {
+            resolve(JSON.parse(data))
+          } catch (e) {
+            reject(new Error(`JSON parse error: ${e.message}`))
+          }
+        } else {
+          reject(new Error(`HTTP ${res.statusCode}: ${data.slice(0, 200)}`))
+        }
+      })
+    })
+    
+    req.on('error', (e) => {
+      reject(new Error(`Request failed: ${e.message}`))
+    })
+    
+    req.setTimeout(60000, () => {
+      req.destroy()
+      reject(new Error('Request timeout (60s)'))
+    })
+    
+    req.write(payload)
+    req.end()
+  })
+})
 
 function startTrendRadarDaemon(intervalMin = 30) {
   if (trendradarDaemon) {
@@ -1112,7 +1222,6 @@ function startTrendRadarDaemon(intervalMin = 30) {
     for (const line of lines) {
       console.log('[TrendRadar]', line)
     }
-    // Notify frontend of daemon activity
     if (mainWindow) {
       mainWindow.webContents.send('trendradar:log', data.toString())
     }
@@ -1140,7 +1249,6 @@ function stopTrendRadarDaemon() {
   if (!trendradarDaemon) return
   console.log('[TrendRadar] Stopping daemon (PID:', trendradarDaemon.pid, ')')
   trendradarDaemon.kill('SIGTERM')
-  // Force kill after 5s if not exited
   setTimeout(() => {
     if (trendradarDaemon) {
       trendradarDaemon.kill('SIGKILL')
@@ -1308,10 +1416,8 @@ async function runWorkflow(workflowId, resumeFrom = null, onlyNodes = null) {
     broadcastWorkflowUpdate()
 
     try {
-      // 加载节点配置
       const nodeConfig = configManager ? configManager.loadNodeConfig(nodeName) : null
       
-      // 如果有配置，将其添加到state中传递给Python节点
       if (nodeConfig) {
         currentWorkflow.state.runtime_config = currentWorkflow.state.runtime_config || {}
         currentWorkflow.state.runtime_config[nodeName] = nodeConfig
@@ -1342,9 +1448,7 @@ async function runWorkflow(workflowId, resumeFrom = null, onlyNodes = null) {
 
       broadcastWorkflowUpdate()
 
-      // 检查是否需要审批（针对script节点）
       if (nodeName === 'script' && !currentWorkflow.approvals?.script) {
-        // 加载script节点配置，检查是否需要审批
         const scriptConfig = configManager ? configManager.loadNodeConfig('script') : null
         console.log('[Approval Check] Script config:', scriptConfig)
         const requireApproval = scriptConfig?.require_approval ?? false
@@ -1365,7 +1469,7 @@ async function runWorkflow(workflowId, resumeFrom = null, onlyNodes = null) {
               data: currentWorkflow.state
             })
           }
-          return // 暂停工作流，等待审批
+          return
         } else {
           console.log('[Approval] Auto-approval mode, continuing workflow')
         }
@@ -1409,6 +1513,7 @@ app.whenReady().then(() => {
   const fetchConfig = applyRadarDefaults(configManager.loadNodeConfig('fetch') || {})
   radarState.intervalMin = fetchConfig.monitor_interval_min || radarState.intervalMin
   radarState.keepLast = fetchConfig.monitor_keep_last || radarState.keepLast
+  
   if (fetchConfig.monitor_enabled) {
     startRadarService(fetchConfig, { runImmediately: false })
   } else {
@@ -1417,7 +1522,6 @@ app.whenReady().then(() => {
     broadcastRadarUpdate()
   }
 
-  // Auto-start TrendRadar daemon for background data collection
   const trendradarInterval = fetchConfig.trendradar_interval_min || 30
   startTrendRadarDaemon(trendradarInterval)
 })
