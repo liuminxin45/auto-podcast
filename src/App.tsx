@@ -39,9 +39,10 @@ type AppSnapshot = {
   discoverCandidates: ContentItem[]
   organizeCandidates: ContentItem[]
   writingSeed: {
+    contentType?: ContentCreationType
     title?: string
     description?: string
-    initialScript?: { title?: string; dialogue?: Array<{ speaker: string; text: string }> }
+    initialScript?: Script
   } | null
   productionSeed: {
     title: string

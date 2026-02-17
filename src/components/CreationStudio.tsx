@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useMemo, useCallback } from 'react'
 import { Input, Tag, Button, Empty, Badge, Tooltip, Dropdown } from 'antd'
-import type { ContentItem } from '../types/workflow'
+import type { ContentCreationType, ContentItem } from '../types/workflow'
+import { CONTENT_TYPE_META } from '../constants/contentCreation'
 import {
   SearchOutlined,
   PlusOutlined,
@@ -31,13 +32,55 @@ const { TextArea } = Input
 
 type MaterialItem = ContentItem & { _source_channel?: 'auto' | 'manual' }
 
+type StructureBlockType = 'opening' | 'mainline' | 'discussion' | 'background' | 'news_item' | 'closing' | 'custom'
+
 interface StructureBlock {
   id: string
-  type: 'main_topic' | 'discussion' | 'background' | 'custom'
+  type: StructureBlockType
   title: string
   materials: MaterialItem[]
   notes: string
 }
+
+type BlockTemplate = {
+  type: StructureBlockType
+  title: string
+}
+
+const CONTENT_BLOCK_PRESETS: Record<ContentCreationType, BlockTemplate[]> = {
+  story: [
+    { type: 'mainline', title: '主话题' },
+    { type: 'discussion', title: '延伸讨论' },
+    { type: 'background', title: '背景补充' },
+  ],
+  news_brief: [
+    { type: 'opening', title: '开场导语' },
+    { type: 'news_item', title: '新闻一' },
+    { type: 'news_item', title: '新闻二' },
+    { type: 'news_item', title: '新闻三' },
+    { type: 'closing', title: '结尾总结' },
+  ],
+}
+
+const BLOCK_META: Record<StructureBlockType, { icon: ReactNode; color: string }> = {
+  opening: { icon: <SoundOutlined style={{ color: '#f59e0b' }} />, color: '#f59e0b' },
+  mainline: { icon: <ThunderboltOutlined style={{ color: '#f59e0b' }} />, color: '#f59e0b' },
+  discussion: { icon: <BulbOutlined style={{ color: '#8b5cf6' }} />, color: '#8b5cf6' },
+  background: { icon: <FileTextOutlined style={{ color: '#3b82f6' }} />, color: '#3b82f6' },
+  news_item: { icon: <FileTextOutlined style={{ color: '#0ea5e9' }} />, color: '#0ea5e9' },
+  closing: { icon: <CheckCircleOutlined style={{ color: '#10b981' }} />, color: '#10b981' },
+  custom: { icon: <DragOutlined style={{ color: '#6b7280' }} />, color: '#6b7280' },
+}
+
+const createBlocksByContentType = (contentType: ContentCreationType): StructureBlock[] => (
+  (CONTENT_BLOCK_PRESETS[contentType] || CONTENT_BLOCK_PRESETS.story).map((tpl, idx) => ({
+    id: `${tpl.type}_${idx + 1}`,
+    type: tpl.type,
+    title: tpl.title,
+    materials: [],
+    notes: '',
+  }))
+)
 
 interface Props {
   visible: boolean
@@ -65,17 +108,15 @@ export default function CreationStudio({
   onStateChange,
   onConfirm,
 }: Props) {
+  const [contentType, setContentType] = useState<ContentCreationType>('story')
+
   // Left panel state
   const [searchQuery, setSearchQuery] = useState('')
   const [filterChannel, setFilterChannel] = useState<'all' | 'auto' | 'manual'>('all')
   const [starredIds, setStarredIds] = useState<Set<number>>(new Set())
 
   // Center panel state
-  const [blocks, setBlocks] = useState<StructureBlock[]>([
-    { id: 'main', type: 'main_topic', title: '主话题', materials: [], notes: '' },
-    { id: 'discuss', type: 'discussion', title: '延伸讨论', materials: [], notes: '' },
-    { id: 'bg', type: 'background', title: '背景补充', materials: [], notes: '' },
-  ])
+  const [blocks, setBlocks] = useState<StructureBlock[]>(createBlocksByContentType('story'))
   const [topicTitle, setTopicTitle] = useState(selectedTopic?.title || '')
   const [topicDesc, setTopicDesc] = useState(selectedTopic?.description || '')
   const [isLocked, setIsLocked] = useState(false)
@@ -149,6 +190,34 @@ export default function CreationStudio({
     }))
   }, [isLocked])
 
+  const applyContentPreset = useCallback((nextType: ContentCreationType) => {
+    setContentType(nextType)
+    setBlocks(createBlocksByContentType(nextType))
+  }, [])
+
+  const addNewsItemBlock = useCallback(() => {
+    if (isLocked) return
+    const nextIdx = blocks.filter(b => b.type === 'news_item').length + 1
+    const id = `news_item_${Date.now()}`
+    setBlocks(prev => {
+      const next = [...prev]
+      const closingIdx = next.findIndex(block => block.type === 'closing')
+      const item: StructureBlock = {
+        id,
+        type: 'news_item',
+        title: `新闻${nextIdx}`,
+        materials: [],
+        notes: '',
+      }
+      if (closingIdx >= 0) {
+        next.splice(closingIdx, 0, item)
+      } else {
+        next.push(item)
+      }
+      return next
+    })
+  }, [blocks, isLocked])
+
   // Remove material from block
   const removeFromBlock = useCallback((blockId: string, idx: number) => {
     if (isLocked) return
@@ -190,6 +259,7 @@ export default function CreationStudio({
   const handleConfirm = () => {
     const allMaterials = blocks.flatMap(b => b.materials)
     onConfirm?.({
+      contentType,
       topic: { title: topicTitle, description: topicDesc },
       materials: allMaterials,
       blocks,
@@ -209,21 +279,11 @@ export default function CreationStudio({
   }
 
   const blockTypeIcon = (type: string) => {
-    switch (type) {
-      case 'main_topic': return <ThunderboltOutlined style={{ color: '#f59e0b' }} />
-      case 'discussion': return <BulbOutlined style={{ color: '#8b5cf6' }} />
-      case 'background': return <FileTextOutlined style={{ color: '#3b82f6' }} />
-      default: return <DragOutlined style={{ color: '#6b7280' }} />
-    }
+    return BLOCK_META[type as StructureBlockType]?.icon || BLOCK_META.custom.icon
   }
 
   const blockTypeColor = (type: string) => {
-    switch (type) {
-      case 'main_topic': return '#f59e0b'
-      case 'discussion': return '#8b5cf6'
-      case 'background': return '#3b82f6'
-      default: return '#6b7280'
-    }
+    return BLOCK_META[type as StructureBlockType]?.color || BLOCK_META.custom.color
   }
 
   // Insight data (would come from AI in production)
@@ -499,6 +559,34 @@ export default function CreationStudio({
             borderBottom: '1px solid var(--border-color)',
             background: 'var(--bg-secondary)',
           }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {(Object.keys(CONTENT_TYPE_META) as ContentCreationType[]).map((type) => {
+                  const active = type === contentType
+                  const meta = CONTENT_TYPE_META[type]
+                  return (
+                    <Button
+                      key={type}
+                      size="small"
+                      onClick={() => applyContentPreset(type)}
+                      type={active ? 'primary' : 'default'}
+                      disabled={isLocked}
+                      style={{ borderRadius: 999, fontSize: 11 }}
+                    >
+                      {meta.icon} {meta.label}
+                    </Button>
+                  )
+                })}
+              </div>
+              {contentType === 'news_brief' && !isLocked && (
+                <Button size="small" type="dashed" onClick={addNewsItemBlock} style={{ borderRadius: 8, fontSize: 11 }}>
+                  + 添加新闻条目
+                </Button>
+              )}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 10 }}>
+              {CONTENT_TYPE_META[contentType].desc}
+            </div>
             <Input
               value={topicTitle}
               onChange={e => setTopicTitle(e.target.value)}

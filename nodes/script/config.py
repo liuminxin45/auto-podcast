@@ -1,10 +1,15 @@
-from typing import Dict, Any
+from typing import Dict, Any, Literal
 from pydantic import Field
 from protocol.config_base import NodeConfigBase, LLMConfigMixin
 
 
 class ScriptConfig(NodeConfigBase, LLMConfigMixin):
     """Script generation node configuration."""
+
+    content_type: Literal["story", "news_brief"] = Field(
+        default="story",
+        description="文案类型（story/news_brief）"
+    )
     
     target_duration_minutes: int = Field(
         default=15, 
@@ -12,7 +17,7 @@ class ScriptConfig(NodeConfigBase, LLMConfigMixin):
         le=120,
         description="目标播客时长（分钟）"
     )
-    dialogue_style: str = Field(
+    dialogue_style: Literal["conversational", "formal", "casual"] = Field(
         default="conversational",
         description="对话风格（conversational/formal/casual）"
     )
@@ -21,6 +26,12 @@ class ScriptConfig(NodeConfigBase, LLMConfigMixin):
         ge=1, 
         le=5,
         description="主持人数量"
+    )
+    news_item_count: int = Field(
+        default=3,
+        ge=1,
+        le=20,
+        description="新闻早报模式下的新闻条目数量"
     )
     require_approval: bool = Field(
         default=False,

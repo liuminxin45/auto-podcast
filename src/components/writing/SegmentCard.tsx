@@ -49,6 +49,13 @@ export default function SegmentCard({
   onDragOver,
   onDrop,
 }: SegmentCardProps) {
+  const PLACEHOLDER_BY_TYPE: Partial<Record<WritingSegment['type'], string>> = {
+    opening: '在这里写下开场白…\n\n可以用一句导语快速建立主题期待。',
+    mainline: '在这里展开主线…\n\n建议给出核心事实、观点与过渡。',
+    news_item: '在这里写新闻播报…\n\n可按“事件-关键信息-影响”组织。',
+    closing: '总结核心观点，留下回味…\n\n可以给听众一个思考的问题或行动建议。',
+  }
+
   const cfg = SEGMENT_TYPE_CONFIG[segment.type]
   const statusCfg = STATUS_CONFIG[segment.status]
   const hints = getSegmentHints(segment, totalSeconds, allSegments)
