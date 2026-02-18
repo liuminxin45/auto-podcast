@@ -1082,19 +1082,41 @@ ipcMain.handle('llm:fetchModels', async (event, { apiBase, apiKey }) => {
   }
 })
 
-ipcMain.handle('llm:call', async (event, { apiBase, apiKey, model, messages, temperature, stream }) => {
+ipcMain.handle('llm:call', async (event, { apiBase, apiKey, model, messages, temperature, maxTokens, timeout, stream }) => {
   try {
+    console.log('[LLM][IPC] call start', {
+      model,
+      stream: !!stream,
+      messageCount: Array.isArray(messages) ? messages.length : 0,
+      temperature,
+      maxTokens,
+      timeout,
+    })
+
     return await callLLM({
       apiBase,
       apiKey,
       model,
       messages,
       temperature,
+      maxTokens,
+      timeout,
       stream,
       eventSender: stream ? event.sender : null
     })
   } catch (error) {
-    throw new Error(`LLM call failed: ${error.message}`)
+    const rawMessage = String(error?.message || 'Unknown error')
+    const normalizedMessage = rawMessage.replace(/^LLM call failed:\s*/i, '')
+    console.error('[LLM][IPC] call failed', {
+      model,
+      stream: !!stream,
+      timeout,
+      maxTokens,
+      message: normalizedMessage,
+    })
+    throw new Error(normalizedMessage)
+  } finally {
+    console.log('[LLM][IPC] call end', { model, stream: !!stream })
   }
 })
 

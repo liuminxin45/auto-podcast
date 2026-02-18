@@ -6,6 +6,12 @@ import type { WritingSegment } from '../../components/writing/types'
 import { getWritingStrategy } from './strategies'
 import { resolveWritingLLMTuning } from './llmTuning'
 import type { WritingLLMTuning } from './llmTuning'
+import {
+  isRateLimitedError,
+  serializedLLMQueue,
+  sleep,
+  toUserFacingErrorMessage,
+} from './runtime/llmExecution'
 
 export type { WritingLLMTuning } from './llmTuning'
 
@@ -15,6 +21,7 @@ export interface WritingDraftProgress {
   total: number
   status: 'generating' | 'success' | 'error'
   error?: string
+  generatedSegment?: WritingSegment
 }
 
 export interface WritingDraftRequest {
@@ -92,6 +99,7 @@ class WritingService {
     promptOverride?: string
     llmTuning?: WritingLLMTuning
   }): Promise<WritingSegment> {
+    const logTag = '[WritingService][RegenerateSegment]'
     const llmConfig = ideationConfigManager.getLLMConfig()
     if (!llmConfig) {
       throw new Error('LLM未配置，请先在 Settings 中配置。')
@@ -111,18 +119,51 @@ class WritingService {
       promptOverride: options.promptOverride,
     })
 
-    const response = await llmService.call({
-      apiBase: llmConfig.apiBase,
-      apiKey: llmConfig.apiKey,
-      model: llmConfig.model,
-      messages: [
-        { role: 'system', content: strategy.systemPrompt },
-        { role: 'user', content: prompt },
-      ],
-      temperature: resolvedTuning.temperature,
-      timeout: resolvedTuning.timeout,
-      maxTokens: resolvedTuning.maxTokens,
-    })
+    let response
+    const maxAttempts = 3
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      console.info(`${logTag} LLM attempt`, {
+        attempt,
+        maxAttempts,
+        segmentId: options.segment.id,
+        contentType: options.contentType,
+        timeout: resolvedTuning.timeout,
+        maxTokens: resolvedTuning.maxTokens,
+      })
+      try {
+        response = await serializedLLMQueue.run(() => llmService.call({
+          apiBase: llmConfig.apiBase,
+          apiKey: llmConfig.apiKey,
+          model: llmConfig.model,
+          messages: [
+            { role: 'system', content: strategy.systemPrompt },
+            { role: 'user', content: prompt },
+          ],
+          temperature: resolvedTuning.temperature,
+          timeout: resolvedTuning.timeout,
+          maxTokens: resolvedTuning.maxTokens,
+        })
+        )
+        console.info(`${logTag} LLM success`, { segmentId: options.segment.id, attempt })
+        break
+      } catch (error: any) {
+        console.warn(`${logTag} LLM failed`, {
+          segmentId: options.segment.id,
+          attempt,
+          message: error?.message,
+          retrying: isRateLimitedError(error) && attempt < maxAttempts,
+        })
+        const canRetry = isRateLimitedError(error) && attempt < maxAttempts
+        if (!canRetry) {
+          throw new Error(toUserFacingErrorMessage(error, '段落生成失败'))
+        }
+        await sleep(400 * attempt)
+      }
+    }
+
+    if (!response) {
+      throw new Error('段落生成失败：未收到模型响应。')
+    }
 
     const rawContent = response.choices?.[0]?.message?.content?.trim()
     if (!rawContent) {
@@ -157,15 +198,23 @@ class WritingService {
   }
 
   async generateAIDraft(request: WritingDraftRequest): Promise<WritingDraftResult> {
+    const logTag = '[WritingService][GenerateAIDraft]'
     const llmConfig = ideationConfigManager.getLLMConfig()
     if (!llmConfig) {
       throw new Error('LLM未配置，请先在 Settings 中配置。')
     }
 
+    console.info(`${logTag} Start`, {
+      contentType: request.contentType,
+      total: request.manualSegments.length,
+      title: request.title,
+    })
+
     const generatedSegments: WritingSegment[] = []
     const failedSegments: Array<{ segmentId: string; error: string }> = []
     for (let idx = 0; idx < request.manualSegments.length; idx += 1) {
       const segment = request.manualSegments[idx]
+      console.info(`${logTag} Segment generating`, { segmentId: segment.id, index: idx, total: request.manualSegments.length })
       request.onProgress?.({
         segmentId: segment.id,
         index: idx,
@@ -189,9 +238,11 @@ class WritingService {
           index: idx,
           total: request.manualSegments.length,
           status: 'success',
+          generatedSegment: nextSegment,
         })
+        console.info(`${logTag} Segment success`, { segmentId: segment.id, index: idx })
       } catch (error: any) {
-        const errorMessage = error?.message || '段落生成失败'
+        const errorMessage = toUserFacingErrorMessage(error, '段落生成失败')
         generatedSegments.push(segment)
         failedSegments.push({ segmentId: segment.id, error: errorMessage })
         request.onProgress?.({
@@ -201,12 +252,23 @@ class WritingService {
           status: 'error',
           error: errorMessage,
         })
+        console.warn(`${logTag} Segment failed`, { segmentId: segment.id, index: idx, error: errorMessage })
       }
     }
 
     if (failedSegments.length === request.manualSegments.length && request.manualSegments.length > 0) {
+      console.error(`${logTag} All segments failed`, {
+        total: request.manualSegments.length,
+        firstError: failedSegments[0].error,
+      })
       throw new Error(`AI 草稿生成失败：${failedSegments[0].error || '所有段落均生成失败'}`)
     }
+
+    console.info(`${logTag} Completed`, {
+      total: request.manualSegments.length,
+      failed: failedSegments.length,
+      succeeded: request.manualSegments.length - failedSegments.length,
+    })
 
     return {
       title: request.title,

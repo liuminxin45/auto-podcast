@@ -18,6 +18,12 @@ class LLMService {
   private cache: LRUCache
   private rateLimiter: TokenBucketRateLimiter
   private metricsCollector: MetricsCollector
+  private electronProxyDisabledForSession = false
+
+  private resolveRequestTimeout(timeout?: number, extraMs = 0): number {
+    const requestedTimeout = typeof timeout === 'number' ? timeout : LLM_DEFAULTS.TIMEOUT
+    return Math.max(10000, Math.min(35000, requestedTimeout + extraMs))
+  }
 
   constructor() {
     this.cache = new LRUCache(
@@ -56,20 +62,53 @@ class LLMService {
     }
 
     const startTime = Date.now()
+    const useElectronProxy = this.shouldUseElectronLLMCall() && !this.electronProxyDisabledForSession
+    console.info('[LLMService] call start', {
+      model,
+      useElectronProxy,
+      timeout,
+      maxTokens,
+      messageCount: messages.length,
+    })
 
     try {
-      const response = this.shouldUseElectronLLMCall()
-        ? await this.callViaElectron({ apiBase, apiKey, model, messages, temperature, maxTokens, timeout })
-        : await this.callViaFetch({ apiBase, apiKey, model, messages, temperature, maxTokens, timeout })
+      let response: LLMResponse
+      if (useElectronProxy) {
+        try {
+          response = await this.callViaElectron({ apiBase, apiKey, model, messages, temperature, maxTokens, timeout })
+        } catch (error: any) {
+          const errorMessage = String(error?.message || '')
+          const shouldFallbackToFetch =
+            /Electron IPC timeout|request timeout|timeout/i.test(errorMessage)
+            || error?.code === 'TIMEOUT'
+          if (!shouldFallbackToFetch) {
+            throw error
+          }
+
+          this.electronProxyDisabledForSession = true
+          console.warn('[LLMService] Electron IPC timed out, fallback to fetch', { model, timeout })
+          response = await this.callViaFetch({ apiBase, apiKey, model, messages, temperature, maxTokens, timeout })
+        }
+      } else {
+        response = await this.callViaFetch({ apiBase, apiKey, model, messages, temperature, maxTokens, timeout })
+      }
 
       const duration = Date.now() - startTime
       this.metricsCollector.recordCall(duration, true)
       this.cache.set(cacheKey, response)
+      console.info('[LLMService] call success', { model, duration })
 
       return response
     } catch (error: any) {
       const duration = Date.now() - startTime
       this.metricsCollector.recordCall(duration, false)
+      console.error('[LLMService] call failed', {
+        model,
+        duration,
+        timeout,
+        useElectronProxy,
+        message: error?.message,
+      })
       throw normalizeError(error)
     }
   }
@@ -191,7 +230,8 @@ class LLMService {
   }
 
   private async callViaElectron(options: LLMCallOptions): Promise<LLMResponse> {
-    const data = await (window as any).electronAPI.llmCall({
+    const ipcTimeout = this.resolveRequestTimeout(options.timeout, 2000)
+    const ipcCall = (window as any).electronAPI.llmCall({
       apiBase: normalizeUrl(options.apiBase),
       apiKey: options.apiKey.trim(),
       model: options.model,
@@ -200,6 +240,22 @@ class LLMService {
       maxTokens: options.maxTokens,
       timeout: options.timeout,
     })
+
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const timeoutGuard = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        reject(new LLMError(`Electron IPC timeout (${ipcTimeout}ms)`, 'TIMEOUT', { timeout: ipcTimeout }))
+      }, ipcTimeout)
+    })
+
+    let data: LLMResponse
+    try {
+      data = await Promise.race([ipcCall, timeoutGuard])
+    } finally {
+      if (timer) {
+        clearTimeout(timer)
+      }
+    }
 
     if (!data.choices?.[0]?.message) {
       throw new LLMError('Invalid response format', 'PARSE', { data })
@@ -211,7 +267,14 @@ class LLMService {
   private async callViaFetch(options: LLMCallOptions): Promise<LLMResponse> {
     const baseUrl = normalizeUrl(options.apiBase)
     const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), options.timeout)
+    const effectiveTimeout = this.resolveRequestTimeout(options.timeout)
+    const timeoutId = setTimeout(() => controller.abort(), effectiveTimeout)
+
+    console.info('[LLMService] fetch call start', {
+      model: options.model,
+      timeout: effectiveTimeout,
+      messageCount: options.messages.length,
+    })
 
     try {
       const response = await fetch(`${baseUrl}/chat/completions`, {
@@ -230,6 +293,7 @@ class LLMService {
         throw new LLMError(`HTTP ${response.status}`, 'NETWORK', { status: response.status })
       }
 
+      console.info('[LLMService] fetch call success', { model: options.model })
       return await response.json()
     } finally {
       clearTimeout(timeoutId)
