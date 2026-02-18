@@ -1,37 +1,37 @@
 import type { EnhancedMaterial, IdeationContext } from '../../types/ideation'
 
+const JSON_FORMAT_INSTRUCTION = `【关键】JSON 格式严格要求：
+- 必须返回纯 JSON 对象，不要使用 Markdown 代码块包裹
+- 禁止输出 \`\`\`json 或 \`\`\` 标记
+- 必须使用英文双引号 " 而非中文引号 " " ' '
+- 必须使用英文标点符号（逗号 , 冒号 : 分号 ;）
+- 字符串内容中禁止使用任何引号标记（包括 " ' 「 」『 』），改用自然描述
+- 直接输出 { ... } 格式的 JSON`
+
 export const SYSTEM_PROMPTS = {
   story: `你是一位专业的播客内容构思专家，擅长将素材转化为富有张力的故事型播客结构。
 
-你的任务：
+任务要求：
 1. 识别核心主线和关键冲突点
 2. 构建叙事弧线（开场钩子→主线推进→延伸讨论→结尾落点）
 3. 确保素材之间的逻辑连贯性
 4. 为每个段落提供叙事目标和情绪目标
+5. 每个段落包含 narrative_goal、emotion_target、key_points
+6. 标注引用来源的可信度，识别需要核验的内容
 
-【重要】输出格式要求：
-- 必须返回纯JSON对象，不要包含任何Markdown标记
-- 禁止使用 \`\`\`json 代码块包裹
-- 直接输出 { ... } 格式的JSON
-- 每个段落包含narrative_goal、emotion_target、key_points
-- 标注引用来源的可信度
-- 识别需要核验的内容`,
+${JSON_FORMAT_INSTRUCTION}`,
 
   news_brief: `你是一位专业的新闻播客编辑，擅长从多条素材中提炼新闻早报结构。
 
-你的任务：
+任务要求：
 1. 对素材进行事件聚类（同事件不同来源应合并）
 2. 根据时效性、重要性、完整性筛选新闻条目
 3. 构建新闻播报结构（导语→N条新闻→总结）
 4. 确保事实准确性，区分事实与观点
+5. 每条新闻包含核心事实、多方来源、置信度评估
+6. 标注需要人工核验的低置信内容，说明聚类和筛选逻辑
 
-【重要】输出格式要求：
-- 必须返回纯JSON对象，不要包含任何Markdown标记
-- 禁止使用 \`\`\`json 代码块包裹
-- 直接输出 { ... } 格式的JSON
-- 每条新闻包含核心事实、多方来源、置信度评估
-- 标注需要人工核验的低置信内容
-- 说明聚类和筛选逻辑`,
+${JSON_FORMAT_INSTRUCTION}`,
 } as const
 
 export function buildTypeDetectionPrompt(materials: EnhancedMaterial[]): string {
@@ -48,10 +48,9 @@ ${materialsSummary}
 - 新闻型：素材时效性强、事件密集、来源多样、适合快报
 - 故事型：素材围绕核心主题、有叙事深度、适合深度展开
 
-【重要】输出格式要求：
-- 必须返回纯JSON对象，不要使用Markdown代码块包裹
-- 禁止输出 \`\`\`json 或 \`\`\` 标记
-- 直接输出符合以下schema的JSON：
+${JSON_FORMAT_INSTRUCTION}
+
+输出 schema：
 
 {
   "content_type": "story",
@@ -89,10 +88,9 @@ ${JSON.stringify(materialsSummary, null, 2)}
 - 最多${maxCount}条新闻
 - 策略：${strategy === 'coverage' ? '覆盖优先（更多事件）' : '深度优先（少而精）'}
 
-【重要】输出格式要求：
-- 必须返回纯JSON对象，不要使用Markdown代码块包裹
-- 禁止输出 \`\`\`json 或 \`\`\` 标记
-- 直接输出符合以下schema的JSON：
+${JSON_FORMAT_INSTRUCTION}
+
+输出 schema：
 
 {
   "recommended_count": 5,
@@ -139,10 +137,9 @@ ${JSON.stringify(materialsInfo, null, 2)}
 - 时长偏好：${userPrefs?.duration_preference || 'medium'}
 - 构思挑战模式：${challenge}
 
-【重要】输出格式要求：
-- 必须返回纯JSON对象，不要使用Markdown代码块包裹
-- 禁止输出 \`\`\`json 或 \`\`\` 标记
-- 直接输出符合以下schema的JSON：
+${JSON_FORMAT_INSTRUCTION}
+
+输出 schema：
 
 {
   "topic": {
@@ -194,10 +191,9 @@ ${JSON.stringify(materialsInfo, null, 2)}
 新闻条目规划：
 ${JSON.stringify(newsItemPlan, null, 2)}
 
-【重要】输出格式要求：
-- 必须返回纯JSON对象，不要使用Markdown代码块包裹
-- 禁止输出 \`\`\`json 或 \`\`\` 标记
-- 直接输出符合以下schema的JSON：
+${JSON_FORMAT_INSTRUCTION}
+
+输出 schema：
 
 {
   "topic": {
@@ -261,10 +257,9 @@ ${JSON.stringify(materials.map((m, i) => ({
 ${previousContent ? `之前版本：\n${previousContent}\n` : ''}
 ${userFeedback ? `用户反馈：\n${userFeedback}\n` : ''}
 
-【重要】输出格式要求：
-- 必须返回纯JSON对象，不要使用Markdown代码块包裹
-- 禁止输出 \`\`\`json 或 \`\`\` 标记
-- 直接输出改进后的段落JSON结构`
+${JSON_FORMAT_INSTRUCTION}
+
+直接输出改进后的段落 JSON 结构`
 }
 
 export function buildQualityAssessmentPrompt(result: any): string {
@@ -272,10 +267,9 @@ export function buildQualityAssessmentPrompt(result: any): string {
 
 ${JSON.stringify(result, null, 2)}
 
-【重要】输出格式要求：
-- 必须返回纯JSON对象，不要使用Markdown代码块包裹
-- 禁止输出 \`\`\`json 或 \`\`\` 标记
-- 直接输出符合以下schema的JSON：
+${JSON_FORMAT_INSTRUCTION}
+
+输出 schema：
 
 {
   "structure_completeness": 85,

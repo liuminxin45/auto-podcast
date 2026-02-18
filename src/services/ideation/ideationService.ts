@@ -125,7 +125,8 @@ class IdeationService {
 
   async generateIdeation(
     context: IdeationContext,
-    config: IdeationConfig
+    config: IdeationConfig,
+    onLog?: (log: string) => void
   ): Promise<IdeationServiceResponse> {
     const llmConfig = ideationConfigManager.getLLMConfig()
     
@@ -134,9 +135,9 @@ class IdeationService {
         success: false,
         error: {
           code: 'LLM_ERROR',
-          message: 'LLM配置不可用，请在Settings中配置',
+          message: 'LLM未配置',
           recoverable: true,
-          fallback_available: true,
+          fallback_available: false,
         },
       }
     }
@@ -146,12 +147,15 @@ class IdeationService {
     let detectionReason: string | undefined
     
     if (config.auto_detect_type && !contentType) {
+      onLog?.('🔍 检测内容类型...')
       const detection = await this.detectContentType(context.materials)
       if (detection) {
         contentType = detection.type
         detectionReason = detection.reason
+        onLog?.(`✓ 检测到内容类型: ${contentType}`)
       } else {
         contentType = 'story' // 默认
+        onLog?.('使用默认类型: story')
       }
     }
 
@@ -163,9 +167,15 @@ class IdeationService {
       let result: IdeationResult
 
       if (contentType === 'news_brief') {
+        onLog?.('📰 生成新闻早报结构...')
         result = await this.generateNewsStructure(context, config, llmConfig, detectionReason)
       } else {
-        result = await this.generateStoryStructure(context, config, llmConfig, detectionReason)
+        // 使用 streaming 模式（如果提供了 onLog）
+        if (onLog) {
+          result = await this.generateStoryStructureStreaming(context, config, llmConfig, onLog, detectionReason)
+        } else {
+          result = await this.generateStoryStructure(context, config, llmConfig, detectionReason)
+        }
       }
 
       // 质量评估
@@ -262,6 +272,114 @@ class IdeationService {
         error: error.message,
         partial_data: block,
       }
+    }
+  }
+
+  async generateStoryStructureStreaming(
+    context: IdeationContext,
+    config: IdeationConfig,
+    llmConfig: LLMConfig,
+    onLog: (log: string) => void,
+    detectionReason?: string
+  ): Promise<IdeationResult> {
+    const prompt = buildStoryStructurePrompt(context, context.target_topic)
+    
+    onLog('📝 开始生成故事型构思...')
+    onLog(`📊 素材数量: ${context.materials.length}`)
+    
+    let streamedContent = ''
+    
+    // Check if Electron API is available for streaming
+    if (typeof window !== 'undefined' && (window as any).electronAPI?.llmCall) {
+      onLog('🔄 使用 streaming 模式调用 LLM...')
+      
+      // Setup streaming listeners
+      const api = (window as any).electronAPI
+      
+      await new Promise<void>((resolve, reject) => {
+        let chunkCount = 0
+        
+        api.onLLMStreamChunk((chunk: string) => {
+          streamedContent += chunk
+          chunkCount++
+          if (chunkCount % 10 === 0) {
+            onLog(`⚡ 已接收 ${chunkCount} 个数据块...`)
+          }
+        })
+        
+        api.onLLMStreamDone(() => {
+          onLog(`✅ 流式传输完成，共接收 ${chunkCount} 个数据块`)
+          api.removeLLMStreamListeners()
+          resolve()
+        })
+        
+        api.onLLMStreamError((error: string) => {
+          onLog(`❌ 流式传输错误: ${error}`)
+          api.removeLLMStreamListeners()
+          reject(new Error(error))
+        })
+        
+        // Start streaming call
+        api.llmCall({
+          apiBase: llmConfig.apiBase,
+          apiKey: llmConfig.apiKey,
+          model: llmConfig.model,
+          messages: [
+            { role: 'system', content: SYSTEM_PROMPTS.story },
+            { role: 'user', content: prompt },
+          ],
+          temperature: config.llm_temperature || IDEATION_TEMPERATURES.STORY_GENERATION,
+          stream: true
+        }).catch((err: Error) => {
+          api.removeLLMStreamListeners()
+          reject(err)
+        })
+      })
+    } else {
+      // Fallback to normal call
+      onLog('📞 使用标准模式调用 LLM...')
+      const response = await llmService.call({
+        apiBase: llmConfig.apiBase,
+        apiKey: llmConfig.apiKey,
+        model: llmConfig.model,
+        messages: [
+          { role: 'system', content: SYSTEM_PROMPTS.story },
+          { role: 'user', content: prompt },
+        ],
+        temperature: config.llm_temperature || IDEATION_TEMPERATURES.STORY_GENERATION,
+        timeout: config.llm_timeout || IDEATION_TIMEOUTS.STRUCTURE_GENERATION,
+      })
+      streamedContent = response.choices[0]?.message?.content || ''
+    }
+    
+    onLog('🔍 解析 LLM 响应...')
+    const parsed = parseJSONFromLLM(streamedContent)
+    
+    onLog('✔️ 验证构思结果格式...')
+    const validation = validateIdeationResult(parsed)
+    if (!validation.valid) {
+      throw new Error(`构思结果格式不正确: ${validation.errors.join(', ')}`)
+    }
+    
+    onLog('🎉 构思生成成功！')
+    
+    return {
+      id: `ideation_${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      mode: 'llm',
+      content_type: 'story',
+      topic: {
+        ...parsed.topic,
+        auto_detected: !!detectionReason,
+        detection_reason: detectionReason,
+      },
+      blocks: this.parseBlocks(parsed.blocks, context.materials),
+      llm_metadata: {
+        model: llmConfig.model,
+        temperature: config.llm_temperature || IDEATION_TEMPERATURES.STORY_GENERATION,
+        total_tokens: 0,
+        duration_ms: 0,
+      },
     }
   }
 

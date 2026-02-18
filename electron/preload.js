@@ -53,5 +53,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onTrendradarLog: (callback) => ipcRenderer.on('trendradar:log', (_, data) => callback(data)),
   onTrendradarStatus: (callback) => ipcRenderer.on('trendradar:status', (_, data) => callback(data)),
   llmCall: (params) => ipcRenderer.invoke('llm:call', params),
-  llmFetchModels: (params) => ipcRenderer.invoke('llm:fetchModels', params)
+  llmFetchModels: (params) => ipcRenderer.invoke('llm:fetchModels', params),
+  onLLMStreamChunk: (callback) => ipcRenderer.on('llm:stream:chunk', (_, data) => callback(data)),
+  onLLMStreamDone: (callback) => ipcRenderer.on('llm:stream:done', () => callback()),
+  onLLMStreamError: (callback) => ipcRenderer.on('llm:stream:error', (_, error) => callback(error)),
+  removeLLMStreamListeners: () => {
+    ipcRenderer.removeAllListeners('llm:stream:chunk')
+    ipcRenderer.removeAllListeners('llm:stream:done')
+    ipcRenderer.removeAllListeners('llm:stream:error')
+  }
 })

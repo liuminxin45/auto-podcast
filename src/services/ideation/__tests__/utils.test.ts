@@ -23,6 +23,39 @@ describe('parseJSONFromLLM', () => {
   it('should throw on invalid JSON', () => {
     expect(() => parseJSONFromLLM('not json')).toThrow()
   })
+
+  it('should normalize Chinese quotes to English quotes', () => {
+    const json = '{"topic": {"title": "春晚机器人出圈：一场技术秀背后的产业博弈"}, "blocks": []}'
+    const result = parseJSONFromLLM(json)
+    expect(result.topic.title).toBe('春晚机器人出圈:一场技术秀背后的产业博弈')
+  })
+
+  it('should normalize Chinese punctuation (comma and colon)', () => {
+    const json = '{"topic"：{"title"："测试"}，"blocks"：[]}'
+    const result = parseJSONFromLLM(json)
+    expect(result).toEqual({ topic: { title: '测试' }, blocks: [] })
+  })
+
+  it('should convert single quotes to double quotes in JSON keys', () => {
+    const json = "{'topic': {'title': '测试'}, 'blocks': []}"
+    const result = parseJSONFromLLM(json)
+    expect(result).toEqual({ topic: { title: '测试' }, blocks: [] })
+  })
+
+  it('should handle array with single quotes', () => {
+    const json = "{'key_points': ['对手的相对位置', '从追赶者到并行者']}"
+    const result = parseJSONFromLLM(json)
+    expect(result).toEqual({ key_points: ['对手的相对位置', '从追赶者到并行者'] })
+  })
+
+  it('should handle complex nested structure with single quotes', () => {
+    const json = "{'topic': {'title': '春晚机器人出圈', 'description': '解析中国智造'}, 'blocks': [{'type': 'opening', 'title': '开场'}]}"
+    const result = parseJSONFromLLM(json)
+    expect(result).toEqual({
+      topic: { title: '春晚机器人出圈', description: '解析中国智造' },
+      blocks: [{ type: 'opening', title: '开场' }]
+    })
+  })
 })
 
 describe('validateIdeationResult', () => {

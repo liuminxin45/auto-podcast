@@ -10,6 +10,7 @@ import type {
 } from '../types/ideation'
 import { ideationService } from '../services/ideation/ideationService'
 import { ideationConfigManager } from '../services/ideation/config'
+import { ideationHistoryService } from '../services/ideation/historyService'
 
 interface UseIdeationOptions {
   materials: EnhancedMaterial[]
@@ -39,6 +40,7 @@ interface UseIdeationReturn {
   // 错误
   error: string | null
   warnings: string[]
+  streamLogs: string[]
 }
 
 const DEFAULT_CONFIG: IdeationConfig = {
@@ -64,6 +66,7 @@ export function useIdeation({ materials, onComplete }: UseIdeationOptions): UseI
   })
   const [error, setError] = useState<string | null>(null)
   const [warnings, setWarnings] = useState<string[]>([])
+  const [streamLogs, setStreamLogs] = useState<string[]>([])
 
   useEffect(() => {
     ideationService.isLLMAvailable().then(setLlmAvailable)
@@ -78,6 +81,7 @@ export function useIdeation({ materials, onComplete }: UseIdeationOptions): UseI
     setStatus('generating')
     setError(null)
     setWarnings([])
+    setStreamLogs([])
 
     try {
       const context: IdeationContext = {
@@ -86,11 +90,22 @@ export function useIdeation({ materials, onComplete }: UseIdeationOptions): UseI
         ideation_challenge: ideationConfigManager.getIdeationChallenge(),
       }
 
-      const response = await ideationService.generateIdeation(context, config)
+      const response = await ideationService.generateIdeation(context, config, (log: string) => {
+        setStreamLogs(prev => [...prev, log])
+      })
 
       if (!response.success) {
         setError(response.error?.message || '生成失败')
         setStatus('error')
+        
+        // 保存失败记录
+        ideationHistoryService.save(
+          context,
+          config,
+          null,
+          false,
+          response.error?.message
+        )
         return
       }
 
@@ -106,12 +121,33 @@ export function useIdeation({ materials, onComplete }: UseIdeationOptions): UseI
 
       setStatus('complete')
       
-      if (response.result && onComplete) {
-        onComplete(response.result)
+      // 保存成功记录
+      if (response.result) {
+        ideationHistoryService.save(
+          context,
+          config,
+          response.result,
+          true,
+          undefined,
+          response.warnings
+        )
+        
+        if (onComplete) {
+          onComplete(response.result)
+        }
       }
     } catch (err: any) {
-      setError(err.message || '生成失败')
+      const errorMessage = err.message || '生成失败'
+      setError(errorMessage)
       setStatus('error')
+      
+      // 保存异常记录
+      const context: IdeationContext = {
+        materials,
+        user_preferences: ideationConfigManager.getUserPreferences(),
+        ideation_challenge: ideationConfigManager.getIdeationChallenge(),
+      }
+      ideationHistoryService.save(context, config, null, false, errorMessage)
     }
   }, [materials, config, llmAvailable, onComplete])
 
@@ -288,5 +324,6 @@ export function useIdeation({ materials, onComplete }: UseIdeationOptions): UseI
     resetToManual,
     error,
     warnings,
+    streamLogs,
   }
 }

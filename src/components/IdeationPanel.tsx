@@ -36,6 +36,7 @@ export default function IdeationPanel({
     updateConfig,
     error,
     warnings,
+    streamLogs,
   } = useIdeation({ materials })
 
   const [newsItemCount, setNewsItemCount] = useState<number | null>(null)
@@ -128,7 +129,20 @@ export default function IdeationPanel({
             <Alert
               type="error"
               message="生成失败"
-              description={error}
+              description={
+                <div>
+                  <div style={{ marginBottom: 12 }}>{error}</div>
+                  <Button
+                    type="primary"
+                    size="small"
+                    icon={<SyncOutlined />}
+                    onClick={handleGenerate}
+                    disabled={!llmAvailable || materials.length === 0}
+                  >
+                    重试
+                  </Button>
+                </div>
+              }
               showIcon
               closable
               style={{ marginBottom: 16 }}
@@ -184,18 +198,39 @@ export default function IdeationPanel({
 
           {status === 'generating' && (
             <div style={{
-              padding: 60,
-              textAlign: 'center',
+              padding: 24,
               background: 'var(--bg-tertiary)',
               borderRadius: 12,
             }}>
-              <Spin size="large" />
-              <div style={{ fontSize: 14, color: 'var(--text-primary)', marginTop: 20 }}>
-                AI正在分析素材并生成构思...
+              <div style={{ textAlign: 'center', marginBottom: 20 }}>
+                <Spin size="large" />
+                <div style={{ fontSize: 14, color: 'var(--text-primary)', marginTop: 20 }}>
+                  AI正在分析素材并生成构思...
+                </div>
               </div>
-              <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 8 }}>
-                预计需要30-60秒
-              </div>
+              
+              {streamLogs && streamLogs.length > 0 && (
+                <div style={{
+                  background: 'var(--bg-primary)',
+                  borderRadius: 8,
+                  padding: 12,
+                  maxHeight: 200,
+                  overflow: 'auto',
+                  fontFamily: 'Consolas, Monaco, monospace',
+                  fontSize: 11,
+                }}>
+                  {streamLogs.map((log: string, idx: number) => (
+                    <div key={idx} style={{ 
+                      marginBottom: 4,
+                      color: log.includes('❌') ? '#ef4444' : 
+                             log.includes('✅') || log.includes('🎉') ? '#10b981' :
+                             'var(--text-secondary)'
+                    }}>
+                      {log}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

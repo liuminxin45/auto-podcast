@@ -4,6 +4,7 @@ const fs = require('fs')
 const { spawn } = require('child_process')
 const ConfigManager = require('./configManager')
 const { validateNodeOutput } = require('./nodeValidator')
+const { fetchModels, callLLM } = require('./llmService')
 
 const PYTHON_PATH = process.platform === 'win32' ? 'python' : 'python3'
 const PROJECT_ROOT = path.join(__dirname, '..')
@@ -1074,121 +1075,27 @@ ipcMain.handle('radar:updateContents', async (event, contents) => {
 })
 
 ipcMain.handle('llm:fetchModels', async (event, { apiBase, apiKey }) => {
-  const https = require('https')
-  const http = require('http')
-  
-  const url = new URL(`${apiBase.replace(/\/$/, '')}/models`)
-  const isHttps = url.protocol === 'https:'
-  const client = isHttps ? https : http
-  
-  const headers = apiBase.includes('openai.azure.com')
-    ? { 'api-key': apiKey }
-    : { 'Authorization': `Bearer ${apiKey}` }
-  
-  const options = {
-    hostname: url.hostname,
-    port: url.port || (isHttps ? 443 : 80),
-    path: url.pathname,
-    method: 'GET',
-    headers,
-    agent: false
+  try {
+    return await fetchModels({ apiBase, apiKey })
+  } catch (error) {
+    throw new Error(`Failed to fetch models: ${error.message}`)
   }
-  
-  return new Promise((resolve, reject) => {
-    const req = client.request(options, (res) => {
-      let data = ''
-      res.on('data', chunk => data += chunk)
-      res.on('end', () => {
-        if (res.statusCode >= 200 && res.statusCode < 300) {
-          try {
-            resolve(JSON.parse(data))
-          } catch (e) {
-            reject(new Error(`JSON parse error: ${e.message}`))
-          }
-        } else {
-          reject(new Error(`HTTP ${res.statusCode}: ${data.slice(0, 200)}`))
-        }
-      })
-    })
-    
-    req.on('error', (e) => {
-      reject(new Error(`Request failed: ${e.message}`))
-    })
-    
-    req.setTimeout(30000, () => {
-      req.destroy()
-      reject(new Error('Request timeout (30s)'))
-    })
-    
-    req.end()
-  })
 })
 
-ipcMain.handle('llm:call', async (event, { apiBase, apiKey, model, messages, temperature }) => {
-  const https = require('https')
-  const http = require('http')
-  
-  const url = new URL(`${apiBase.replace(/\/$/, '')}/chat/completions`)
-  const isHttps = url.protocol === 'https:'
-  const client = isHttps ? https : http
-  
-  const headers = {
-    'Content-Type': 'application/json'
-  }
-  
-  if (apiBase.includes('openai.azure.com')) {
-    headers['api-key'] = apiKey
-  } else {
-    headers['Authorization'] = `Bearer ${apiKey}`
-  }
-  
-  const payload = JSON.stringify({
-    model,
-    messages,
-    temperature: temperature || 0.3
-  })
-  
-  const options = {
-    hostname: url.hostname,
-    port: url.port || (isHttps ? 443 : 80),
-    path: url.pathname,
-    method: 'POST',
-    headers: {
-      ...headers,
-      'Content-Length': Buffer.byteLength(payload)
-    },
-    agent: false
-  }
-  
-  return new Promise((resolve, reject) => {
-    const req = client.request(options, (res) => {
-      let data = ''
-      res.on('data', chunk => data += chunk)
-      res.on('end', () => {
-        if (res.statusCode >= 200 && res.statusCode < 300) {
-          try {
-            resolve(JSON.parse(data))
-          } catch (e) {
-            reject(new Error(`JSON parse error: ${e.message}`))
-          }
-        } else {
-          reject(new Error(`HTTP ${res.statusCode}: ${data.slice(0, 200)}`))
-        }
-      })
+ipcMain.handle('llm:call', async (event, { apiBase, apiKey, model, messages, temperature, stream }) => {
+  try {
+    return await callLLM({
+      apiBase,
+      apiKey,
+      model,
+      messages,
+      temperature,
+      stream,
+      eventSender: stream ? event.sender : null
     })
-    
-    req.on('error', (e) => {
-      reject(new Error(`Request failed: ${e.message}`))
-    })
-    
-    req.setTimeout(60000, () => {
-      req.destroy()
-      reject(new Error('Request timeout (60s)'))
-    })
-    
-    req.write(payload)
-    req.end()
-  })
+  } catch (error) {
+    throw new Error(`LLM call failed: ${error.message}`)
+  }
 })
 
 function startTrendRadarDaemon(intervalMin = 30) {

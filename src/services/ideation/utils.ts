@@ -23,12 +23,24 @@ export function parseJSONFromLLM(content: string): any {
     cleaned = cleaned.slice(0, actualEnd + 1)
   }
 
+  cleaned = normalizeQuotes(cleaned)
+  cleaned = fixCommonJSONErrors(cleaned)
+
   try {
     return JSON.parse(cleaned)
   } catch (error: any) {
+    const match = error.message.match(/position (\d+)/)
+    let context = ''
+    if (match) {
+      const pos = parseInt(match[1])
+      const start = Math.max(0, pos - 50)
+      const end = Math.min(cleaned.length, pos + 50)
+      context = `\n错误位置附近: ...${cleaned.slice(start, end)}...`
+    }
+    
     throw new Error(
       `JSON解析失败: ${error.message}\n` +
-      `清理后的内容前100字符: ${cleaned.slice(0, 100)}`
+      `清理后的内容前200字符: ${cleaned.slice(0, 200)}${context}`
     )
   }
 }
@@ -70,6 +82,22 @@ export function validateIdeationResult(parsed: any): {
     valid: errors.length === 0,
     errors,
   }
+}
+
+function normalizeQuotes(json: string): string {
+  return json
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/\uff0c/g, ',')
+    .replace(/\uff1a/g, ':')
+    .replace(/'/g, '"')
+}
+
+function fixCommonJSONErrors(json: string): string {
+  return json
+    .replace(/"\s+"/g, '", "')
+    .replace(/\]\s*\[/g, '], [')
+    .replace(/\}\s*\{/g, '}, {')
 }
 
 export function cleanLLMText(text: string): string {

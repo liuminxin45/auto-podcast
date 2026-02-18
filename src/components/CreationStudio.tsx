@@ -4,6 +4,7 @@ import type { ContentCreationType } from '../types/workflow'
 import type { EnhancedMaterial, StructureBlock, StructureBlockType } from '../types/ideation'
 import { CONTENT_TYPE_META } from '../constants/contentCreation'
 import IdeationPanel from './IdeationPanel'
+import IdeationHistoryModal from './IdeationHistoryModal'
 import {
   SearchOutlined,
   PlusOutlined,
@@ -140,6 +141,7 @@ export default function CreationStudio({
 
   // LLM Ideation state
   const [ideationPanelVisible, setIdeationPanelVisible] = useState(false)
+  const [ideationHistoryVisible, setIdeationHistoryVisible] = useState(false)
   const [isLlmGenerated, setIsLlmGenerated] = useState(false)
 
   // Filter materials
@@ -361,10 +363,8 @@ export default function CreationStudio({
               <Button
                 icon={<LeftOutlined />}
                 onClick={onBackToOrganize}
-                style={{ borderRadius: 8, fontWeight: 500, fontSize: 12, height: 32 }}
-              >
-                返回整理
-              </Button>
+                style={{ borderRadius: 8, height: 32, minWidth: 32 }}
+              />
             </Tooltip>
           )}
           <Tooltip title="智能构思助手">
@@ -383,6 +383,14 @@ export default function CreationStudio({
               {isLlmGenerated ? 'AI已生成' : 'AI构思'}
             </Button>
           </Tooltip>
+          <Tooltip title="构思历史记录">
+            <Button
+              type="text"
+              icon={<HistoryOutlined />}
+              onClick={() => setIdeationHistoryVisible(true)}
+              style={{ color: 'var(--text-tertiary)' }}
+            />
+          </Tooltip>
           <Tooltip title={`保存版本${savedVersions.length > 0 ? ` (${savedVersions.length})` : ''}`}>
             <Button
               type="text"
@@ -399,20 +407,18 @@ export default function CreationStudio({
               style={{ color: isLocked ? 'var(--warning-color)' : 'var(--text-tertiary)' }}
             />
           </Tooltip>
-          <Button
-            type="primary"
-            icon={<ArrowRightOutlined />}
-            onClick={handleConfirm}
-            style={{
-              background: 'var(--accent-primary)',
-              borderColor: 'var(--accent-primary)',
-              borderRadius: 8,
-              fontWeight: 600,
-              fontSize: 13,
-            }}
-          >
-            进入写作
-          </Button>
+          <Tooltip title="进入写作">
+            <Button
+              type="primary"
+              icon={<ArrowRightOutlined />}
+              onClick={handleConfirm}
+              style={{
+                background: 'var(--accent-primary)',
+                borderColor: 'var(--accent-primary)',
+                borderRadius: 8, height: 32, minWidth: 32,
+              }}
+            />
+          </Tooltip>
           <Tooltip title="返回工作流">
             <Button type="text" icon={<ArrowLeftOutlined />} onClick={onClose} style={{ color: 'var(--text-tertiary)' }} />
           </Tooltip>
@@ -1058,6 +1064,17 @@ export default function CreationStudio({
         visible={ideationPanelVisible}
         onApply={handleApplyLLMResult}
         onClose={() => setIdeationPanelVisible(false)}
+      />
+
+      {/* Ideation History Modal */}
+      <IdeationHistoryModal
+        visible={ideationHistoryVisible}
+        onClose={() => setIdeationHistoryVisible(false)}
+        onSelect={(record) => {
+          if (record.output) {
+            handleApplyLLMResult(record.output.blocks, record.output.topic)
+          }
+        }}
       />
     </div>
   )

@@ -864,7 +864,6 @@ export default function OrganizePanel({
 
   if (!visible) return null
 
-  const canProceed = candidates.length >= 1
   const suggestedMin = 3
 
   return (
@@ -914,10 +913,8 @@ export default function OrganizePanel({
               <Button
                 icon={<LeftOutlined />}
                 onClick={onBackToDiscover}
-                style={{ borderRadius: 8, fontWeight: 500, fontSize: 12, height: 30 }}
-              >
-                返回发现
-              </Button>
+                style={{ borderRadius: 8, height: 32, minWidth: 32 }}
+              />
             </Tooltip>
           )}
           {/* AI Organize Button */}
@@ -972,19 +969,18 @@ export default function OrganizePanel({
             })}
           </div>
 
-          <Button
-            type="primary"
-            icon={<ArrowRightOutlined />}
-            onClick={handleProceed}
-            disabled={!canProceed}
-            style={{
-              background: canProceed ? 'var(--accent-primary)' : undefined,
-              borderColor: canProceed ? 'var(--accent-primary)' : undefined,
-              borderRadius: 8, fontWeight: 600, fontSize: 13, height: 32,
-            }}
-          >
-            进入构思
-          </Button>
+          <Tooltip title="进入构思">
+            <Button
+              type="primary"
+              icon={<ArrowRightOutlined />}
+              onClick={handleProceed}
+              style={{
+                background: 'var(--accent-primary)',
+                borderColor: 'var(--accent-primary)',
+                borderRadius: 8, height: 32, minWidth: 32,
+              }}
+            />
+          </Tooltip>
           <Tooltip title="返回">
             <Button type="text" icon={<ArrowLeftOutlined />} onClick={onClose} style={{ color: 'var(--text-tertiary)' }} />
           </Tooltip>
