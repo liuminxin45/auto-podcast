@@ -523,6 +523,66 @@ export default function OrganizePanel({
     }
   }, [visible])
 
+  // Auto-trigger AI organize in auto-execute mode
+  const [autoOrganizeTriggered, setAutoOrganizeTriggered] = useState(false)
+  useEffect(() => {
+    if (!visible || !isAutoExecute || autoOrganizeTriggered) return
+    if (!llmConfig || !llmConfig.apiKey) {
+      console.log('[OrganizePanel] Auto-execute mode but no LLM config, skipping AI organize')
+      return
+    }
+    if (contents.length === 0) return
+
+    console.log('[OrganizePanel] Auto-execute mode: triggering AI organize')
+    setAutoOrganizeTriggered(true)
+    
+    // Start AI organize with default config
+    setAiOrgMode('processing')
+    const fullConfig: OrganizeConfig = {
+      ...llmConfig,
+      strictness: 'medium',
+      userInstruction: userTopic ? `围绕主题"${userTopic}"进行筛选和整理` : undefined,
+    }
+    const service = new OrganizeAIService(fullConfig, (progress) => {
+      setAiOrgProgress(progress)
+    })
+    
+    service.runFullOrganize(contents.map((c, i) => mapToOrganizeItem(c, i)))
+      .then(result => {
+        setAiOrgResult(result)
+        setAiProcessedContents(contents.map((c, i) => {
+          const item = mapToOrganizeItem(c, i)
+          const r = result.processed.find((it: any) => it._id === item._id)
+          return { ...c, _ai_organize: r?._ai_organize }
+        }))
+        
+        console.log(`[OrganizePanel] Auto AI organize completed: selected ${result.stats.selected}, rejected ${result.stats.rejected}`)
+        
+        // Auto-accept results in auto-execute mode
+        const selected = result.processed.filter((i: any) => i._ai_organize?.status === 'selected')
+        const newCandidates: CandidateItem[] = selected.map((item: any, idx: number) => ({
+          ...item,
+          _priority: (item._ai_organize?.priority || 'medium') as Priority,
+          _order: idx,
+        }))
+        setCandidates(prev => [...prev, ...newCandidates])
+        setAiOrgMode('off')
+        
+        // Auto-proceed to ideate after brief delay
+        setTimeout(() => {
+          if (onProceedToIdeate) {
+            console.log('[OrganizePanel] Auto-execute: proceeding to ideate with', newCandidates.length, 'materials')
+            onProceedToIdeate(newCandidates)
+          }
+        }, 1000)
+      })
+      .catch(error => {
+        console.error('[OrganizePanel] Auto AI organize failed:', error)
+        setAiOrgMode('off')
+        message.error({ content: `自动整理失败：${error.message}`, duration: 3 })
+      })
+  }, [visible, isAutoExecute, autoOrganizeTriggered, llmConfig, contents, userTopic, mapToOrganizeItem, onProceedToIdeate])
+
   // Timer for overstay nudge
   const [enterTime] = useState(() => Date.now())
   const [nudgeText, setNudgeText] = useState('')

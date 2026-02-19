@@ -3,7 +3,7 @@ Example Custom Source
 这是一个示例，展示如何创建自定义数据源
 你可以复制这个文件并修改为自己的数据源
 """
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from nodes.fetch.sources.base import FetchSourceBase
 
 
@@ -18,7 +18,7 @@ class ExampleCustomSource(FetchSourceBase):
     def description(self) -> str:
         return "这是一个示例数据源，展示如何创建自定义爬虫"
     
-    def fetch(self) -> List[Dict[str, Any]]:
+    def fetch(self, fetch_logs: Optional[List[str]] = None) -> List[Dict[str, Any]]:
         """
         实现你的爬取逻辑。
         

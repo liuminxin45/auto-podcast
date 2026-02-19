@@ -2,7 +2,7 @@
 TechCrunch RSS Feed Source
 从TechCrunch抓取科技新闻
 """
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from nodes.fetch.sources.base import FetchSourceBase
 
 
@@ -17,7 +17,7 @@ class TechCrunchSource(FetchSourceBase):
     def description(self) -> str:
         return "TechCrunch科技新闻（RSS）"
     
-    def fetch(self) -> List[Dict[str, Any]]:
+    def fetch(self, fetch_logs: Optional[List[str]] = None) -> List[Dict[str, Any]]:
         """Fetch from TechCrunch RSS feed."""
         import feedparser
         

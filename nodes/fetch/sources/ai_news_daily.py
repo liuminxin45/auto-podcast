@@ -3,7 +3,7 @@ AI资讯快报数据源
 从 https://ai-bot.cn/daily-ai-news 获取每日AI资讯
 API: https://60s.viki.moe/v2/ai-news
 """
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from nodes.fetch.sources.base import FetchSourceBase
 import requests
 from datetime import datetime
@@ -20,7 +20,7 @@ class AIDailyNewsSource(FetchSourceBase):
     def description(self) -> str:
         return "每日AI、大模型领域最新资讯（来源：ai-bot.cn）"
     
-    def fetch(self) -> List[Dict[str, Any]]:
+    def fetch(self, fetch_logs: Optional[List[str]] = None) -> List[Dict[str, Any]]:
         """
         从API获取AI资讯
         

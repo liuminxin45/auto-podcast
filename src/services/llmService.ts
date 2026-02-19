@@ -19,6 +19,7 @@ class LLMService {
   private rateLimiter: TokenBucketRateLimiter
   private metricsCollector: MetricsCollector
   private electronProxyDisabledForSession = false
+  private debugMode = false
 
   private resolveRequestTimeout(timeout?: number, extraMs = 0): number {
     const requestedTimeout = typeof timeout === 'number' ? timeout : LLM_DEFAULTS.TIMEOUT
@@ -40,7 +41,18 @@ class LLMService {
     this.metricsCollector = new MetricsCollector()
   }
 
+  setDebugMode(enabled: boolean): void {
+    this.debugMode = enabled
+    console.info('[LLMService] Debug mode', enabled ? 'ENABLED' : 'DISABLED')
+  }
+
   async call(options: LLMCallOptions): Promise<LLMResponse> {
+    let adjustedOptions = { ...options }
+    
+    if (this.debugMode) {
+      adjustedOptions = this.applyMinimalMode(adjustedOptions)
+    }
+
     const {
       apiBase,
       apiKey,
@@ -49,7 +61,7 @@ class LLMService {
       temperature = LLM_DEFAULTS.TEMPERATURE,
       maxTokens,
       timeout = LLM_DEFAULTS.TIMEOUT,
-    } = options
+    } = adjustedOptions
 
     validateCredentials(apiBase, apiKey)
     await this.rateLimiter.acquire()
@@ -219,6 +231,22 @@ class LLMService {
 
   resetMetrics(): void {
     this.metricsCollector.reset()
+  }
+
+  private applyMinimalMode(options: LLMCallOptions): LLMCallOptions {
+    return {
+      ...options,
+      maxTokens: Math.min(options.maxTokens || 200, 200),
+      messages: options.messages.map(msg => ({
+        ...msg,
+        content: this.truncateToMinimal(msg.content),
+      })),
+    }
+  }
+
+  private truncateToMinimal(content: string): string {
+    if (content.length <= 150) return content
+    return content.slice(0, 150)
   }
 
   private shouldUseElectronLLMCall(): boolean {

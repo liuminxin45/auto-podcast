@@ -6,6 +6,7 @@ import type { WritingSegment } from '../../components/writing/types'
 import { getWritingStrategy } from './strategies'
 import { resolveWritingLLMTuning } from './llmTuning'
 import type { WritingLLMTuning } from './llmTuning'
+import { isDebugModeEnabled } from '../../utils/debugMode'
 import {
   isRateLimitedError,
   serializedLLMQueue,
@@ -108,16 +109,23 @@ class WritingService {
     const strategy = getWritingStrategy(options.contentType)
     const resolvedTuning = resolveWritingLLMTuning(options.contentType, options.llmTuning)
     const targetIndex = Math.max(0, options.allSegments.findIndex((seg) => seg.id === options.segment.id))
-    const prompt = strategy.buildSegmentPrompt({
-      contentType: options.contentType,
-      title: options.title,
-      description: options.description,
-      segment: options.segment,
-      index: targetIndex,
-      total: options.allSegments.length,
-      allSegments: options.allSegments,
-      promptOverride: options.promptOverride,
-    })
+    const debugMode = isDebugModeEnabled()
+
+    let prompt: string
+    if (debugMode) {
+      prompt = `写作任务：${options.title}\n段落ID：${options.segment.id}\n生成30字内容。`
+    } else {
+      prompt = options.promptOverride || strategy.buildSegmentPrompt({
+        contentType: options.contentType,
+        title: options.title,
+        description: options.description,
+        segment: options.segment,
+        index: targetIndex,
+        total: options.allSegments.length,
+        allSegments: options.allSegments,
+        promptOverride: options.promptOverride,
+      })
+    }
 
     let response
     const maxAttempts = 3
@@ -135,13 +143,15 @@ class WritingService {
           apiBase: llmConfig.apiBase,
           apiKey: llmConfig.apiKey,
           model: llmConfig.model,
-          messages: [
-            { role: 'system', content: strategy.systemPrompt },
-            { role: 'user', content: prompt },
-          ],
+          messages: debugMode
+            ? [{ role: 'user', content: prompt }]
+            : [
+                { role: 'system', content: strategy.systemPrompt },
+                { role: 'user', content: prompt },
+              ],
           temperature: resolvedTuning.temperature,
           timeout: resolvedTuning.timeout,
-          maxTokens: resolvedTuning.maxTokens,
+          maxTokens: debugMode ? 150 : resolvedTuning.maxTokens,
         })
         )
         console.info(`${logTag} LLM success`, { segmentId: options.segment.id, attempt })

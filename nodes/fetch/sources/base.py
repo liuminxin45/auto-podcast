@@ -3,7 +3,7 @@ Base class for fetch data sources.
 All custom data sources should inherit from this class.
 """
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 
 class FetchSourceBase(ABC):
@@ -22,7 +22,7 @@ class FetchSourceBase(ABC):
         pass
     
     @abstractmethod
-    def fetch(self) -> List[Dict[str, Any]]:
+    def fetch(self, fetch_logs: Optional[List[str]] = None) -> List[Dict[str, Any]]:
         """
         Fetch data from this source.
         

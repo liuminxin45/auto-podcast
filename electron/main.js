@@ -1416,6 +1416,8 @@ async function runWorkflow(workflowId, resumeFrom = null, onlyNodes = null) {
   for (let i = startIndex; i < nodes.length; i++) {
     const nodeName = nodes[i]
     
+    console.log(`[Workflow] Starting node: ${nodeName} (${i+1}/${nodes.length})`)
+    
     currentWorkflow.currentNode = nodeName
     currentWorkflow.nodeExecutions[nodeName] = {
       status: 'running',
@@ -1432,16 +1434,39 @@ async function runWorkflow(workflowId, resumeFrom = null, onlyNodes = null) {
         currentWorkflow.state.runtime_config[nodeName] = nodeConfig
       }
       
+      // Preload script config for nodes that need LLM access (research, topic_selection)
+      if ((nodeName === 'research' || nodeName === 'topic_selection') && configManager) {
+        currentWorkflow.state.runtime_config = currentWorkflow.state.runtime_config || {}
+        if (!currentWorkflow.state.runtime_config.script) {
+          const scriptConfig = configManager.loadNodeConfig('script')
+          if (scriptConfig) {
+            currentWorkflow.state.runtime_config.script = scriptConfig
+            console.log(`[${nodeName}] Preloaded script config for LLM access (api_key: ${scriptConfig.api_key ? 'SET' : 'NOT SET'})`)
+          } else {
+            console.log(`[${nodeName}] ⚠ Failed to load script config, LLM analysis will be skipped`)
+          }
+        } else {
+          console.log(`[${nodeName}] Script config already loaded (api_key: ${currentWorkflow.state.runtime_config.script.api_key ? 'SET' : 'NOT SET'})`)
+        }
+      }
+      
       const startTime = Date.now()
       const result = await runPythonNode(nodeName, currentWorkflow.state)
       const duration = (Date.now() - startTime) / 1000
+      console.log(`[${nodeName}] Completed in ${duration.toFixed(2)}s`)
+      
+      // Print Python logs to console
+      if (result.logs && result.logs.length > 0) {
+        console.log(`[${nodeName}:py] === Python logs (${result.logs.length} entries) ===`)
+        for (const log of result.logs) {
+          console.log(`[${nodeName}:py] ${log}`)
+        }
+      }
 
       if (!result || typeof result !== 'object') {
         throw new Error(`Invalid result from ${nodeName}: expected object, got ${typeof result}`)
       }
 
-      currentWorkflow.state = result
-      
       validateNodeOutput(nodeName, result)
       
       currentWorkflow.nodeExecutions[nodeName] = {
@@ -1459,9 +1484,9 @@ async function runWorkflow(workflowId, resumeFrom = null, onlyNodes = null) {
 
       if (nodeName === 'script' && !currentWorkflow.approvals?.script) {
         const scriptConfig = configManager ? configManager.loadNodeConfig('script') : null
-        console.log('[Approval Check] Script config:', scriptConfig)
-        const requireApproval = scriptConfig?.require_approval ?? false
-        console.log('[Approval Check] Require approval:', requireApproval)
+        const isAutoExecute = currentWorkflow.state?.runtime_config?.auto_execute ?? false
+        const requireApproval = isAutoExecute ? false : (scriptConfig?.require_approval ?? false)
+        console.log('[Approval Check] require_approval:', requireApproval, '| auto_execute:', isAutoExecute)
 
         if (requireApproval) {
           console.log('[Approval] Pausing workflow for approval')

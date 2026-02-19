@@ -2,6 +2,7 @@ import type { ContentItem } from '../types/workflow'
 import { llmService } from './llmService'
 import { LLMError } from '../types/llm'
 import { delay } from './llm/utils'
+import { isDebugModeEnabled } from '../utils/debugMode'
 import { LLM_DEFAULTS } from '../constants/llm'
 
 export interface OrganizeConfig {
@@ -227,6 +228,23 @@ export class OrganizeAIService {
 
     const allItems = clusters.flatMap(c => c.items)
     if (allItems.length === 0) return { selected: [], rejected: [] }
+
+    const debugMode = isDebugModeEnabled()
+    
+    if (debugMode) {
+      this.log('⚡ Debug mode: 跳过 AI 评分，使用固定分数')
+      const scoredItems = allItems.map(item => ({
+        ...item,
+        _ai_organize: {
+          ...item._ai_organize,
+          status: 'selected',
+          score: 60,
+          reason: '调试模式固定分',
+          confidence: 1,
+        } as any,
+      }))
+      return { selected: scoredItems, rejected: [] }
+    }
 
     const strictnessThreshold = {
       loose: 30,

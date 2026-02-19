@@ -44,7 +44,7 @@ class NewsNowSource(FetchSourceBase):
         count = len(self._platform_ids) if self._platform_ids else len(platforms)
         return f"聚合 {count} 个平台的实时热榜（今日头条/百度/微博/知乎/抖音/B站等）"
 
-    def fetch(self) -> List[Dict[str, Any]]:
+    def fetch(self, fetch_logs: Optional[List[str]] = None) -> List[Dict[str, Any]]:
         """通过 TrendRadar bridge 拉取热榜数据。"""
         from engine.bridge import fetch_trending_as_items
 
@@ -54,6 +54,7 @@ class NewsNowSource(FetchSourceBase):
             proxy_url=self._proxy_url,
             api_url=self._api_url,
             request_interval=self._request_interval,
+            fetch_logs=fetch_logs,
         )
 
     @staticmethod

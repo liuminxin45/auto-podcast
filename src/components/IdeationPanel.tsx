@@ -15,6 +15,7 @@ interface IdeationPanelProps {
   materials: EnhancedMaterial[]
   contentType: ContentCreationType
   visible: boolean
+  isAutoExecute?: boolean
   onApply: (blocks: StructureBlock[], topic: { title: string; description: string }, contentType: ContentCreationType) => void
   onClose: () => void
 }
@@ -23,6 +24,7 @@ export default function IdeationPanel({
   materials,
   contentType,
   visible,
+  isAutoExecute = false,
   onApply,
   onClose,
 }: IdeationPanelProps) {
@@ -57,6 +59,30 @@ export default function IdeationPanel({
   const handleGenerate = async () => {
     await generateLLMVersion({ content_type: contentType, auto_detect_type: false })
   }
+
+  // Auto-trigger generation in auto-execute mode
+  const [autoGenerateTriggered, setAutoGenerateTriggered] = useState(false)
+  useEffect(() => {
+    if (!visible || !isAutoExecute || autoGenerateTriggered) return
+    if (!llmAvailable || materials.length === 0) {
+      console.log('[IdeationPanel] Auto-execute mode but LLM not available or no materials')
+      return
+    }
+
+    console.log('[IdeationPanel] Auto-execute mode: triggering AI ideation generation')
+    setAutoGenerateTriggered(true)
+    handleGenerate()
+  }, [visible, isAutoExecute, autoGenerateTriggered, llmAvailable, materials.length])
+
+  // Auto-apply result when generation completes in auto-execute mode
+  useEffect(() => {
+    if (!isAutoExecute || !workingDraft || status !== 'complete') return
+
+    console.log('[IdeationPanel] Auto-execute mode: AI ideation completed, auto-applying')
+    setTimeout(() => {
+      handleApply()
+    }, 500)
+  }, [isAutoExecute, workingDraft, status])
 
   const handleApply = () => {
     if (!workingDraft) return

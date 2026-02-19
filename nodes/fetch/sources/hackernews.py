@@ -2,7 +2,7 @@
 Hacker News RSS Feed Source
 从Hacker News首页抓取最新的技术新闻
 """
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from nodes.fetch.sources.base import FetchSourceBase
 
 
@@ -17,7 +17,7 @@ class HackerNewsSource(FetchSourceBase):
     def description(self) -> str:
         return "Hacker News首页热门技术新闻（RSS）"
     
-    def fetch(self) -> List[Dict[str, Any]]:
+    def fetch(self, fetch_logs: Optional[List[str]] = None) -> List[Dict[str, Any]]:
         """Fetch from Hacker News RSS feed."""
         import feedparser
         

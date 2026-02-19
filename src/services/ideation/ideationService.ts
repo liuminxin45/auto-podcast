@@ -22,6 +22,7 @@ import {
   buildQualityAssessmentPrompt,
 } from './prompts'
 import { parseJSONFromLLM, validateIdeationResult } from './utils'
+import { isDebugModeEnabled } from '../../utils/debugMode'
 
 class IdeationService {
   async isLLMAvailable(): Promise<boolean> {
@@ -34,18 +35,30 @@ class IdeationService {
     const llmConfig = ideationConfigManager.getLLMConfig()
     if (!llmConfig) return null
 
+    const debugMode = isDebugModeEnabled()
+
     try {
-      const prompt = buildTypeDetectionPrompt(materials)
+      let prompt: string
+      if (debugMode) {
+        const firstTitle = materials[0]?.title?.slice(0, 50) || '未知'
+        prompt = `标题：${firstTitle}\n判断内容类型(story/news_brief/interview/review)，输出JSON: {"content_type":"xxx"}`
+      } else {
+        prompt = buildTypeDetectionPrompt(materials)
+      }
+      
       const response = await llmService.call({
         apiBase: llmConfig.apiBase,
         apiKey: llmConfig.apiKey,
         model: llmConfig.model,
-        messages: [
-          { role: 'system', content: '你是内容类型分析专家，返回严格的JSON格式。' },
-          { role: 'user', content: prompt },
-        ],
+        messages: debugMode 
+          ? [{ role: 'user', content: prompt }]
+          : [
+              { role: 'system', content: '你是内容类型分析专家，返回严格的JSON格式。' },
+              { role: 'user', content: prompt },
+            ],
         temperature: IDEATION_TEMPERATURES.TYPE_DETECTION,
         timeout: IDEATION_TIMEOUTS.TYPE_DETECTION,
+        maxTokens: debugMode ? 50 : undefined,
       })
 
       const content = response.choices[0]?.message?.content
@@ -294,14 +307,11 @@ class IdeationService {
       onLog('🔄 使用 streaming 模式调用 LLM...')
       
       // Setup streaming listeners
-      const api = (window as any).electronAPI
-      
       await new Promise<void>((resolve, reject) => {
         let chunkCount = 0
-        
+        const api = (window as any).electronAPI
         api.onLLMStreamChunk((chunk: string) => {
           streamedContent += chunk
-          chunkCount++
           if (chunkCount % 10 === 0) {
             onLog(`⚡ 已接收 ${chunkCount} 个数据块...`)
           }

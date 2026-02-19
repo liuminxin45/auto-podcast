@@ -180,6 +180,17 @@ export default function CreationStudio({
     }
   }, [contentType, blocks, topicTitle, topicDesc, isLlmGenerated, cloneBlocks])
 
+  // Auto-trigger AI ideation in auto-execute mode
+  const [autoIdeationTriggered, setAutoIdeationTriggered] = useState(false)
+  useEffect(() => {
+    if (!visible || !isAutoExecute || autoIdeationTriggered) return
+    if (rawContents.length === 0) return
+
+    console.log('[CreationStudio] Auto-execute mode: opening IdeationPanel for AI ideation')
+    setAutoIdeationTriggered(true)
+    setIdeationPanelVisible(true)
+  }, [visible, isAutoExecute, autoIdeationTriggered, rawContents.length])
+
   // Filter materials
   const filteredMaterials = useMemo(() => {
     let items = rawContents
@@ -1130,6 +1141,7 @@ export default function CreationStudio({
         })) as EnhancedMaterial[]}
         contentType={contentType}
         visible={ideationPanelVisible}
+        isAutoExecute={isAutoExecute}
         onApply={handleApplyLLMResult}
         onClose={() => setIdeationPanelVisible(false)}
       />

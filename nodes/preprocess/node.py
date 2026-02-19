@@ -7,14 +7,22 @@ def run(state: Dict[str, Any], config: PreprocessConfig = None) -> Dict[str, Any
     logs = state.get("logs", [])
     errors = state.get("errors", [])
 
+    # In auto_execute mode, skip min_content_length filter
+    # Hotlist items only have titles (short content) and are still valid
+    runtime_config = state.get("runtime_config", {})
+    auto_execute = runtime_config.get("auto_execute", False)
+    effective_min_length = 0 if auto_execute else config.min_content_length
+
     logs.append("[PreprocessNode] Starting preprocess")
+    if auto_execute:
+        logs.append(f"[PreprocessNode] Auto-execute mode: min_content_length set to 0 (hotlist items allowed)")
     raw = state.get("raw_contents", [])
     cleaned = []
 
     try:
         for item in raw:
             content = item.get("content", "")
-            if len(content) < config.min_content_length:
+            if len(content) < effective_min_length:
                 continue
             if len(content) > config.max_content_length:
                 content = content[:config.max_content_length]

@@ -15,6 +15,7 @@ import type { ContentItem } from '../types/workflow'
 import { VALID_CATEGORY_IDS, getCategoryById, getCategoryListForPrompt } from '../constants/categories'
 import { llmService } from '../services/llmService'
 import { LLMError } from '../types/llm'
+import { isDebugModeEnabled } from './debugMode'
 
 export const MAX_NEWS_ITEMS = 500
 const BATCH_SIZE = 20
@@ -272,6 +273,25 @@ async function classifyBatchLLM(
   signal?: AbortSignal,
   _isRetry = false,
 ): Promise<(string | null)[]> {
+  const debugMode = isDebugModeEnabled()
+  
+  if (debugMode && batchItems.length === 1) {
+    const title = (batchItems[0].title || '无标题').slice(0, 50)
+    const prompt = `标题：${title}\n分类(regulation/breakthrough/market/other)，输出JSON: {"category":"xxx"}`
+    
+    try {
+      const response = await callLLM(config, [
+        { role: 'user', content: prompt },
+      ], signal)
+      
+      const parsed = JSON.parse(response)
+      const categoryId = parsed.category || null
+      return [VALID_CATEGORY_IDS.has(categoryId) ? categoryId : null]
+    } catch {
+      return [null]
+    }
+  }
+  
   const titles = batchItems.map(item => item.title || '无标题')
   const userPrompt = JSON.stringify(titles)
 
