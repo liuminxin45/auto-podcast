@@ -1415,6 +1415,7 @@ async function runWorkflow(workflowId, resumeFrom = null, onlyNodes = null) {
 
   for (let i = startIndex; i < nodes.length; i++) {
     const nodeName = nodes[i]
+    const stageLabel = NODE_STAGE_LABELS[nodeName] || nodeName
     
     console.log(`[Workflow] Starting node: ${nodeName} (${i+1}/${nodes.length})`)
     
@@ -1525,6 +1526,11 @@ async function runWorkflow(workflowId, resumeFrom = null, onlyNodes = null) {
         message: error.message,
         timestamp: new Date().toISOString()
       })
+      // Inject orchestration failure log into state.logs (visible in Execution Logs panel)
+      currentWorkflow.state.logs = currentWorkflow.state.logs || []
+      currentWorkflow.state.logs.push(`[Orchestrator] ✗ 节点失败: ${stageLabel}`)
+      currentWorkflow.state.logs.push(`[Orchestrator]   错误: ${error.message}`)
+      currentWorkflow.state.logs.push(`[Orchestrator]   时间: ${new Date().toISOString()}`)
 
       if (mainWindow) {
         broadcastWorkflowUpdate()
@@ -1533,6 +1539,19 @@ async function runWorkflow(workflowId, resumeFrom = null, onlyNodes = null) {
     }
   }
 
+  const workflowDuration = ((Date.now() - workflowStartTime) / 1000).toFixed(1)
+  const completedNodes = Object.entries(currentWorkflow.nodeExecutions)
+    .filter(([, v]) => v.status === 'completed').length
+  const failedNodes = Object.entries(currentWorkflow.nodeExecutions)
+    .filter(([, v]) => v.status === 'failed').length
+  currentWorkflow.state.logs = currentWorkflow.state.logs || []
+  currentWorkflow.state.logs.push(`[Workflow] ========================================`)
+  currentWorkflow.state.logs.push(`[Workflow] 工作流完成`)
+  currentWorkflow.state.logs.push(`[Workflow] episode_id: ${episodeId}`)
+  currentWorkflow.state.logs.push(`[Workflow] 完成时间: ${new Date().toISOString()}`)
+  currentWorkflow.state.logs.push(`[Workflow] 总耗时: ${workflowDuration}s`)
+  currentWorkflow.state.logs.push(`[Workflow] 节点统计: 完成=${completedNodes}, 失败=${failedNodes}, 共=${nodes.length}`)
+  currentWorkflow.state.logs.push(`[Workflow] ========================================`)
   currentWorkflow.status = 'completed'
   currentWorkflow.currentNode = null
   broadcastWorkflowUpdate()

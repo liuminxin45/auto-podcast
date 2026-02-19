@@ -32,11 +32,15 @@ class LLMClient:
         self.debug_mode = debug_mode
         self._session = requests.Session()
     
-    def call(self, messages: List[Dict[str, str]], timeout: int = DEFAULT_TIMEOUT, max_tokens: Optional[int] = None) -> Dict[str, Any]:
+    def call(self, messages: List[Dict[str, str]], timeout: int = DEFAULT_TIMEOUT, max_tokens: Optional[int] = None, logs: Optional[List[str]] = None) -> Dict[str, Any]:
         """Make a single LLM API call."""
         if self.debug_mode:
+            original_len = sum(len(m.get('content', '')) for m in messages)
             messages = self._minimal_truncate(messages)
+            truncated_len = sum(len(m.get('content', '')) for m in messages)
             max_tokens = min(max_tokens or 200, 200)
+            if logs is not None:
+                logs.append(f"[LLMClient] ⚡ DEBUG CALL: prompt {original_len}字 → 截断至 {truncated_len}字, max_tokens=200, timeout={timeout}s")
         
         headers = self._build_headers()
         payload = {
@@ -116,7 +120,7 @@ class LLMClient:
                 if logs:
                     logs.append(f"[LLMClient] Prompt generated ({len(prompt)} chars), calling LLM API...")
                 
-                response = self.call([{"role": "user", "content": prompt}])
+                response = self.call([{"role": "user", "content": prompt}], logs=logs)
                 
                 api_time = time.time() - start_time
                 if logs:

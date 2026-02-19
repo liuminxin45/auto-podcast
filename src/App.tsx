@@ -346,19 +346,8 @@ function App() {
         setIsAutoExecute(isAuto)
       }
 
-      // Auto-open OrganizePanel when topic_selection completes in auto-execute mode
-      if (isAuto && !organizeAutoOpened && data?.nodeExecutions?.topic_selection?.status === 'completed') {
-        const hasSelectedMaterials = (data?.state?.selected_materials?.length || 0) > 0
-        if (hasSelectedMaterials) {
-          console.log('[App] Auto-execute: topic_selection completed with selected_materials, opening OrganizePanel')
-          setOrganizeVisible(true)
-          setOrganizeAutoOpened(true)
-        }
-      }
-
-      // Auto-open creation studio when organize completes and ideate begins
-      // BUT NOT in auto-execute mode
-      if (!isAuto && !studioAutoOpened && data?.nodeExecutions) {
+      // Manual mode only: open CreationStudio when organize completes and ideate begins
+      if (!isAuto && !studioAutoOpened.current && data?.nodeExecutions) {
         const organizeStage = STAGES.find(s => s.id === 'organize')
         const ideateStage = STAGES.find(s => s.id === 'ideate')
         if (organizeStage && ideateStage) {

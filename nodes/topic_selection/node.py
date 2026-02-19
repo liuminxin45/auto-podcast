@@ -9,11 +9,18 @@ def run(state: Dict[str, Any], config: TopicSelectionConfig = None) -> Dict[str,
     logs = state.get("logs", [])
     errors = state.get("errors", [])
     
-    # Check runtime_config for AI mode
+    import time as _time
+    _t0 = _time.time()
     runtime_config = state.get("runtime_config", {})
     organize_config = runtime_config.get("organize", {})
     is_ai_mode = organize_config.get("mode") == "ai"
     auto_execute = runtime_config.get("auto_execute", False)
+    contents = state.get("researched_contents", [])
+    
+    logs.append(f"[TopicSelectionNode] ========== 节点启动 ==========")
+    logs.append(f"[TopicSelectionNode] 启动时间: {datetime.now().isoformat()}")
+    logs.append(f"[TopicSelectionNode] 输入状态: episode_id={state.get('episode_id', 'N/A')}")
+    logs.append(f"[TopicSelectionNode] 输入: researched_contents={len(contents)} items")
     
     # Get LLM config from script node if not set
     if auto_execute and is_ai_mode:
@@ -38,10 +45,15 @@ def run(state: Dict[str, Any], config: TopicSelectionConfig = None) -> Dict[str,
     else:
         mode = config.mode
 
-    logs.append(f"[TopicSelectionNode] Starting topic selection (mode={mode}, AI={is_ai_mode}, auto={auto_execute})")
+    debug_mode = runtime_config.get("debug_mode", {}).get("enabled", False)
+    if debug_mode:
+        logs.append(f"[TopicSelectionNode] ⚡ DEBUG MODE ACTIVE")
+        logs.append(f"[TopicSelectionNode]   效果说明: batch_size=1 (逐条分析), Prompt截断至150字, max_tokens=200")
+    else:
+        logs.append(f"[TopicSelectionNode] 运行模式: 正常 (debug_mode=False)")
+    logs.append(f"[TopicSelectionNode] 配置: mode={mode}, AI={is_ai_mode}, auto={auto_execute}")
     if auto_execute and target_topic_from_runtime:
         logs.append(f"[TopicSelectionNode] Target topic: '{target_topic_from_runtime}', time_range={time_range_from_runtime}h, max_items={config.max_items}")
-    contents = state.get("researched_contents", [])
 
     try:
         if not contents:
@@ -53,7 +65,8 @@ def run(state: Dict[str, Any], config: TopicSelectionConfig = None) -> Dict[str,
         if mode == "analyze_relevance":
             # Auto selection mode: select multiple relevant materials by topic
             logs.append(f"[TopicSelectionNode] Auto-selection for topic: {config.target_topic}")
-            debug_mode = runtime_config.get("debug_mode", {}).get("enabled", False)
+            if debug_mode:
+                logs.append(f"[TopicSelectionNode] ⚡ DEBUG: 将对 {len(contents)} 条内容逐一调用LLM评分")
             selected, rejected = _analyze_relevance(contents, config, logs, debug_mode=debug_mode)
 
             if auto_execute:
@@ -100,6 +113,17 @@ def run(state: Dict[str, Any], config: TopicSelectionConfig = None) -> Dict[str,
         errors.append({"node": "topic_selection", "message": str(e), "detail": str(e)})
         logs.append(f"[TopicSelectionNode] Error: {str(e)}")
 
+    selected_topic = state.get("selected_topic", {})
+    selected_materials = state.get("selected_materials", [])
+    _elapsed = _time.time() - _t0
+    logs.append(f"[TopicSelectionNode] ========== 节点完成 ==========")
+    logs.append(f"[TopicSelectionNode] 完成时间: {datetime.now().isoformat()} | 耗时: {_elapsed:.2f}s")
+    logs.append(f"[TopicSelectionNode] 输出: selected_topic='{selected_topic.get('title', 'N/A')[:50]}', selected_materials={len(selected_materials)} items")
+    if selected_materials:
+        sample_titles = [m.get('title', 'Untitled')[:40] for m in selected_materials[:3]]
+        logs.append(f"[TopicSelectionNode] 样本素材: {sample_titles}")
+    logs.append(f"[TopicSelectionNode] 错误数: {len([e for e in errors if e.get('node') == 'topic_selection'])}")
+    
     state["logs"] = logs
     state["errors"] = errors
     return state
@@ -162,9 +186,10 @@ def _analyze_relevance(contents: List[Dict], config: TopicSelectionConfig, logs:
         return time_filtered[:config.max_items], time_filtered[config.max_items:] + [c for c in contents if c not in time_filtered]
     
     try:
-        llm_input_cap = min(24, max(config.max_items * 3, config.max_items))
+        llm_input_cap = max(config.max_items * 3, 20)
         llm_candidates = time_filtered[:llm_input_cap]
         skipped_candidates = time_filtered[llm_input_cap:]
+        logs.append(f"[TopicSelection] LLM候选池: max_items={config.max_items} → 候选上限={llm_input_cap} (max_items*3)")
         if skipped_candidates:
             logs.append(
                 f"[TopicSelection] LLM input capped: {len(llm_candidates)}/{len(time_filtered)} items (skipped={len(skipped_candidates)})"

@@ -7,14 +7,20 @@ def run(state: Dict[str, Any], config: MergeConfig = None) -> Dict[str, Any]:
     config = config or MergeConfig()
     logs = state.get("logs", [])
     errors = state.get("errors", [])
-
-    logs.append("[MergeNode] Starting content merge")
-
+    
+    import time as _time
+    from datetime import datetime
+    _t0 = _time.time()
     fetch_contents = state.get("fetch_contents", [])
     manual_contents = state.get("manual_contents", [])
-
-    logs.append(f"[MergeNode] Fetch provided {len(fetch_contents)} items")
-    logs.append(f"[MergeNode] Manual provided {len(manual_contents)} items")
+    
+    logs.append(f"[MergeNode] ========== 节点启动 ==========")
+    logs.append(f"[MergeNode] 启动时间: {datetime.now().isoformat()}")
+    logs.append(f"[MergeNode] 输入状态: episode_id={state.get('episode_id', 'N/A')}")
+    logs.append(f"[MergeNode] 输入: fetch_contents={len(fetch_contents)}, manual_contents={len(manual_contents)}")
+    logs.append(f"[MergeNode] 配置: deduplicate={config.deduplicate}, similarity_threshold={config.similarity_threshold}")
+    _dbg = state.get("runtime_config", {}).get("debug_mode", {}).get("enabled", False)
+    logs.append(f"[MergeNode] debug_mode={_dbg} (此节点不使用LLM, 不受debug_mode影响)")
 
     # Tag sources for traceability
     for item in fetch_contents:
@@ -39,6 +45,15 @@ def run(state: Dict[str, Any], config: MergeConfig = None) -> Dict[str, Any]:
         logs.append(f"[MergeNode] Final merged pool: {len(merged)} items")
 
     state["raw_contents"] = merged
+    _elapsed = _time.time() - _t0
+    auto_count = sum(1 for item in merged if item.get('_source_channel') == 'auto')
+    manual_count = sum(1 for item in merged if item.get('_source_channel') == 'manual')
+    logs.append(f"[MergeNode] ========== 节点完成 ==========")
+    logs.append(f"[MergeNode] 完成时间: {datetime.now().isoformat()} | 耗时: {_elapsed:.2f}s")
+    logs.append(f"[MergeNode] 输出: raw_contents={len(merged)} items")
+    logs.append(f"[MergeNode] 来源分布: auto={auto_count}, manual={manual_count}")
+    logs.append(f"[MergeNode] 错误数: {len([e for e in errors if e.get('node') == 'merge'])}")
+    
     state["logs"] = logs
     state["errors"] = errors
     return state

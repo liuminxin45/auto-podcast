@@ -19,6 +19,8 @@ def run(state: Dict[str, Any], config: TTSConfig = None) -> Dict[str, Any]:
     try:
         Path(config.output_dir).mkdir(parents=True, exist_ok=True)
         episode_id = state.get("episode_id", "unknown")
+        
+        logs.append(f"[TTSNode] 使用引擎: {config.engine}")
         if config.engine == "edge-tts":
             segments = asyncio.run(_synthesize_all_edge(stages, config, episode_id))
         elif config.engine == "doubao_tts":
@@ -28,7 +30,7 @@ def run(state: Dict[str, Any], config: TTSConfig = None) -> Dict[str, Any]:
         else:
             raise ValueError(f"Unsupported TTS engine: {config.engine}")
         state["audio_segments"] = segments
-        logs.append(f"[TTSNode] Generated {len(segments)} audio segments")
+        logs.append(f"[TTSNode] 音频生成完成: {len(segments)} segments")
     except Exception as e:
         errors.append({"node": "tts", "message": str(e), "detail": str(e)})
         state["logs"] = logs

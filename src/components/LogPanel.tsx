@@ -13,6 +13,19 @@ export default function LogPanel({ workflow, collapsed = false, onToggle, showTo
   const logs = state.logs || []
   const errors = state.errors || []
   const nodeExecutions = workflow?.nodeExecutions || {}
+  const logContainerRef = useRef<HTMLDivElement>(null)
+  const [filterText, setFilterText] = useState('')
+  const [autoScroll, setAutoScroll] = useState(true)
+
+  useEffect(() => {
+    if (autoScroll && logContainerRef.current) {
+      logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight
+    }
+  }, [logs.length, autoScroll])
+
+  const filteredLogs = filterText
+    ? logs.filter((log: string) => log.toLowerCase().includes(filterText.toLowerCase()))
+    : logs
   
   const handleCopyLogs = () => {
     const logsText = logs.join('\n')

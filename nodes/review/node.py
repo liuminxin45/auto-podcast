@@ -26,13 +26,21 @@ def run(state: Dict[str, Any], config: ReviewConfig = None) -> Dict[str, Any]:
     config = config or ReviewConfig()
     logs = state.get("logs", [])
     errors = state.get("errors", [])
-
-    logs.append("[ReviewNode] Starting final review")
-
+    
+    import time as _time
+    from datetime import datetime
+    _t0 = _time.time()
     script = state.get("script", {})
     stages = state.get("stages", [])
     audio_path = state.get("final_audio_path", "")
     cover_path = state.get("cover_path", "")
+    
+    logs.append(f"[ReviewNode] ========== 节点启动 ==========")
+    logs.append(f"[ReviewNode] 启动时间: {datetime.now().isoformat()}")
+    logs.append(f"[ReviewNode] 输入状态: episode_id={state.get('episode_id', 'N/A')}")
+    logs.append(f"[ReviewNode] 输入: script={bool(script)}, stages={len(stages)}, audio={bool(audio_path)}, cover={bool(cover_path)}")
+    _dbg = state.get("runtime_config", {}).get("debug_mode", {}).get("enabled", False)
+    logs.append(f"[ReviewNode] debug_mode={_dbg} (此节点不使用LLM, 不受debug_mode影响)")
 
     checks: List[Dict[str, str]] = []
     for ok, fail_level, fail_msg, pass_msg in _build_checks(state):
@@ -53,8 +61,18 @@ def run(state: Dict[str, Any], config: ReviewConfig = None) -> Dict[str, Any]:
     }
 
     state["review_summary"] = review
-    logs.append(f"[ReviewNode] Review complete: {review['score']} checks passed")
-    logs.append(f"[ReviewNode] Title: {review['title']}")
+    
+    _elapsed = _time.time() - _t0
+    logs.append(f"[ReviewNode] ========== 节点完成 ==========")
+    logs.append(f"[ReviewNode] 完成时间: {datetime.now().isoformat()} | 耗时: {_elapsed:.2f}s")
+    logs.append(f"[ReviewNode] 输出: review_summary.score={review['score']}")
+    logs.append(f"[ReviewNode] 标题: {review['title']}")
+    logs.append(f"[ReviewNode] 检查项: {len(checks)} total, {pass_count} passed")
+    failed_checks = [c for c in checks if c['level'] != 'pass']
+    if failed_checks:
+        for check in failed_checks:
+            logs.append(f"[ReviewNode]   [{check['level'].upper()}] {check['message']}")
+    logs.append(f"[ReviewNode] 错误数: {len([e for e in errors if e.get('node') == 'review'])}")
 
     state["logs"] = logs
     state["errors"] = errors

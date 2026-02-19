@@ -38,8 +38,8 @@ class ScriptConfig(NodeConfigBase, LLMConfigMixin):
         description="是否需要人工审批。开启后，脚本生成完成会暂停等待人工审批；关闭则由AI自动处理"
     )
     words_per_minute: int = Field(
-        default=150,
+        default=300,
         ge=50,
-        le=400,
-        description="语速（字/分钟），用于估算段落时长"
+        le=600,
+        description="语速（字/分钟），用于估算段落时长。中文TTS（edge-tts）实际语速约280-320字/分钟"
     )
