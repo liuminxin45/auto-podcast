@@ -168,6 +168,24 @@ def _cluster_contents(contents: List[Dict], config: TopicSelectionConfig, logs: 
     return clusters
 
 
+def _keyword_prefilter(contents: List[Dict], topic: str, cap: int) -> tuple:
+    """Reorder candidates by topic keyword relevance before LLM evaluation.
+    Ensures the capped LLM input contains the most likely relevant items,
+    not just the top-N by hotlist rank."""
+    import re
+    keywords = [w for w in re.findall(r'[\u4e00-\u9fff]{2,}|[A-Za-z0-9]{3,}', topic) if len(w) >= 2]
+    if not keywords:
+        return contents[:cap], contents[cap:]
+
+    def _score(item: Dict) -> int:
+        text = (item.get('title', '') + ' ' + item.get('content', '')[:150]).lower()
+        return sum(1 for kw in keywords if kw.lower() in text)
+
+    scored = sorted(range(len(contents)), key=lambda i: _score(contents[i]), reverse=True)
+    ordered = [contents[i] for i in scored]
+    return ordered[:cap], ordered[cap:]
+
+
 def _analyze_relevance(contents: List[Dict], config: TopicSelectionConfig, logs: List[str], debug_mode: bool = False) -> tuple:
     """Analyze content relevance using LLM. Returns (selected, rejected)."""
     logs.append(f"[TopicSelection] _analyze_relevance called with {len(contents)} items (debug_mode={debug_mode})")
@@ -187,9 +205,10 @@ def _analyze_relevance(contents: List[Dict], config: TopicSelectionConfig, logs:
     
     try:
         llm_input_cap = max(config.max_items * 3, 20)
-        llm_candidates = time_filtered[:llm_input_cap]
-        skipped_candidates = time_filtered[llm_input_cap:]
-        logs.append(f"[TopicSelection] LLM候选池: max_items={config.max_items} → 候选上限={llm_input_cap} (max_items*3)")
+        llm_candidates, skipped_candidates = _keyword_prefilter(
+            time_filtered, config.target_topic, llm_input_cap
+        )
+        logs.append(f"[TopicSelection] LLM候选池: max_items={config.max_items} → 候选上限={llm_input_cap} (max_items*3, 关键词预排序)")
         if skipped_candidates:
             logs.append(
                 f"[TopicSelection] LLM input capped: {len(llm_candidates)}/{len(time_filtered)} items (skipped={len(skipped_candidates)})"
@@ -207,7 +226,11 @@ def _analyze_relevance(contents: List[Dict], config: TopicSelectionConfig, logs:
         logs.append(f"[TopicSelection] LLM analysis completed in {elapsed:.2f}s")
         
         analyzed.sort(key=lambda x: x.get("_topic_score", 0), reverse=True)
-        selected = [item for item in analyzed if item.get("_topic_decision") == "keep"][:config.max_items]
+        selected = [
+            item for item in analyzed
+            if item.get("_topic_decision") == "keep"
+            and item.get("_topic_score", 0) >= config.min_match_score
+        ][:config.max_items]
         rejected = [item for item in analyzed if item.get("_topic_decision") != "keep"]
         rejected += skipped_candidates
         rejected += [c for c in contents if c not in time_filtered]
@@ -279,7 +302,13 @@ def _llm_batch_analyze(contents: List[Dict], config: TopicSelectionConfig, clien
         prompt = f"""你是专业的内容主编。当前选题任务：{config.target_topic}
 {'额外要求：' + config.focus_instruction if config.focus_instruction else ''}
 
-请分析以下文章是否适合作为选题素材。
+请评估以下文章与选题方向的相关性。评分标准（严格执行）：
+- 90-100分：核心直接相关，明确涉及该领域
+- 70-89分：有明确关联点，可从选题角度自然切入
+- 50-69分：弱相关，需要较多延伸解读才能关联
+- 0-49分：实质无关或强行关联
+
+决策规则：score≥70且内容有实际利用价值才选keep，否则一律drop。
 
 文章列表：
 """

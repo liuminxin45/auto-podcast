@@ -28,15 +28,26 @@ class AIDailyNewsSource(FetchSourceBase):
         - date: 新闻日期（可选，默认当天）
         - encoding: 编码方式（text/json/markdown）
         """
+        url = "https://60s.viki.moe/v2/ai-news"
+        today = datetime.now().strftime('%Y-%m-%d')
+        yesterday = (datetime.now() - __import__('datetime').timedelta(days=1)).strftime('%Y-%m-%d')
+        
         try:
-            url = "https://60s.viki.moe/v2/ai-news"
-            items = self._fetch_by_date(url, None)
+            items = self._fetch_by_date(url, None, fetch_logs)
+            if items:
+                return items
+            if fetch_logs:
+                fetch_logs.append(f"[AIDailyNews] 今日({today})无数据，尝试昨日({yesterday})")
+            items = self._fetch_by_date(url, yesterday, fetch_logs)
+            if not items and fetch_logs:
+                fetch_logs.append(f"[AIDailyNews] 昨日亦无数据，来源可能暂时不可用")
             return items
-            
-        except Exception:
+        except Exception as e:
+            if fetch_logs:
+                fetch_logs.append(f"[AIDailyNews] ✗ fetch异常: {type(e).__name__}: {e}")
             return []
     
-    def _fetch_by_date(self, url: str, date: str = None) -> List[Dict[str, Any]]:
+    def _fetch_by_date(self, url: str, date: str = None, fetch_logs: Optional[List[str]] = None) -> List[Dict[str, Any]]:
         """按日期获取资讯"""
         try:
             params = {"encoding": "json"}
@@ -49,7 +60,10 @@ class AIDailyNewsSource(FetchSourceBase):
             data = response.json()
             
             # 检查响应格式
-            if data.get('code') != 200:
+            code = data.get('code')
+            if code != 200:
+                if fetch_logs:
+                    fetch_logs.append(f"[AIDailyNews] API返回非200状态: code={code}, msg={data.get('message', data.get('msg', ''))[:100]}")
                 return []
             
             # 提取新闻数据
@@ -58,6 +72,8 @@ class AIDailyNewsSource(FetchSourceBase):
             news_date = news_data.get('date', date or datetime.now().strftime('%Y-%m-%d'))
             
             if not news_list:
+                if fetch_logs:
+                    fetch_logs.append(f"[AIDailyNews] API响应正常但news列表为空 (date={news_date}), data keys={list(news_data.keys())}")
                 return []
             
             # 转换为标准格式
@@ -74,9 +90,13 @@ class AIDailyNewsSource(FetchSourceBase):
             
             return items
             
-        except requests.exceptions.RequestException:
+        except requests.exceptions.RequestException as e:
+            if fetch_logs:
+                fetch_logs.append(f"[AIDailyNews] ✗ 网络请求失败: {type(e).__name__}: {e}")
             return []
-        except Exception:
+        except Exception as e:
+            if fetch_logs:
+                fetch_logs.append(f"[AIDailyNews] ✗ 解析异常: {type(e).__name__}: {e}")
             return []
 
 
