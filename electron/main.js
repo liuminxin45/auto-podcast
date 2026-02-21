@@ -3,7 +3,6 @@ const path = require('path')
 const fs = require('fs')
 const { spawn } = require('child_process')
 const ConfigManager = require('./configManager')
-const { validateNodeOutput } = require('./nodeValidator')
 const { fetchModels, callLLM } = require('./llmService')
 const { PROVIDER_TO_ENGINE, buildTTSConfig, validateProviderConfig, buildStages } = require('./services/providerConfigBuilder')
 
@@ -56,7 +55,6 @@ function getCleanSpawnEnv(extra = {}) {
 
 let mainWindow = null
 let configManager = null
-
 let currentWorkflow = null
 const WORKFLOW_DIR = path.join(__dirname, '..', 'out', 'workflows')
 
@@ -457,23 +455,8 @@ function getRadarCachePath() {
   return path.join(app.getPath('userData'), 'radar-cache.json')
 }
 
-function loadRadarCache() {
-  try {
-    const cachePath = getRadarCachePath()
-    if (fs.existsSync(cachePath)) {
-      const raw = JSON.parse(fs.readFileSync(cachePath, 'utf-8'))
-      return {
-        ...DEFAULT_RADAR_STATE,
-        ...raw,
-        running: false,
-        contents: Array.isArray(raw.contents) ? raw.contents : []
-      }
-    }
-  } catch (error) {
-    console.warn('Failed to load radar cache:', error)
-  }
-  return { ...DEFAULT_RADAR_STATE }
-}
+// ── Radar Service (extracted) ─────────────────────────────────────
+const radar = require('./radarService').create(sharedCtx)
 
 function saveRadarCache() {
   try {
@@ -824,8 +807,7 @@ ipcMain.handle('workflow:approve', async (event, workflowId, nodeName, approved,
   currentWorkflow.approvals[nodeName] = approved ? 'approved' : 'rejected'
   
   if (approved) {
-    // Resume workflow
-    runWorkflow(workflowId, nodeName)
+    workflow.run(workflowId, nodeName)
   }
   
   return { status: 'ok' }
@@ -1575,12 +1557,15 @@ app.whenReady().then(() => {
     broadcastRadarUpdate()
   }
 
-  const trendradarInterval = fetchConfig.trendradar_interval_min || 30
-  startTrendRadarDaemon(trendradarInterval)
+  if (fetchConfig.monitor_enabled) {
+    radar.start(fetchConfig)
+  } else {
+    radar.broadcast()
+  }
 })
 
 app.on('before-quit', () => {
-  stopTrendRadarDaemon()
+  // cleanup if needed
 })
 
 app.on('window-all-closed', () => {

@@ -2,42 +2,33 @@ from typing import Dict, Any, List
 from datetime import datetime, timedelta
 from nodes.topic_selection.config import TopicSelectionConfig
 from protocol.llm_client import LLMClient, LLMError
+from protocol.node_runner import NodeContext
 
 
 def run(state: Dict[str, Any], config: TopicSelectionConfig = None) -> Dict[str, Any]:
     config = config or TopicSelectionConfig()
-    logs = state.get("logs", [])
-    errors = state.get("errors", [])
-    
-    import time as _time
-    _t0 = _time.time()
+    ctx = NodeContext("TopicSelectionNode", state)
     runtime_config = state.get("runtime_config", {})
     organize_config = runtime_config.get("organize", {})
     is_ai_mode = organize_config.get("mode") == "ai"
-    auto_execute = runtime_config.get("auto_execute", False)
     contents = state.get("researched_contents", [])
-    
-    logs.append(f"[TopicSelectionNode] ========== 节点启动 ==========")
-    logs.append(f"[TopicSelectionNode] 启动时间: {datetime.now().isoformat()}")
-    logs.append(f"[TopicSelectionNode] 输入状态: episode_id={state.get('episode_id', 'N/A')}")
-    logs.append(f"[TopicSelectionNode] 输入: researched_contents={len(contents)} items")
-    
+
     # Get LLM config from script node if not set
-    if auto_execute and is_ai_mode:
+    if ctx.auto_execute and is_ai_mode:
         script_config = runtime_config.get("script", {})
         if not config.api_key and script_config.get("api_key"):
             config.api_key = script_config.get("api_key")
             config.api_base = script_config.get("api_base", "")
             config.llm_model = script_config.get("llm_model", "gpt-4o-mini")
             config.temperature = script_config.get("temperature", 0.3)
-            logs.append(f"[TopicSelectionNode] Using LLM config from script node: {config.api_base[:30]}... / {config.llm_model}")
+            ctx.log(f"Using LLM config from script node: {config.api_base[:30]}... / {config.llm_model}")
 
     # In auto_execute mode, always use analyze_relevance with target_topic from runtime_config
     discover_config = runtime_config.get("discover", {})
     target_topic_from_runtime = discover_config.get("target_topic", "")
     time_range_from_runtime = discover_config.get("time_range_hours", 72)
 
-    if auto_execute and target_topic_from_runtime:
+    if ctx.auto_execute and target_topic_from_runtime:
         mode = "analyze_relevance"
         config.target_topic = target_topic_from_runtime
         config.time_range_hours = time_range_from_runtime
@@ -45,57 +36,51 @@ def run(state: Dict[str, Any], config: TopicSelectionConfig = None) -> Dict[str,
     else:
         mode = config.mode
 
-    debug_mode = runtime_config.get("debug_mode", {}).get("enabled", False)
-    if debug_mode:
-        logs.append(f"[TopicSelectionNode] ⚡ DEBUG MODE ACTIVE")
-        logs.append(f"[TopicSelectionNode]   效果说明: batch_size=1 (逐条分析), Prompt截断至150字, max_tokens=200")
-    else:
-        logs.append(f"[TopicSelectionNode] 运行模式: 正常 (debug_mode=False)")
-    logs.append(f"[TopicSelectionNode] 配置: mode={mode}, AI={is_ai_mode}, auto={auto_execute}")
-    if auto_execute and target_topic_from_runtime:
-        logs.append(f"[TopicSelectionNode] Target topic: '{target_topic_from_runtime}', time_range={time_range_from_runtime}h, max_items={config.max_items}")
+    ctx.log_start(
+        f"输入: researched_contents={len(contents)} items | "
+        f"mode={mode}, AI={is_ai_mode}, auto={ctx.auto_execute}",
+        uses_llm=True,
+    )
+    if ctx.auto_execute and target_topic_from_runtime:
+        ctx.log(f"Target topic: '{target_topic_from_runtime}', time_range={time_range_from_runtime}h, max_items={config.max_items}")
 
     try:
         if not contents:
-            errors.append({"node": "topic_selection", "message": "No content for topic selection"})
-            state["logs"] = logs
-            state["errors"] = errors
-            return state
+            ctx.add_error("topic_selection", "No content for topic selection")
+            ctx.log_end("输出: (无内容)")
+            return ctx.finalize(state)
 
         if mode == "analyze_relevance":
             # Auto selection mode: select multiple relevant materials by topic
-            logs.append(f"[TopicSelectionNode] Auto-selection for topic: {config.target_topic}")
-            if debug_mode:
-                logs.append(f"[TopicSelectionNode] ⚡ DEBUG: 将对 {len(contents)} 条内容逐一调用LLM评分")
-            selected, rejected = _analyze_relevance(contents, config, logs, debug_mode=debug_mode)
+            ctx.log(f"Auto-selection for topic: {config.target_topic}")
+            selected, rejected = _analyze_relevance(contents, config, ctx.logs, debug_mode=ctx.debug_mode)
 
-            if auto_execute:
-                # In auto_execute, selected materials go to organized layer as inputs
+            if ctx.auto_execute:
                 state["selected_materials"] = selected
                 state["selected_topic"] = {
                     "title": config.target_topic,
                     "description": f"围绕\"{config.target_topic}\"筛选的 {len(selected)} 条相关素材",
                     "keywords": [],
                 }
-                logs.append(f"[TopicSelectionNode] ✓ Selected {len(selected)} materials for topic '{config.target_topic}'")
+                ctx.log(f"✓ Selected {len(selected)} materials for topic '{config.target_topic}'")
             else:
                 state["auto_selected_items"] = selected
                 state["auto_rejected_items"] = rejected
-                logs.append(f"[TopicSelectionNode] Selected {len(selected)}, Rejected {len(rejected)}")
+                ctx.log(f"Selected {len(selected)}, Rejected {len(rejected)}")
         else:
             # Traditional cluster mode with LLM scoring if AI mode
-            if auto_execute and is_ai_mode:
-                logs.append("[TopicSelectionNode] Using AI-powered clustering")
+            if ctx.auto_execute and is_ai_mode:
+                ctx.log("Using AI-powered clustering")
                 config.use_llm_scoring = True
-            
-            logs.append(f"[TopicSelectionNode] Clustering {len(contents)} items (min_cluster_size={config.min_cluster_size})")
-            clusters = _cluster_contents(contents, config, logs)
-            
+
+            ctx.log(f"Clustering {len(contents)} items (min_cluster_size={config.min_cluster_size})")
+            clusters = _cluster_contents(contents, config, ctx.logs)
+
             if clusters:
-                logs.append(f"[TopicSelectionNode] Found {len(clusters)} clusters")
+                ctx.log(f"Found {len(clusters)} clusters")
                 for i, cluster in enumerate(clusters):
-                    logs.append(f"[TopicSelectionNode]   Cluster {i+1}: {len(cluster.get('items', []))} items - {cluster.get('title', 'Unknown')}")
-                
+                    ctx.log(f"  Cluster {i+1}: {len(cluster.get('items', []))} items - {cluster.get('title', 'Unknown')}")
+
                 best = max(clusters, key=lambda c: len(c["items"]))
                 state["selected_topic"] = {
                     "title": best.get("title", ""),
@@ -103,62 +88,110 @@ def run(state: Dict[str, Any], config: TopicSelectionConfig = None) -> Dict[str,
                     "keywords": best.get("keywords", []),
                 }
                 state["selected_materials"] = best.get("items", [])
-                logs.append(f"[TopicSelectionNode] ✓ Selected cluster: '{state['selected_topic']['title']}' with {len(state['selected_materials'])} materials")
+                ctx.log(f"✓ Selected cluster: '{state['selected_topic']['title']}' with {len(state['selected_materials'])} materials")
             else:
-                logs.append("[TopicSelectionNode] No clusters formed, using all contents")
+                ctx.log("No clusters formed, using all contents")
                 state["selected_topic"] = {"title": "General Topic", "description": "", "keywords": []}
                 state["selected_materials"] = contents
-                logs.append(f"[TopicSelectionNode] Using all {len(contents)} items as materials")
     except Exception as e:
-        errors.append({"node": "topic_selection", "message": str(e), "detail": str(e)})
-        logs.append(f"[TopicSelectionNode] Error: {str(e)}")
+        ctx.add_error("topic_selection", str(e), str(e))
+        ctx.log(f"Error: {str(e)}")
 
     selected_topic = state.get("selected_topic", {})
     selected_materials = state.get("selected_materials", [])
-    _elapsed = _time.time() - _t0
-    logs.append(f"[TopicSelectionNode] ========== 节点完成 ==========")
-    logs.append(f"[TopicSelectionNode] 完成时间: {datetime.now().isoformat()} | 耗时: {_elapsed:.2f}s")
-    logs.append(f"[TopicSelectionNode] 输出: selected_topic='{selected_topic.get('title', 'N/A')[:50]}', selected_materials={len(selected_materials)} items")
+    detail = f"输出: selected_topic='{selected_topic.get('title', 'N/A')[:50]}', selected_materials={len(selected_materials)} items"
     if selected_materials:
         sample_titles = [m.get('title', 'Untitled')[:40] for m in selected_materials[:3]]
-        logs.append(f"[TopicSelectionNode] 样本素材: {sample_titles}")
-    logs.append(f"[TopicSelectionNode] 错误数: {len([e for e in errors if e.get('node') == 'topic_selection'])}")
-    
-    state["logs"] = logs
-    state["errors"] = errors
-    return state
+        detail += f" | 样本: {sample_titles}"
+    ctx.log_end(detail)
+    return ctx.finalize(state)
 
 
 def _cluster_contents(contents: List[Dict], config: TopicSelectionConfig, logs: List[str]) -> List[Dict]:
+    """Pure-Python content clustering using TF vectors + cosine similarity.
+    No external dependencies (replaces sklearn TF-IDF + KMeans)."""
     if len(contents) < config.min_cluster_size:
         logs.append(f"[TopicSelection] Content count ({len(contents)}) < min_cluster_size ({config.min_cluster_size}), creating single cluster")
         return [{"title": "General Topic", "description": "", "keywords": [], "items": contents}]
 
-    logs.append("[TopicSelection] Starting TF-IDF vectorization...")
-    from sklearn.feature_extraction.text import TfidfVectorizer
-    from sklearn.cluster import KMeans
+    import re
+    import math
+    from collections import Counter
 
-    texts = [item.get("content", "") for item in contents]
-    vectorizer = TfidfVectorizer(max_features=100)
-    X = vectorizer.fit_transform(texts)
-    logs.append(f"[TopicSelection] Vectorized {len(texts)} documents into {X.shape[1]} features")
+    logs.append("[TopicSelection] Starting pure-Python TF vectorization...")
 
+    # Tokenize each document
+    def tokenize(text: str) -> List[str]:
+        text = text.lower()
+        # Split on non-word chars, keep Chinese chars and alphanumeric
+        tokens = re.findall(r'[\u4e00-\u9fff]+|[a-z0-9]{2,}', text)
+        return tokens
+
+    doc_tokens = [tokenize(item.get("content", "") + " " + item.get("title", "")) for item in contents]
+
+    # Build vocabulary from top terms by document frequency
+    df: Counter = Counter()
+    for tokens in doc_tokens:
+        for t in set(tokens):
+            df[t] += 1
+    # Filter: appear in at least 2 docs, at most 80% of docs
+    max_df = max(2, int(len(contents) * 0.8))
+    vocab = [t for t, count in df.most_common(200) if 2 <= count <= max_df][:100]
+    logs.append(f"[TopicSelection] Vocabulary: {len(vocab)} terms from {len(contents)} documents")
+
+    if not vocab:
+        logs.append("[TopicSelection] Empty vocabulary, returning single cluster")
+        return [{"title": "General Topic", "description": "", "keywords": [], "items": contents}]
+
+    # Build TF vectors
+    vectors: List[List[float]] = []
+    for tokens in doc_tokens:
+        tf = Counter(tokens)
+        vec = [tf.get(t, 0) for t in vocab]
+        # Normalize
+        norm = math.sqrt(sum(v * v for v in vec)) or 1.0
+        vectors.append([v / norm for v in vec])
+
+    # Simple K-Means clustering (pure Python)
     n_clusters = max(1, min(3, len(contents) // config.min_cluster_size))
-    logs.append(f"[TopicSelection] Running K-Means with {n_clusters} clusters...")
-    kmeans = KMeans(n_clusters=n_clusters, random_state=42)
-    labels = kmeans.fit_predict(X)
-    logs.append(f"[TopicSelection] K-Means clustering completed")
+    logs.append(f"[TopicSelection] Running pure-Python K-Means with {n_clusters} clusters...")
+
+    # Initialize centroids using first n_clusters items (deterministic)
+    dim = len(vocab)
+    centroids = [list(vectors[i * len(vectors) // n_clusters]) for i in range(n_clusters)]
+    labels = [0] * len(vectors)
+
+    for iteration in range(20):
+        # Assign each point to nearest centroid
+        changed = 0
+        for i, vec in enumerate(vectors):
+            best_c = 0
+            best_sim = -1.0
+            for c in range(n_clusters):
+                sim = sum(a * b for a, b in zip(vec, centroids[c]))
+                if sim > best_sim:
+                    best_sim = sim
+                    best_c = c
+            if labels[i] != best_c:
+                changed += 1
+            labels[i] = best_c
+        if changed == 0:
+            break
+        # Recompute centroids
+        for c in range(n_clusters):
+            members = [vectors[i] for i in range(len(vectors)) if labels[i] == c]
+            if members:
+                centroids[c] = [sum(m[d] for m in members) / len(members) for d in range(dim)]
+
+    logs.append(f"[TopicSelection] K-Means completed in {iteration + 1} iterations")
 
     clusters = []
     for i in range(n_clusters):
         cluster_items = [contents[j] for j in range(len(contents)) if labels[j] == i]
         if cluster_items:
-            # Get top keywords from cluster
             cluster_title = f"Topic Cluster {i+1}"
-            if cluster_items:
-                sample_titles = [item.get('title', '')[:30] for item in cluster_items[:3]]
-                logs.append(f"[TopicSelection] Cluster {i+1}: {len(cluster_items)} items, samples: {sample_titles}")
-            
+            sample_titles = [item.get('title', '')[:30] for item in cluster_items[:3]]
+            logs.append(f"[TopicSelection] Cluster {i+1}: {len(cluster_items)} items, samples: {sample_titles}")
             clusters.append({
                 "title": cluster_title,
                 "description": "",

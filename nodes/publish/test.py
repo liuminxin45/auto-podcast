@@ -39,7 +39,7 @@ def test_publish_node():
         assert state["rss_path"].endswith(".xml"), "RSS should be an XML file"
 
     
-    print_success("Publish node test passed: {state['rss_path']}")
+    print_success(f"Publish node test passed: {state['rss_path']}")
     return True
 
 

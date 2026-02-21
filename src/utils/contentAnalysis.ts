@@ -1,4 +1,5 @@
 import { CATEGORY_RULES, type CategoryRule } from '../constants/categories'
+import { CLUSTER_COLORS } from '../constants/colors'
 import type { ContentItem } from '../types/workflow'
 
 export function detectCategory(item: ContentItem): CategoryRule | null {
@@ -130,17 +131,6 @@ export interface AIAnalysisResult {
   clusters: TopicCluster[]
   hints: Map<number, ItemAIHints>
 }
-
-const CLUSTER_COLORS = [
-  { color: '#2563eb', bg: '#eff6ff' },
-  { color: '#7c3aed', bg: '#f5f3ff' },
-  { color: '#059669', bg: '#ecfdf5' },
-  { color: '#d97706', bg: '#fffbeb' },
-  { color: '#dc2626', bg: '#fef2f2' },
-  { color: '#0891b2', bg: '#ecfeff' },
-  { color: '#c026d3', bg: '#fdf4ff' },
-  { color: '#4f46e5', bg: '#eef2ff' },
-]
 
 export const PRIORITY_HINT_CONFIG: Record<PriorityHint, { label: string; color: string; bg: string; icon: string }> = {
   mainline:   { label: '可能主线', color: '#1d4ed8', bg: '#dbeafe', icon: '◆' },

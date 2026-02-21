@@ -32,7 +32,7 @@ def test_audio_postprocess_node():
         assert isinstance(state["audio_metadata"], dict), "audio_metadata should be a dict"
 
     
-    print_success("Audio postprocess node test passed: {state['final_audio_path']}")
+    print_success(f"Audio postprocess node test passed: {state['final_audio_path']}")
     return True
 
 

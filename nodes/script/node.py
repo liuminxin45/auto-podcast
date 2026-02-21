@@ -3,6 +3,8 @@ import json
 import re
 from typing import Dict, Any
 from nodes.script.config import ScriptConfig
+from protocol.llm_client import LLMClient
+from protocol.node_runner import NodeContext
 
 
 def _build_materials_text(materials: list) -> str:
@@ -22,10 +24,6 @@ def _build_story_prompt(topic: Dict[str, Any], config: ScriptConfig, materials_t
             '        {"id": "reflection", "type": "reflection", "label": "思考感悟", "speaker": "Host A", "text": "..."},\n'
             '        {"id": "closing", "type": "closing", "label": "结尾", "speaker": "Host A", "text": "..."}'
         )
-        dialogue_example = (
-            '{"speaker": "Host A", "text": "..."},\n'
-            '        {"speaker": "Host A", "text": "..."}'
-        )
     else:
         host_desc = f"multi-host dialogue ({config.num_hosts} hosts: Host A, Host B)"
         structure_desc = "opening + multiple mainline segments + cross-host discussion + closing"
@@ -34,10 +32,6 @@ def _build_story_prompt(topic: Dict[str, Any], config: ScriptConfig, materials_t
             '        {"id": "mainline_1", "type": "mainline", "label": "主线一", "speaker": "Host A", "text": "..."},\n'
             '        {"id": "discussion", "type": "discussion", "label": "延伸讨论", "speaker": "Host B", "text": "..."},\n'
             '        {"id": "closing", "type": "closing", "label": "结尾", "speaker": "Host A", "text": "..."}'
-        )
-        dialogue_example = (
-            '{"speaker": "Host A", "text": "..."},\n'
-            '        {"speaker": "Host B", "text": "..."}'
         )
     target_chars = config.target_duration_minutes * config.words_per_minute
     return f"""Generate a {config.target_duration_minutes}-minute Chinese podcast script.
@@ -71,10 +65,8 @@ Return JSON (sections only, no dialogue field needed):
 def _build_news_brief_prompt(topic: Dict[str, Any], config: ScriptConfig, materials_text: str) -> str:
     if config.num_hosts == 1:
         host_desc = "solo narration (1 host, all lines by Host A)"
-        news_section_speaker = "Host A"
     else:
         host_desc = f"multi-host dialogue ({config.num_hosts} hosts: Host A, Host B)"
-        news_section_speaker = "Host A\", \"Host B"
     target_chars = config.target_duration_minutes * config.words_per_minute
     return f"""Generate a {config.target_duration_minutes}-minute Chinese news brief podcast script.
 
@@ -112,6 +104,11 @@ PROMPT_BUILDERS = {
     "news_brief": _build_news_brief_prompt,
 }
 
+SYSTEM_PROMPTS = {
+    "story": "You are a professional podcast script writer.",
+    "news_brief": "You are a professional news podcast editor skilled in concise daily briefings.",
+}
+
 
 def _normalize_script(content_type: str, raw_script: Dict[str, Any], topic: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(raw_script, dict):
@@ -143,39 +140,29 @@ def _normalize_script(content_type: str, raw_script: Dict[str, Any], topic: Dict
 
 def run(state: Dict[str, Any], config: ScriptConfig = None) -> Dict[str, Any]:
     config = config or ScriptConfig()
-    logs = state.get("logs", [])
-    errors = state.get("errors", [])
-    
-    import time as _time
-    from datetime import datetime
-    _t0 = _time.time()
+    ctx = NodeContext("ScriptNode", state)
     topic = state.get("selected_topic", {})
     materials = state.get("selected_materials", [])
-    runtime_config = state.get("runtime_config", {})
-    debug_mode = runtime_config.get("debug_mode", {}).get("enabled", False)
-    
-    logs.append(f"[ScriptNode] ========== 节点启动 ==========")
-    logs.append(f"[ScriptNode] 启动时间: {datetime.now().isoformat()}")
-    logs.append(f"[ScriptNode] 输入状态: episode_id={state.get('episode_id', 'N/A')}")
-    logs.append(f"[ScriptNode] 输入: selected_topic='{topic.get('title', 'N/A')[:50]}', selected_materials={len(materials)} items")
-    logs.append(f"[ScriptNode] 配置: content_type={config.content_type}, target_duration={config.target_duration_minutes}min, num_hosts={config.num_hosts}")
-    if debug_mode:
-        logs.append(f"[ScriptNode] ⚡ DEBUG MODE ACTIVE")
-        logs.append(f"[ScriptNode]   效果说明: 使用精简Prompt (不超150字), timeout=30s, 个人化输出将被截断")
-    else:
-        logs.append(f"[ScriptNode] 运行模式: 正常 (debug_mode=False)")
+
+    ctx.log_start(
+        f"输入: selected_topic='{topic.get('title', 'N/A')[:50]}', "
+        f"selected_materials={len(materials)} items | "
+        f"content_type={config.content_type}, "
+        f"target_duration={config.target_duration_minutes}min, "
+        f"num_hosts={config.num_hosts}",
+        uses_llm=True,
+    )
 
     try:
         if not topic or not materials:
-            errors.append({"node": "script", "message": "Missing topic or materials"})
-            state["logs"] = logs
-            state["errors"] = errors
-            return state
+            ctx.add_error("script", "Missing topic or materials")
+            ctx.log_end("输出: (无脚本 — 缺少输入)")
+            return ctx.finalize(state)
 
-        logs.append(f"[ScriptNode] 生成脚本中... (debug_mode={debug_mode})")
-        script = _generate_script(topic, materials, config, debug_mode=debug_mode)
+        ctx.log(f"生成脚本中... (debug_mode={ctx.debug_mode})")
+        script = _generate_script(topic, materials, config, ctx)
         state["script"] = script
-        logs.append(f"[ScriptNode] 脚本生成完成: {script.get('title', '')}")
+        ctx.log(f"脚本生成完成: {script.get('title', '')}")
 
         # Stage segmentation (merged from stages node)
         dialogue = script.get("dialogue", [])
@@ -193,24 +180,21 @@ def run(state: Dict[str, Any], config: ScriptConfig = None) -> Dict[str, Any]:
             })
         state["stages"] = stages
         total_dur = sum(s["estimated_duration"] for s in stages)
-        logs.append(f"[ScriptNode] 分段完成: {len(stages)} segments, 预计时长 ~{total_dur:.0f}s")
+        ctx.log(f"分段完成: {len(stages)} segments, 预计时长 ~{total_dur:.0f}s")
     except Exception as e:
-        errors.append({"node": "script", "message": str(e), "detail": str(e)})
-        logs.append(f"[ScriptNode] ✗ 错误: {str(e)}")
-    
-    _elapsed = _time.time() - _t0
-    logs.append(f"[ScriptNode] ========== 节点完成 ==========")
-    logs.append(f"[ScriptNode] 完成时间: {datetime.now().isoformat()} | 耗时: {_elapsed:.2f}s")
+        ctx.add_error("script", str(e), detail=str(e))
+        ctx.log(f"✗ 错误: {str(e)}")
+
     script = state.get("script", {})
     stages = state.get("stages", [])
-    logs.append(f"[ScriptNode] 输出: script.title='{script.get('title', 'N/A')[:50]}', stages={len(stages)} segments")
+    detail = (
+        f"输出: script.title='{script.get('title', 'N/A')[:50]}', "
+        f"stages={len(stages)} segments"
+    )
     if script:
-        logs.append(f"[ScriptNode] 内容类型: {script.get('content_type', 'N/A')}, 对话行数: {len(script.get('dialogue', []))}")
-    logs.append(f"[ScriptNode] 错误数: {len([e for e in errors if e.get('node') == 'script'])}")
-
-    state["logs"] = logs
-    state["errors"] = errors
-    return state
+        detail += f" | content_type={script.get('content_type', 'N/A')}, dialogue={len(script.get('dialogue', []))}"
+    ctx.log_end(detail)
+    return ctx.finalize(state)
 
 
 def _generate_script(topic: Dict, materials: list, config: ScriptConfig) -> Dict[str, Any]:
@@ -218,55 +202,53 @@ def _generate_script(topic: Dict, materials: list, config: ScriptConfig) -> Dict
     from langchain_core.messages import SystemMessage, HumanMessage
 
     api_key = config.api_key or os.environ.get("OPENAI_API_KEY", "")
-    api_base = config.api_base or os.environ.get("OPENAI_API_BASE", None)
+    api_base = config.api_base or os.environ.get("OPENAI_API_BASE", "")
 
-    # 检查API密鑰
     if not api_key:
         raise ValueError(
             "API key is required for script generation. "
             "Please set api_key in script node config or OPENAI_API_KEY environment variable."
         )
-
-    effective_timeout = min(config.timeout, 30) if debug_mode else config.timeout
-    kwargs = {
-        "model": config.llm_model, 
-        "api_key": api_key, 
-        "temperature": config.temperature,
-        "timeout": effective_timeout,
-        "max_retries": config.max_retries
-    }
-    if api_base:
-        kwargs["base_url"] = api_base
-    
-    llm = ChatOpenAI(**kwargs)
+    if not api_base:
+        raise ValueError(
+            "API base URL is required for script generation. "
+            "Please set api_base in script node config or OPENAI_API_BASE environment variable."
+        )
 
     materials_text = _build_materials_text(materials)
     content_type = config.content_type if config.content_type in PROMPT_BUILDERS else "story"
-    if debug_mode:
-        prompt = f"""[DEBUG MODE] 生成一个极简单的测试脚本。
-主题: {topic.get('title', '')[:50]}
-Return minimal JSON: {{"title":"测试标题","description":"测试","content_type":"{content_type}","sections":[],"dialogue":[{{"speaker":"Host","text":"DEBUG MODE测试内容"}}]}}"""
+
+    if ctx.debug_mode:
+        prompt = (
+            f"[DEBUG MODE] 生成一个极简单的测试脚本。\n"
+            f"主题: {topic.get('title', '')[:50]}\n"
+            f'Return minimal JSON: {{"title":"测试标题","description":"测试",'
+            f'"content_type":"{content_type}","sections":[],'
+            f'"dialogue":[{{"speaker":"Host","text":"DEBUG MODE测试内容"}}]}}'
+        )
     else:
         prompt = PROMPT_BUILDERS[content_type](topic, config, materials_text)
 
-    system_content_map = {
-        "story": "You are a professional podcast script writer.",
-        "news_brief": "You are a professional news podcast editor skilled in concise daily briefings.",
-    }
+    system_content = SYSTEM_PROMPTS.get(content_type, SYSTEM_PROMPTS["story"])
     messages = [
-        SystemMessage(content=system_content_map.get(content_type, system_content_map["story"])),
-        HumanMessage(content=prompt),
+        {"role": "system", "content": system_content},
+        {"role": "user", "content": prompt},
     ]
-    response = llm.invoke(messages)
-    content = response.content
-    json_match = re.search(r'\{.*\}', content, re.DOTALL)
 
+    effective_timeout = min(config.timeout, 30) if ctx.debug_mode else config.timeout
+
+    with LLMClient(api_base, api_key, config.llm_model, config.temperature, debug_mode=ctx.debug_mode) as client:
+        ctx.log(f"LLM调用: model={config.llm_model}, timeout={effective_timeout}s")
+        response = client.call(messages, timeout=effective_timeout, logs=ctx.logs)
+        content = client.extract_content(response)
+
+    json_match = re.search(r'\{.*\}', content, re.DOTALL)
     if json_match:
         try:
             parsed = json.loads(json_match.group())
             return _normalize_script(content_type, parsed, topic)
         except json.JSONDecodeError:
-            pass
+            ctx.log("⚠ JSON解析失败，使用降级输出")
 
     return _normalize_script(content_type, {
         "title": topic.get("title", "Untitled"),

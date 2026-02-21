@@ -30,7 +30,7 @@ def test_assets_node():
         assert state["cover_path"].endswith((".jpg", ".png")), "Cover should be an image file"
 
     
-    print_success("Assets node test passed: {state['cover_path']}")
+    print_success(f"Assets node test passed: {state['cover_path']}")
     return True
 
 

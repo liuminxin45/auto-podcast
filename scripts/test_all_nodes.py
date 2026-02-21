@@ -6,9 +6,15 @@ Runs test modules for all 11 nodes and reports results.
 """
 
 import sys
+import io
 import subprocess
 from pathlib import Path
 from typing import Dict, Tuple
+
+# Fix Windows gbk encoding for emoji output
+if sys.platform == 'win32':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
 PROJECT_ROOT = Path(__file__).parent.parent
 

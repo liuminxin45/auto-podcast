@@ -1,30 +1,17 @@
-from dataclasses import dataclass
-from typing import Dict, Any
+from pydantic import Field
+from protocol.config_base import NodeConfigBase
 
 
-@dataclass
-class PublishConfig:
+class PublishConfig(NodeConfigBase):
+    """Publish node configuration."""
     # Storage settings (merged from store node)
-    storage_type: str = "local"
-    local_base_dir: str = "out/published"
-    generate_metadata: bool = True
+    storage_type: str = Field(default="local", description="存储类型")
+    local_base_dir: str = Field(default="out/published", description="本地存储根目录")
+    generate_metadata: bool = Field(default=True, description="是否生成metadata.json")
     # RSS / Publish settings
-    rss_output_dir: str = "out/rss"
-    podcast_title: str = "AI Tech Podcast"
-    podcast_description: str = "AI-generated tech podcast"
-    podcast_author: str = "Auto-Podcast"
-    podcast_language: str = "zh-CN"
-    podcast_category: str = "Technology"
-
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "PublishConfig":
-        defaults = {
-            "storage_type": "local", "local_base_dir": "out/published",
-            "generate_metadata": True, "rss_output_dir": "out/rss",
-            "podcast_title": "AI Tech Podcast",
-            "podcast_description": "AI-generated tech podcast",
-            "podcast_author": "Auto-Podcast", "podcast_language": "zh-CN",
-            "podcast_category": "Technology"
-        }
-        merged = {**defaults, **data}
-        return cls(**{k: v for k, v in merged.items() if k in cls.__dataclass_fields__})
+    rss_output_dir: str = Field(default="out/rss", description="RSS输出目录")
+    podcast_title: str = Field(default="AI Tech Podcast", description="播客标题")
+    podcast_description: str = Field(default="AI-generated tech podcast", description="播客描述")
+    podcast_author: str = Field(default="Auto-Podcast", description="播客作者")
+    podcast_language: str = Field(default="zh-CN", description="播客语言")
+    podcast_category: str = Field(default="Technology", description="播客分类")

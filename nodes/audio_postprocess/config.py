@@ -1,21 +1,13 @@
-from dataclasses import dataclass
-from typing import Dict, Any
+from pydantic import Field
+from protocol.config_base import NodeConfigBase
 
 
-@dataclass
-class AudioPostprocessConfig:
-    output_dir: str = "out/episodes"
-    output_format: str = "mp3"
-    normalize_loudness: bool = True
-    target_loudness: float = -16.0
-    add_bgm: bool = False
-    bgm_path: str = ""
-    bgm_volume: float = 0.15
-
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "AudioPostprocessConfig":
-        defaults = {"output_dir": "out/episodes", "output_format": "mp3",
-                    "normalize_loudness": True, "target_loudness": -16.0,
-                    "add_bgm": False, "bgm_path": "", "bgm_volume": 0.15}
-        merged = {**defaults, **data}
-        return cls(**{k: v for k, v in merged.items() if k in cls.__dataclass_fields__})
+class AudioPostprocessConfig(NodeConfigBase):
+    """Audio post-processing node configuration."""
+    output_dir: str = Field(default="out/episodes", description="输出目录")
+    output_format: str = Field(default="mp3", description="输出格式")
+    normalize_loudness: bool = Field(default=True, description="是否归一化响度")
+    target_loudness: float = Field(default=-16.0, description="目标响度(LUFS)")
+    add_bgm: bool = Field(default=False, description="是否添加背景音乐")
+    bgm_path: str = Field(default="", description="背景音乐路径")
+    bgm_volume: float = Field(default=0.15, ge=0.0, le=1.0, description="背景音乐音量(0-1)")

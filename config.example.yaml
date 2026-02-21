@@ -81,5 +81,5 @@ publish:
   podcast_language: "zh-CN"
   podcast_category: "Technology"
 
-subtitles:
-  enabled: false
+# subtitles: (not yet implemented)
+#   enabled: false

@@ -32,7 +32,7 @@ def test_topic_selection_node():
     state = result
 
     
-    print_success("Topic selection node test passed: topic='{state['selected_topic'].get('title', 'N/A')}', {len(state['selected_materials'])} materials")
+    print_success(f"Topic selection node test passed: topic='{state['selected_topic'].get('title', 'N/A')}', {len(state['selected_materials'])} materials")
     return True
 
 

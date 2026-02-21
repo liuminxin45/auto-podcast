@@ -16,6 +16,7 @@ import { VALID_CATEGORY_IDS, getCategoryById, getCategoryListForPrompt } from '.
 import { llmService } from '../services/llmService'
 import { LLMError } from '../types/llm'
 import { isDebugModeEnabled } from './debugMode'
+import { llmConfigResolver, type LLMConfig } from '../services/settings/llmConfigResolver'
 
 export const MAX_NEWS_ITEMS = 500
 const BATCH_SIZE = 20
@@ -31,11 +32,7 @@ export interface LLMClassification {
   fromLLM: boolean
 }
 
-export interface LLMConfig {
-  apiBase: string
-  apiKey: string
-  model: string
-}
+export type { LLMConfig }
 
 export interface ClassifyProgress {
   total: number
@@ -480,29 +477,7 @@ export async function tagUntaggedItems(
 }
 
 export async function loadLLMConfig(): Promise<LLMConfig | null> {
-  if (typeof window === 'undefined' || !(window as any).electronAPI) {
-    return null
-  }
-
-  const api = (window as any).electronAPI
-  const nodeNames = ['research', 'script', 'topic_selection']
-
-  for (const nodeName of nodeNames) {
-    try {
-      const config = await api.loadNodeConfig(nodeName)
-      if (config && (config.api_key || config.apiKey)) {
-        return {
-          apiBase: config.api_base || config.apiBase || 'https://api.openai.com',
-          apiKey: config.api_key || config.apiKey || '',
-          model: config.llm_model || config.model || 'gpt-4o-mini',
-        }
-      }
-    } catch {
-      // continue to next node
-    }
-  }
-
-  return null
+  return llmConfigResolver.getLLMConfig('discover')
 }
 
 /**

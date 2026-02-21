@@ -42,7 +42,7 @@ def test_preprocess_node():
     state = result
 
     
-    print_success("Preprocess node test passed: {initial_count} -> {len(state['cleaned_contents'])} items")
+    print_success(f"Preprocess node test passed: {initial_count} -> {len(state['cleaned_contents'])} items")
     return True
 
 

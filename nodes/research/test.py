@@ -32,7 +32,7 @@ def test_research_node():
     state = result
 
     
-    print_success("Research node test passed: {len(state['researched_contents'])} items researched")
+    print_success(f"Research node test passed: {len(state['researched_contents'])} items researched")
     return True
 
 

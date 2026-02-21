@@ -27,6 +27,12 @@ const { Header, Content } = Layout
 const { Title } = Typography
 const APP_SNAPSHOT_KEY = 'app.workflow.snapshot.v1'
 
+const SuspenseFallback = (
+  <div style={{ position: 'fixed', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.9)', zIndex: 9999 }}>
+    <Spin size="large" tip="加载中..." />
+  </div>
+)
+
 type AppSnapshot = {
   workflow: Workflow | null
   selectedNode: string | null

@@ -2,12 +2,6 @@
  * Debug mode utilities for reducing LLM token usage
  */
 
-declare global {
-  interface Window {
-    __DEBUG_MODE__?: boolean
-  }
-}
-
 export function isDebugModeEnabled(): boolean {
   return typeof window !== 'undefined' && window.__DEBUG_MODE__ === true
 }

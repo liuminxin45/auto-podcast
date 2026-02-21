@@ -7,6 +7,7 @@ Validates output structure and error handling.
 """
 
 import sys
+import io
 import json
 import subprocess
 import os
@@ -42,7 +43,10 @@ def test_node(node_name: str) -> bool:
     test_state = {
         "episode_id": "test_ep",
         "created_at": "2026-02-08T00:00:00",
-        "runtime_config": {},
+        "runtime_config": {
+            # Use offline-only source to avoid network timeouts during verification
+            "fetch": {"enabled_sources": ["example_custom"]},
+        },
         "logs": [],
         "errors": [],
         "fetch_contents": [],

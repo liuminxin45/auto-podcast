@@ -4,6 +4,7 @@ import { LLMError } from '../types/llm'
 import { delay } from './llm/utils'
 import { isDebugModeEnabled } from '../utils/debugMode'
 import { LLM_DEFAULTS } from '../constants/llm'
+import { CLUSTER_COLORS } from '../constants/colors'
 
 export interface OrganizeConfig {
   userInstruction?: string
@@ -42,17 +43,6 @@ export interface ClusterInfo {
   items: ContentItem[]
   color: string
 }
-
-const CLUSTER_COLORS = [
-  '#2563eb',
-  '#7c3aed',
-  '#059669',
-  '#d97706',
-  '#dc2626',
-  '#0891b2',
-  '#c026d3',
-  '#4f46e5',
-]
 
 export class OrganizeAIService {
   private config: OrganizeConfig
@@ -193,7 +183,7 @@ export class OrganizeAIService {
           name: c.name || `话题 ${idx + 1}`,
           description: c.description || '',
           items: [],
-          color: CLUSTER_COLORS[idx % CLUSTER_COLORS.length],
+          color: CLUSTER_COLORS[idx % CLUSTER_COLORS.length].color,
         })
       })
     }

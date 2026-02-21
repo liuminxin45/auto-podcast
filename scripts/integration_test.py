@@ -6,57 +6,70 @@ Tests the complete workflow execution with mock data.
 """
 
 import sys
+import io
 import json
 from pathlib import Path
+
+# Fix Windows gbk encoding for emoji output
+if sys.platform == 'win32':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from protocol.state import PodcastState
-from nodes.fetch.node import run as fetch_run
-from nodes.fetch.config import FetchConfig
 from nodes.preprocess.node import run as preprocess_run
 from nodes.preprocess.config import PreprocessConfig
+from nodes.merge.node import run as merge_run
+from nodes.merge.config import MergeConfig
+from nodes.review.node import run as review_run
+from nodes.review.config import ReviewConfig
 
 
-def test_fetch_to_preprocess_pipeline():
-    """Test basic pipeline: fetch -> preprocess"""
+def test_merge_to_preprocess_pipeline():
+    """Test basic pipeline: merge -> preprocess"""
     print("=" * 60)
-    print("Integration Test: Fetch -> Preprocess")
+    print("Integration Test: Merge -> Preprocess")
     print("=" * 60)
     
-    # Initialize state
+    # Initialize state with mock fetch + manual data
     state = PodcastState().to_dict()
-    
-    # Configure fetch with mock data
-    fetch_config = FetchConfig(
-        sources=[],
-        max_items_per_source=5
-    )
-    
-    # Inject mock data directly (since we can't fetch real data in tests)
-    state['raw_contents'] = [
+    state['fetch_contents'] = [
         {
-            'title': 'Test Article 1',
-            'content': 'This is a test article with enough content to pass validation. ' * 10,
+            'title': 'AI Breakthrough in Natural Language Processing',
+            'content': 'Researchers developed a new transformer architecture achieving state-of-the-art NLP results. ' * 10,
             'url': 'https://example.com/1',
-            'source': 'test'
+            'source': 'test',
+            'type': 'rss',
+            'published': '',
         },
         {
-            'title': 'Test Article 2',
-            'content': 'Another test article with sufficient length for processing. ' * 10,
+            'title': 'Quantum Computing Reaches New Milestone',
+            'content': 'Scientists demonstrated quantum supremacy with a 100-qubit processor solving complex optimization problems. ' * 10,
             'url': 'https://example.com/2',
-            'source': 'test'
+            'source': 'test',
+            'type': 'rss',
+            'published': '',
         },
+    ]
+    state['manual_contents'] = [
         {
-            'title': 'Short',
+            'title': 'Short Manual',
             'content': 'Too short',
-            'url': 'https://example.com/3',
-            'source': 'test'
+            'url': '',
+            'source': 'manual_input',
+            'type': 'manual',
+            'published': '',
         }
     ]
     
-    print(f"✓ Initial state created with {len(state['raw_contents'])} mock items")
+    print(f"  Initial: fetch={len(state['fetch_contents'])}, manual={len(state['manual_contents'])}")
+    
+    # Run merge with exact-match dedup (threshold=1.0) to avoid fuzzy false positives
+    state = merge_run(state, MergeConfig(deduplicate=True, similarity_threshold=1.0))
+    print(f"  After merge: raw_contents={len(state.get('raw_contents', []))}")
+    assert len(state['raw_contents']) == 3, f"Merge should combine all items, got {len(state['raw_contents'])}"
     
     # Run preprocess
     preprocess_config = PreprocessConfig(
@@ -64,21 +77,44 @@ def test_fetch_to_preprocess_pipeline():
         max_content_length=10000,
         remove_duplicates=True
     )
-    
     state = preprocess_run(state, preprocess_config)
     
-    print(f"✓ Preprocess completed")
-    print(f"  - Input: {len(state.get('raw_contents', []))} items")
-    print(f"  - Output: {len(state.get('cleaned_contents', []))} items")
-    print(f"  - Logs: {len(state.get('logs', []))} entries")
-    print(f"  - Errors: {len(state.get('errors', []))} errors")
+    print(f"  After preprocess: cleaned_contents={len(state.get('cleaned_contents', []))}")
+    print(f"  Logs: {len(state.get('logs', []))} entries, Errors: {len(state.get('errors', []))}")
     
-    # Validate results
     assert len(state['cleaned_contents']) == 2, "Should filter out short content"
     assert len(state['errors']) == 0, "Should have no errors"
     assert len(state['logs']) > 0, "Should have log entries"
     
-    print("\n✅ Integration test PASSED")
+    print("\n  PASSED")
+    return True
+
+
+def test_review_node():
+    """Test review node with mock complete state"""
+    print("\n" + "=" * 60)
+    print("Integration Test: Review Node")
+    print("=" * 60)
+    
+    state = PodcastState().to_dict()
+    state['script'] = {'title': 'Test Episode', 'description': 'Test'}
+    state['stages'] = [
+        {'order': 0, 'speaker': 'Host A', 'text': 'Hello world ' * 20, 'estimated_duration': 30},
+        {'order': 1, 'speaker': 'Host B', 'text': 'Welcome back ' * 20, 'estimated_duration': 30},
+    ]
+    state['final_audio_path'] = 'out/episodes/test.mp3'
+    state['cover_path'] = 'out/assets/test_cover.png'
+    state['audio_metadata'] = {'duration': 60}
+    
+    state = review_run(state, ReviewConfig())
+    review = state.get('review_summary', {})
+    
+    print(f"  Review score: {review.get('score', 'N/A')}")
+    print(f"  Checks: {len(review.get('checks', []))}")
+    assert 'review_summary' in state, "Should produce review_summary"
+    assert len(review.get('checks', [])) > 0, "Should have check results"
+    
+    print("\n  PASSED")
     return True
 
 
@@ -115,8 +151,9 @@ def main():
     print("\n🧪 Running Integration Tests\n")
     
     tests = [
-        ("Fetch->Preprocess Pipeline", test_fetch_to_preprocess_pipeline),
+        ("Merge->Preprocess Pipeline", test_merge_to_preprocess_pipeline),
         ("State Serialization", test_state_serialization),
+        ("Review Node", test_review_node),
     ]
     
     results = {}

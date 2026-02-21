@@ -36,7 +36,7 @@ def test_script_node():
         assert "text" in line, "Each line should have text"
 
     
-    print_success("Script node test passed: '{state['script']['title']}', {len(state['script']['dialogue'])} dialogue lines")
+    print_success(f"Script node test passed: '{state['script']['title']}', {len(state['script']['dialogue'])} dialogue lines")
     return True
 
 

@@ -33,7 +33,7 @@ def test_tts_node():
         assert segment.endswith(".mp3"), "Each segment should be an mp3 file"
 
     
-    print_success("TTS node test passed: {len(state['audio_segments'])} audio segments")
+    print_success(f"TTS node test passed: {len(state['audio_segments'])} audio segments")
     return True
 
 

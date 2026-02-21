@@ -1,32 +1,18 @@
-from dataclasses import dataclass
-from typing import Dict, Any
+from pydantic import Field
+from protocol.config_base import NodeConfigBase, LLMConfigMixin
 
 
-@dataclass
-class TopicSelectionConfig:
-    min_cluster_size: int = 3
-    max_topics: int = 1
-    use_llm_scoring: bool = True
-    llm_model: str = "gpt-4o-mini"
-    api_key: str = ""
-    api_base: str = ""
-    temperature: float = 0.3
-    
+class TopicSelectionConfig(NodeConfigBase, LLMConfigMixin):
+    """Topic selection node configuration."""
+    temperature: float = Field(default=0.3, ge=0.0, le=2.0, description="LLM temperature")
+    min_cluster_size: int = Field(default=3, ge=1, le=20, description="最小聚类大小")
+    max_topics: int = Field(default=1, ge=1, le=10, description="最大主题数")
+    use_llm_scoring: bool = Field(default=True, description="是否使用LLM评分")
+
     # Auto Selection Mode (for Discover layer)
-    mode: str = "cluster"  # "cluster" or "analyze_relevance"
-    target_topic: str = ""
-    time_range_hours: int = 24
-    focus_instruction: str = ""
-    min_match_score: int = 70
-    max_items: int = 10
-
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "TopicSelectionConfig":
-        defaults = {
-            "min_cluster_size": 3, "max_topics": 1, "use_llm_scoring": True,
-            "llm_model": "gpt-4o-mini", "api_key": "", "api_base": "", "temperature": 0.3,
-            "mode": "cluster", "target_topic": "", "time_range_hours": 24,
-            "focus_instruction": "", "min_match_score": 70, "max_items": 10
-        }
-        merged = {**defaults, **data}
-        return cls(**{k: v for k, v in merged.items() if k in cls.__dataclass_fields__})
+    mode: str = Field(default="cluster", description="选题模式: cluster / analyze_relevance")
+    target_topic: str = Field(default="", description="目标主题（analyze_relevance模式）")
+    time_range_hours: int = Field(default=24, ge=1, le=720, description="时间范围（小时）")
+    focus_instruction: str = Field(default="", description="额外指令")
+    min_match_score: int = Field(default=70, ge=0, le=100, description="最低匹配分数")
+    max_items: int = Field(default=10, ge=1, le=100, description="最大选取条目数")
