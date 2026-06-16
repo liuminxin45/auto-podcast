@@ -23,6 +23,17 @@ declare global {
       createWorkflow: (config: Record<string, any>) => Promise<WorkflowCreateResult>
       getWorkflow: (id: string) => Promise<Workflow | null>
       approveNode: (id: string, node: string, approved: boolean, output?: any) => Promise<{ status: string }>
+      updateWorkflowState: (id: string, patch: Record<string, any>) => Promise<Workflow>
+      runWorkflowNodes: (id: string, nodeNames: string[]) => Promise<Workflow>
+      saveRecording: (payload: {
+        episodeId: string
+        segmentId: string
+        mimeType: string
+        durationSeconds: number
+        data: ArrayBuffer
+      }) => Promise<{ success: boolean; path: string; size: number; mimeType: string; durationSeconds: number }>
+      openPath: (targetPath: string) => Promise<{ success: boolean; error?: string }>
+      showItemInFolder: (targetPath: string) => Promise<{ success: boolean; error?: string }>
       onWorkflowUpdate: (callback: (data: Workflow) => void) => void
       onNeedApproval: (callback: (data: any) => void) => void
       onRadarUpdate: (callback: (data: {
@@ -106,6 +117,10 @@ function App() {
 
   // Load fetch sources and config
   useEffect(() => {
+    if (!window.electronAPI?.getFetchSources) {
+      message.warning('当前浏览器预览没有 Electron 后端，部分执行能力不可用')
+      return
+    }
     window.electronAPI.getFetchSources()
       .then(sources => setFetchSources(sources))
       .catch(e => console.error('Failed to load fetch sources:', e))
@@ -115,6 +130,7 @@ function App() {
   }, [])
 
   useEffect(() => {
+    if (!window.electronAPI?.radarGetState) return
     window.electronAPI.radarGetState()
       .then((state) => setRadarState(state))
       .catch((e: any) => console.error('Failed to load radar state:', e))
@@ -125,6 +141,7 @@ function App() {
   }, [])
 
   useEffect(() => {
+    if (!window.electronAPI?.onWorkflowUpdate) return
     window.electronAPI.onWorkflowUpdate((data) => {
       setWorkflow(data)
 
@@ -157,11 +174,48 @@ function App() {
 
   const handleStart = async () => {
     try {
-      const result = await window.electronAPI.createWorkflow({})
-      message.success(`Started: ${result.episodeId}`)
+      if (!window.electronAPI?.createWorkflow) {
+        message.warning('当前浏览器预览没有 Electron 后端，无法创建 episode')
+        return
+      }
+      const result = await window.electronAPI.createWorkflow({ autoRun: false })
+      const created = await window.electronAPI.getWorkflow(result.workflowId)
+      if (created) setWorkflow(created)
+      message.success(`已创建 Episode: ${result.episodeId}`)
     } catch (e: any) {
       message.error(`Failed: ${e.message}`)
     }
+  }
+
+  const ensureWorkflow = async () => {
+    if (workflow) return workflow
+    if (!window.electronAPI?.createWorkflow) {
+      message.warning('当前浏览器预览没有 Electron 后端，部分执行能力不可用')
+      return null
+    }
+    const result = await window.electronAPI.createWorkflow({ autoRun: false })
+    const created = await window.electronAPI.getWorkflow(result.workflowId)
+    if (created) {
+      setWorkflow(created)
+      return created
+    }
+    return null
+  }
+
+  const updateWorkflowPatch = async (patch: Record<string, any>) => {
+    const active = await ensureWorkflow()
+    if (!active) return null
+    const updated = await window.electronAPI.updateWorkflowState(active.id, patch)
+    setWorkflow(updated)
+    return updated
+  }
+
+  const runWorkflowNodes = async (nodeNames: string[]) => {
+    const active = await ensureWorkflow()
+    if (!active) return null
+    const updated = await window.electronAPI.runWorkflowNodes(active.id, nodeNames)
+    setWorkflow(updated)
+    return updated
   }
 
   const handleApprove = async () => {
@@ -363,6 +417,10 @@ function App() {
           }}
           onProceedToOrganize={(candidates) => {
             setDiscoverCandidates(candidates)
+            void updateWorkflowPatch({
+              selected_materials: candidates,
+              raw_contents: candidates,
+            })
             closeAllPanels()
             setOrganizeVisible(true)
           }}
@@ -377,6 +435,10 @@ function App() {
           userTopic={(fetchConfig?.topic as string) || ''}
           onProceedToIdeate={(candidates) => {
             setOrganizeCandidates(candidates)
+            void updateWorkflowPatch({
+              selected_materials: candidates,
+              cleaned_contents: candidates,
+            })
             closeAllPanels()
             setStudioVisible(true)
           }}
@@ -389,7 +451,15 @@ function App() {
             ? organizeCandidates
             : (workflow?.state?.raw_contents || [])}
           selectedTopic={workflow?.state?.selected_topic}
-          onConfirm={(_structure) => {
+          onConfirm={(structure) => {
+            void updateWorkflowPatch({
+              selected_topic: {
+                title: structure?.topic?.title || workflow?.state?.selected_topic?.title || '',
+                description: structure?.topic?.description || workflow?.state?.selected_topic?.description || '',
+              },
+              selected_materials: organizeCandidates.length > 0 ? organizeCandidates : workflow?.state?.selected_materials || [],
+              episode_brief: structure,
+            })
             closeAllPanels()
             setWritingVisible(true)
           }}
@@ -398,9 +468,14 @@ function App() {
         <WritingLayer
           visible={writingVisible}
           onClose={() => setWritingVisible(false)}
+          workflow={workflow}
           episodeTitle={workflow?.state?.selected_topic?.title || ''}
           episodeDesc={workflow?.state?.selected_topic?.description || ''}
-          onProceedToProduction={() => {
+          onSaveDraft={async (patch) => {
+            await updateWorkflowPatch(patch)
+          }}
+          onProceedToProduction={async (patch) => {
+            await updateWorkflowPatch(patch)
             closeAllPanels()
             setSoundStudioVisible(true)
           }}
@@ -409,8 +484,29 @@ function App() {
         <SoundStudio
           visible={soundStudioVisible}
           onClose={() => setSoundStudioVisible(false)}
+          workflow={workflow}
           episodeTitle={workflow?.state?.selected_topic?.title || ''}
-          onProceedToPublish={() => {
+          onSaveRecording={async (payload) => {
+            if (!workflow) {
+              const active = await ensureWorkflow()
+              if (!active) throw new Error('无法创建 workflow')
+              return window.electronAPI.saveRecording({ ...payload, episodeId: active.state.episode_id })
+            }
+            return window.electronAPI.saveRecording({ ...payload, episodeId: workflow.state.episode_id })
+          }}
+          onUpdateWorkflow={async (patch) => {
+            await updateWorkflowPatch(patch)
+          }}
+          onRunNodes={async (nodes) => {
+            await runWorkflowNodes(nodes)
+          }}
+          onOpenPath={async (targetPath) => {
+            return window.electronAPI.openPath(targetPath)
+          }}
+          onShowItemInFolder={async (targetPath) => {
+            return window.electronAPI.showItemInFolder(targetPath)
+          }}
+          onProceedToPublish={async () => {
             closeAllPanels()
             setPublishVisible(true)
           }}
@@ -418,8 +514,18 @@ function App() {
         <PublishLayer
           visible={publishVisible}
           onClose={() => setPublishVisible(false)}
+          workflow={workflow}
           episodeTitle={workflow?.state?.selected_topic?.title || ''}
           episodeDesc={workflow?.state?.selected_topic?.description || ''}
+          onRunNodes={async (nodes) => {
+            await runWorkflowNodes(nodes)
+          }}
+          onOpenPath={async (targetPath) => {
+            return window.electronAPI.openPath(targetPath)
+          }}
+          onShowItemInFolder={async (targetPath) => {
+            return window.electronAPI.showItemInFolder(targetPath)
+          }}
         />
 
         <SettingsPage

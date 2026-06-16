@@ -14,6 +14,7 @@ export interface PodcastState {
   script: Script
   stages: Stage[]
   audio_segments: string[]
+  recording_segments?: RecordingSegment[]
   final_audio_path: string
   audio_metadata: Record<string, any>
   cover_path: string
@@ -62,10 +63,23 @@ export interface DialogueLine {
 }
 
 export interface Stage {
+  id?: string
   order: number
   speaker: string
   text: string
+  label?: string
   duration?: number
+  estimated_duration?: number
+}
+
+export interface RecordingSegment {
+  segmentId: string
+  path: string
+  mimeType: string
+  durationSeconds: number
+  size: number
+  label?: string
+  text?: string
 }
 
 export interface ErrorInfo {
@@ -87,7 +101,7 @@ export interface NodeExecution {
 export interface Workflow {
   id: string
   state: PodcastState
-  status: 'running' | 'completed' | 'failed' | 'waiting_approval'
+  status: 'draft' | 'running' | 'completed' | 'failed' | 'waiting_approval'
   currentNode: string | null
   nodeExecutions: Record<string, NodeExecution>
   approvals?: Record<string, string>

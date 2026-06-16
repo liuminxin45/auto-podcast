@@ -253,8 +253,16 @@ function NodeOverrideCard({ stageId, settings, updateSettings }: {
         [stageId]: { ...c.nodeOverrides[stageId], connectionStatus: 'testing' as const },
       },
     }))
-    await new Promise(r => setTimeout(r, 1500))
-    const success = Math.random() > 0.2
+    let success = false
+    try {
+      if (!nodeConfig.apiBase || !nodeConfig.apiKey) {
+        throw new Error('请先填写 API Base 与 API Key')
+      }
+      await fetchModelsWithCache(nodeConfig.apiBase, nodeConfig.apiKey)
+      success = true
+    } catch {
+      success = false
+    }
     updateSettings('apiConfig', c => ({
       ...c,
       nodeOverrides: {
@@ -270,7 +278,7 @@ function NodeOverrideCard({ stageId, settings, updateSettings }: {
     } else {
       message.error({ content: `${meta.label}连接失败，请检查密钥`, duration: 3, style: { marginTop: 60 } })
     }
-  }, [stageId, meta.label, updateSettings])
+  }, [stageId, meta.label, nodeConfig.apiBase, nodeConfig.apiKey, updateSettings])
 
   const handleFetchModels = useCallback(async () => {
     if (!nodeConfig.apiKey || !nodeConfig.apiBase) {
@@ -611,12 +619,22 @@ export default function SettingsAPIConfig({ settings, updateSettings }: Props) {
 
   const handleTestGlobal = useCallback(async (capKey: 'text' | 'search' | 'audio') => {
     const statusKey = `${capKey}ConnectionStatus` as const
+    const apiBase = settings.apiConfig.global[`${capKey}ApiBase` as const]
+    const apiKey = settings.apiConfig.global[`${capKey}ApiKey` as const]
     updateSettings('apiConfig', c => ({
       ...c,
       global: { ...c.global, [statusKey]: 'testing' as const },
     }))
-    await new Promise(r => setTimeout(r, 1500))
-    const success = Math.random() > 0.2
+    let success = false
+    try {
+      if (!apiBase || !apiKey) {
+        throw new Error('请先填写 API Base 与 API Key')
+      }
+      await fetchModelsWithCache(apiBase, apiKey)
+      success = true
+    } catch {
+      success = false
+    }
     updateSettings('apiConfig', c => ({
       ...c,
       global: { ...c.global, [statusKey]: success ? 'connected' as const : 'failed' as const },
@@ -626,7 +644,7 @@ export default function SettingsAPIConfig({ settings, updateSettings }: Props) {
     } else {
       message.error({ content: '连接失败，请检查密钥', duration: 3, style: { marginTop: 60 } })
     }
-  }, [updateSettings])
+  }, [settings.apiConfig.global, updateSettings])
 
   const handleFetchGlobalModels = useCallback(async (
     capKey: 'text' | 'search' | 'audio',

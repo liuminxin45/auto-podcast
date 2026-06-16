@@ -31,6 +31,7 @@ class PodcastState:
     stages: List[Dict[str, Any]] = field(default_factory=list)
     
     audio_segments: List[str] = field(default_factory=list)
+    recording_segments: List[Dict[str, Any]] = field(default_factory=list)
     final_audio_path: str = ""
     audio_metadata: Dict[str, Any] = field(default_factory=dict)
     

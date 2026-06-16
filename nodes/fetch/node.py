@@ -82,9 +82,10 @@ def run(state: Dict[str, Any], config: FetchConfig = None) -> Dict[str, Any]:
 
     logs.append(f"[FetchNode] Total items fetched: {len(all_contents)}")
 
-    logs.append(f"[FetchNode] Final items (no discover filtering): {len(all_contents)}")
+    filtered_contents = _apply_discover_filters(all_contents, config, logs)
+    logs.append(f"[FetchNode] Final items after discover filtering: {len(filtered_contents)}")
 
-    state["fetch_contents"] = all_contents
+    state["fetch_contents"] = filtered_contents
     state["logs"] = logs
     state["errors"] = errors
     return state

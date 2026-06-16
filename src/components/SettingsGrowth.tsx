@@ -72,6 +72,22 @@ interface RadarDimension {
 }
 
 function RadarChart({ dimensions }: { dimensions: RadarDimension[] }) {
+  if (dimensions.length === 0) {
+    return (
+      <div style={{
+        padding: '18px',
+        borderRadius: 10,
+        border: '1px dashed var(--border-color)',
+        background: 'var(--bg-primary)',
+        fontSize: 12,
+        color: 'var(--text-tertiary)',
+        lineHeight: 1.6,
+      }}>
+        暂无真实创作历史数据。完成并发布节目后，这里会生成能力画像。
+      </div>
+    )
+  }
+
   const n = dimensions.length
   const cx = 120, cy = 120, r = 90
   const angleStep = (2 * Math.PI) / n
@@ -315,16 +331,10 @@ function ExpressionIssueCard({ label, desc, severity }: {
 }
 
 // ============================================================
-// Mock Data
+// Real creator history analytics is not connected yet.
 // ============================================================
 
-const RADAR_DIMENSIONS: RadarDimension[] = [
-  { label: '结构清晰度', value: 82, color: '#2563eb' },
-  { label: '观点深度', value: 75, color: '#8b5cf6' },
-  { label: '节奏控制', value: 68, color: '#10b981' },
-  { label: '表达简洁度', value: 58, color: '#f59e0b' },
-  { label: '叙事吸引力', value: 72, color: '#ef4444' },
-]
+const RADAR_DIMENSIONS: RadarDimension[] = []
 
 // ============================================================
 // Main Component
@@ -358,10 +368,10 @@ export default function SettingsGrowth() {
         <span style={{ fontSize: 28 }}>🌱</span>
         <div>
           <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 }}>
-            你已创作了 24 期节目
+            尚未接入真实创作历史
           </div>
           <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-            每一期都是成长。以下分析基于你全部创作历史，帮你发现自己的进步与潜力方向。
+            完成发布并导入历史数据后，这里会展示风格洞察与成长建议。
           </div>
         </div>
       </div>
@@ -372,20 +382,20 @@ export default function SettingsGrowth() {
           <StyleTagCard
             icon="📊"
             label="当前主要风格"
-            value="理性分析型"
-            trend="近 8 期保持稳定"
+            value="待分析"
+            trend="等待真实历史"
           />
           <StyleTagCard
             icon="🔄"
             label="风格变化"
-            value="渐趋深度化"
-            trend="深度内容占比 ↑ 15%"
+            value="待分析"
+            trend="暂无趋势"
           />
           <StyleTagCard
             icon="⭐"
             label="最受欢迎风格"
-            value="深度 + 冷静"
-            trend="完播率最高组合"
+            value="待分析"
+            trend="暂无表现数据"
           />
         </div>
 

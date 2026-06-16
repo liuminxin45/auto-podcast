@@ -30,15 +30,19 @@ def run(state: Dict[str, Any], config: TTSConfig = None) -> Dict[str, Any]:
 async def _synthesize_all(stages, config, episode_id):
     import edge_tts
     segments = []
-    for stage in stages:
+    for fallback_idx, stage in enumerate(stages):
         speaker = stage.get("speaker", "")
         text = stage.get("text", "")
-        idx = stage.get("index", 0)
+        idx = stage.get("index", stage.get("order", fallback_idx + 1))
         if not text:
             continue
 
         voice = config.voice_mapping.get(speaker, config.default_voice)
-        filename = f"{episode_id}_{idx:03d}.mp3"
+        try:
+            idx_num = int(idx)
+        except (TypeError, ValueError):
+            idx_num = fallback_idx + 1
+        filename = f"{episode_id}_{idx_num:03d}.mp3"
         filepath = os.path.join(config.output_dir, filename)
 
         communicate = edge_tts.Communicate(text, voice, rate=config.rate, volume=config.volume)

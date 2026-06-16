@@ -18,14 +18,12 @@ import {
 } from '@ant-design/icons'
 import { AGENTS } from '../constants'
 import { formatDuration } from '../utils'
-import { 
-  CONTENT_SUGGESTIONS, 
-  DISTRIBUTION_SUGGESTIONS, 
-  RISK_SUGGESTIONS,
-  MOCK_HISTORY,
+import type { Workflow } from '../types/workflow'
+import {
   DEFAULT_PLATFORMS,
   type AgentSuggestion,
-  type PlatformStatus
+  type PlatformStatus,
+  type PublishRecord,
 } from '../mocks'
 
 type PublishPhase =
@@ -42,9 +40,13 @@ type StepStatus = 'pending' | 'accepted' | 'skipped'
 interface Props {
   visible: boolean
   onClose: () => void
+  workflow?: Workflow | null
   episodeTitle?: string
   episodeDesc?: string
   episodeDuration?: number
+  onRunNodes?: (nodes: string[]) => Promise<void> | void
+  onOpenPath?: (targetPath: string) => Promise<{ success: boolean; error?: string }>
+  onShowItemInFolder?: (targetPath: string) => Promise<{ success: boolean; error?: string }>
 }
 
 
@@ -69,6 +71,7 @@ function PlatformBadge({ platform, compact }: { platform: PlatformStatus; compac
     success: { color: '#10b981', bg: '#ecfdf5', label: '已上线', icon: <CheckOutlined style={{ fontSize: 9 }} /> },
     processing: { color: '#f59e0b', bg: '#fffbeb', label: '处理中', icon: <ClockCircleOutlined style={{ fontSize: 9 }} /> },
     failed: { color: '#ef4444', bg: '#fef2f2', label: '失败', icon: <ExclamationCircleOutlined style={{ fontSize: 9 }} /> },
+    unconfigured: { color: '#6b7280', bg: '#f3f4f6', label: '未配置', icon: <ExclamationCircleOutlined style={{ fontSize: 9 }} /> },
   }
   const cfg = statusConfig[platform.status]
 
@@ -222,9 +225,13 @@ function SuggestionCard({
 export default function PublishLayer({
   visible,
   onClose,
+  workflow,
   episodeTitle = '',
   episodeDesc = '',
   episodeDuration = 920,
+  onRunNodes,
+  onOpenPath,
+  onShowItemInFolder,
 }: Props) {
   // ── Core state ──────────────────────────────────────────
   const [phase, setPhase] = useState<PublishPhase>('choose')
@@ -239,21 +246,99 @@ export default function PublishLayer({
   // Platform statuses (for current publish)
   const [currentPlatforms, setCurrentPlatforms] = useState<PlatformStatus[]>([])
 
-  // Publish method for current session
-  const [publishMethod, setPublishMethod] = useState<'smart' | 'quick'>('smart')
-
   // History
   const [historyExpanded, setHistoryExpanded] = useState(false)
+  const finalAudioPath = workflow?.state?.final_audio_path || ''
+  const rssPath = workflow?.state?.rss_path || ''
+  const publishDir = workflow?.state?.storage_info?.base_dir || ''
+  const reviewSummary = workflow?.state?.review_summary || {}
+  const reviewChecks = Array.isArray(reviewSummary.checks) ? reviewSummary.checks : []
+  const scriptTitle = workflow?.state?.script?.title || episodeTitle || '未命名节目'
+  const scriptDesc = workflow?.state?.script?.description || episodeDesc || ''
+  const stageCount = Array.isArray(workflow?.state?.stages) ? workflow.state.stages.length : 0
+
+  const contentSuggestions = useMemo<AgentSuggestion[]>(() => [
+    {
+      id: 'content-title',
+      title: workflow?.state?.script?.title ? '节目标题已写入脚本' : '缺少节目标题',
+      description: workflow?.state?.script?.title
+        ? `当前标题：${scriptTitle}`
+        : '发布前请在写作层保存标题，否则 RSS 会使用默认标题。',
+    },
+    {
+      id: 'content-script',
+      title: stageCount > 0 ? `脚本段落已就绪：${stageCount} 段` : '缺少脚本段落',
+      description: stageCount > 0
+        ? `发布将使用 workflow.state.stages 中的 ${stageCount} 个真实段落。简介：${scriptDesc || '未填写'}`
+        : '请先在写作层保存脚本段落，或通过工作流生成 stages。',
+    },
+  ], [scriptDesc, scriptTitle, stageCount, workflow?.state?.script?.title])
+
+  const distributionSuggestions = useMemo<AgentSuggestion[]>(() => [
+    {
+      id: 'distribution-audio',
+      title: finalAudioPath ? '成品音频已生成' : '尚未生成成品音频',
+      description: finalAudioPath
+        ? `音频路径：${finalAudioPath}`
+        : '发布节点需要 final_audio_path，请先在声音工作台完成音频生成。',
+    },
+    {
+      id: 'distribution-platforms',
+      title: '多平台发布未配置凭据',
+      description: '当前只执行真实本地导出与 RSS 生成；Apple Podcasts、Spotify、小宇宙、喜马拉雅会显示为未配置，不会标记成功。',
+    },
+  ], [finalAudioPath])
+
+  const riskSuggestions = useMemo<AgentSuggestion[]>(() => {
+    if (!reviewChecks.length) {
+      return [{
+        id: 'risk-review-pending',
+        title: '尚未运行发布前检查',
+        description: '点击发布时会先执行 review 节点，并用 review_summary 作为发布前检查来源。',
+      }]
+    }
+
+    return reviewChecks.map((check: any, index: number) => ({
+      id: `risk-${index}`,
+      title: check.level === 'pass' ? '检查通过' : check.level === 'warning' ? '检查警告' : '检查失败',
+      description: String(check.message || ''),
+    }))
+  }, [reviewChecks])
+
+  const publishHistory = useMemo<PublishRecord[]>(() => {
+    const publishStatus = workflow?.state?.publish_status
+    if (!publishStatus?.rss_generated && !rssPath && !publishDir) return []
+
+    const publishedAt = publishStatus?.published_at
+      ? new Date(publishStatus.published_at).toLocaleString('zh-CN', { hour12: false })
+      : new Date().toLocaleString('zh-CN', { hour12: false })
+
+    return [{
+      id: workflow?.id || workflow?.state?.episode_id || 'current',
+      title: scriptTitle,
+      publishedAt,
+      method: 'smart',
+      suggestionsAccepted: [step1Status, step2Status, step3Status].filter(status => status === 'accepted').length,
+      suggestionsTotal: 3,
+      platforms: [
+        { id: 'local', name: '本地目录', icon: '📁', status: publishDir ? 'success' : 'failed', url: publishDir || undefined },
+        { id: 'rss', name: 'RSS', icon: '🔗', status: rssPath ? 'success' : 'failed', url: rssPath || undefined },
+        ...DEFAULT_PLATFORMS.map(platform => ({ ...platform, status: 'unconfigured' as const })),
+      ],
+    }]
+  }, [
+    publishDir,
+    rssPath,
+    scriptTitle,
+    step1Status,
+    step2Status,
+    step3Status,
+    workflow?.id,
+    workflow?.state?.episode_id,
+    workflow?.state?.publish_status,
+  ])
 
   // ── Computed ─────────────────────────────────────────────
-  const acceptedCount = useMemo(() => {
-    let c = 0
-    if (step1Status === 'accepted') c += CONTENT_SUGGESTIONS.length
-    if (step2Status === 'accepted') c += DISTRIBUTION_SUGGESTIONS.length
-    if (step3Status === 'accepted') c += RISK_SUGGESTIONS.length
-    return c
-  }, [step1Status, step2Status, step3Status])
-
   // ── Step progression ────────────────────────────────────
   const handleStep1Accept = useCallback(() => {
     setStep1Status('accepted')
@@ -286,42 +371,33 @@ export default function PublishLayer({
   }, [])
 
   // ── Publish action ──────────────────────────────────────
-  const doPublish = useCallback((method: 'smart' | 'quick') => {
-    setPublishMethod(method)
+  const doPublish = useCallback(async (method: 'smart' | 'quick') => {
+    if (!onRunNodes) {
+      message.error({ content: '当前环境没有节点执行接口', duration: 2, style: { marginTop: 60 } })
+      return
+    }
+    if (!workflow?.state?.final_audio_path) {
+      message.warning({ content: '请先在声音工作台生成成品音频', duration: 2, style: { marginTop: 60 } })
+      return
+    }
+
+    void method
     setPhase('publishing')
     setPublishProgress(0)
     setQuickConfirmVisible(false)
 
-    // Simulate publishing progress
-    let progress = 0
-    const interval = setInterval(() => {
-      progress += Math.random() * 15 + 5
-      if (progress >= 100) {
-        progress = 100
-        clearInterval(interval)
-        setPublishProgress(100)
-
-        setTimeout(() => {
-          const platforms = DEFAULT_PLATFORMS.map((p, i) => ({
-            ...p,
-            status: (i < 3 ? 'success' : 'processing') as PlatformStatus['status'],
-            url: i < 3 ? '#' : undefined,
-          }))
-          setCurrentPlatforms(platforms)
-          setPhase('success')
-
-          // Simulate last platform completing
-          setTimeout(() => {
-            setCurrentPlatforms(prev => prev.map(p =>
-              p.status === 'processing' ? { ...p, status: 'success' as const, url: '#' } : p
-            ))
-          }, 3000)
-        }, 600)
-      } else {
-        setPublishProgress(Math.min(progress, 99))
-      }
-    }, 300)
-  }, [])
+    try {
+      setPublishProgress(35)
+      await onRunNodes(['review', 'publish'])
+      setPublishProgress(100)
+      setCurrentPlatforms(DEFAULT_PLATFORMS.map(p => ({ ...p, status: 'unconfigured' as const })))
+      setPhase('success')
+      message.success({ content: '发布检查与本地/RSS 导出完成', duration: 2, style: { marginTop: 60 } })
+    } catch (error: any) {
+      setPhase('ready')
+      message.error({ content: `发布失败：${error?.message || String(error)}`, duration: 2.5, style: { marginTop: 60 } })
+    }
+  }, [onRunNodes, workflow?.state?.final_audio_path])
 
   // ── Reset on visibility ─────────────────────────────────
   useEffect(() => {
@@ -519,7 +595,7 @@ export default function PublishLayer({
             background: 'var(--bg-tertiary)', borderRadius: 4,
             padding: '0 5px', fontSize: 10,
           }}>
-            {MOCK_HISTORY.length}
+            {publishHistory.length}
           </span>
         </span>
         <RightOutlined style={{
@@ -531,7 +607,20 @@ export default function PublishLayer({
 
       {historyExpanded && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, animation: 'fadeIn 0.2s ease' }}>
-          {MOCK_HISTORY.map(record => (
+          {publishHistory.length === 0 && (
+            <div style={{
+              padding: '10px 12px',
+              borderRadius: 10,
+              border: '1px solid var(--border-color)',
+              background: 'var(--bg-primary)',
+              fontSize: 11,
+              color: 'var(--text-tertiary)',
+              lineHeight: 1.6,
+            }}>
+              暂无本地发布记录。完成一次本地/RSS 导出后会显示在这里。
+            </div>
+          )}
+          {publishHistory.map(record => (
             <div key={record.id} style={{
               padding: '10px 12px', borderRadius: 10,
               border: '1px solid var(--border-color)',
@@ -576,12 +665,12 @@ export default function PublishLayer({
         </div>
       )}
 
-      {!historyExpanded && MOCK_HISTORY.length > 0 && (
+      {!historyExpanded && publishHistory.length > 0 && (
         <div style={{
           fontSize: 11, color: 'var(--text-tertiary)', lineHeight: 1.6,
           padding: '4px 0',
         }}>
-          最近：{MOCK_HISTORY[0].title}
+          最近：{publishHistory[0].title}
         </div>
       )}
     </div>
@@ -618,7 +707,6 @@ export default function PublishLayer({
           <div
             className="publish-path-card"
             onClick={() => {
-              setPublishMethod('smart')
               setPhase('smart_step1')
             }}
             style={{
@@ -717,8 +805,8 @@ export default function PublishLayer({
               fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.7,
               marginBottom: 20,
             }}>
-              跳过所有智能建议，直接发布到所有平台。
-              <br />适合你已经反复确认过内容的情况。
+              跳过所有检查项确认，直接执行本地导出与 RSS 生成。
+              <br />未配置凭据的平台仍会保持未配置状态。
             </div>
 
             <div style={{
@@ -789,7 +877,7 @@ export default function PublishLayer({
             fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)',
             marginBottom: 14, display: 'flex', alignItems: 'center', gap: 6,
           }}>
-            {agent.icon} 以下是我的建议
+            {agent.icon} 当前检查项
           </div>
           {suggestions.map(s => (
             <SuggestionCard
@@ -1010,16 +1098,29 @@ export default function PublishLayer({
             fontSize: 24, fontWeight: 700, color: 'var(--text-primary)',
             marginBottom: 8,
           }}>
-            发布成功！
+            本地发布完成
           </div>
           <div style={{
             fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.6,
           }}>
-            「{episodeTitle || '未命名节目'}」已发送到各平台。
-            {publishMethod === 'smart' && acceptedCount > 0 && (
-              <><br />你采纳了 {acceptedCount} 条建议，节目质量更上一层楼。</>
-            )}
+            「{episodeTitle || '未命名节目'}」已导出到本地发布目录，并生成 RSS 文件。
           </div>
+        </div>
+
+        <div style={{
+          marginBottom: 28,
+          padding: 16,
+          borderRadius: 12,
+          border: '1px solid var(--border-color)',
+          background: 'var(--bg-secondary)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 10,
+        }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)' }}>本地产物</div>
+          <div style={{ fontSize: 12, color: 'var(--text-tertiary)', wordBreak: 'break-all' }}>音频：{finalAudioPath || '未生成'}</div>
+          <div style={{ fontSize: 12, color: 'var(--text-tertiary)', wordBreak: 'break-all' }}>RSS：{rssPath || '未生成'}</div>
+          <div style={{ fontSize: 12, color: 'var(--text-tertiary)', wordBreak: 'break-all' }}>目录：{publishDir || '未生成'}</div>
         </div>
 
         {/* Platform statuses */}
@@ -1044,7 +1145,14 @@ export default function PublishLayer({
         }}>
           <Button
             icon={<DownloadOutlined />}
-            onClick={() => message.success({ content: '音频已开始下载', duration: 2, style: { marginTop: 60 } })}
+            onClick={async () => {
+              if (!finalAudioPath) {
+                message.warning({ content: '还没有成品音频', duration: 2, style: { marginTop: 60 } })
+                return
+              }
+              const result = await onShowItemInFolder?.(finalAudioPath)
+              if (!result?.success) message.error({ content: result?.error || '定位音频失败', duration: 2, style: { marginTop: 60 } })
+            }}
             style={{
               borderRadius: 10, fontWeight: 500, fontSize: 13,
               height: 40, borderColor: 'var(--border-color)',
@@ -1052,6 +1160,25 @@ export default function PublishLayer({
             }}
           >
             下载音频
+          </Button>
+          <Button
+            icon={<LinkOutlined />}
+            onClick={async () => {
+              const target = rssPath || publishDir
+              if (!target) {
+                message.warning({ content: '还没有发布产物', duration: 2, style: { marginTop: 60 } })
+                return
+              }
+              const result = await onOpenPath?.(target)
+              if (!result?.success) message.error({ content: result?.error || '打开发布产物失败', duration: 2, style: { marginTop: 60 } })
+            }}
+            style={{
+              borderRadius: 10, fontWeight: 500, fontSize: 13,
+              height: 40, borderColor: 'var(--border-color)',
+              color: 'var(--text-secondary)',
+            }}
+          >
+            打开 RSS
           </Button>
           <Button
             type="primary"
@@ -1182,17 +1309,17 @@ export default function PublishLayer({
           {phase === 'choose' && renderChoosePhase()}
 
           {phase === 'smart_step1' && renderSmartStep(
-            1, AGENTS[0], CONTENT_SUGGESTIONS,
+            1, AGENTS[0], contentSuggestions,
             handleStep1Accept, handleStep1Skip,
           )}
 
           {phase === 'smart_step2' && renderSmartStep(
-            2, AGENTS[1], DISTRIBUTION_SUGGESTIONS,
+            2, AGENTS[1], distributionSuggestions,
             handleStep2Accept, handleStep2Skip,
           )}
 
           {phase === 'smart_step3' && renderSmartStep(
-            3, AGENTS[2], RISK_SUGGESTIONS,
+            3, AGENTS[2], riskSuggestions,
             handleStep3Accept, handleStep3Skip,
           )}
 

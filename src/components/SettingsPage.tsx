@@ -37,6 +37,8 @@ import type {
   ContentTendency,
   DurationPreference,
   RetentionPolicy,
+  StageId,
+  NodeCapabilityType,
 } from '../types/settings'
 import { DEFAULT_SETTINGS } from '../types/settings'
 import { VOICE_OPTIONS, PLATFORM_OPTIONS } from '../constants'
@@ -48,6 +50,127 @@ import { VOICE_OPTIONS, PLATFORM_OPTIONS } from '../constants'
 interface Props {
   visible: boolean
   onClose: () => void
+}
+
+const CAPABILITY_TO_GLOBAL_PREFIX: Record<NodeCapabilityType, 'text' | 'search' | 'audio'> = {
+  search: 'search',
+  text: 'text',
+  reasoning: 'text',
+  compliance: 'text',
+  audio: 'audio',
+}
+
+const DEFAULT_MODEL_BY_PREFIX: Record<'text' | 'search' | 'audio', string> = {
+  text: 'gpt-4o-mini',
+  search: 'gpt-4o-mini',
+  audio: 'edge-tts',
+}
+
+const VOICE_TO_EDGE_VOICE: Record<string, string> = {
+  'warm-male': 'zh-CN-YunxiNeural',
+  'steady-male': 'zh-CN-YunjianNeural',
+  'gentle-female': 'zh-CN-XiaoxiaoNeural',
+  'energetic-female': 'zh-CN-XiaoyiNeural',
+  professional: 'zh-CN-YunyangNeural',
+  storyteller: 'zh-CN-XiaoxiaoNeural',
+}
+
+function resolveApiSettings(settings: AppSettings, stageId: StageId) {
+  const override = settings.apiConfig.nodeOverrides[stageId]
+  if (override.overrideMode === 'custom') {
+    return {
+      api_key: override.apiKey || '',
+      api_base: override.apiBase || '',
+      llm_model: override.apiModel || DEFAULT_MODEL_BY_PREFIX[CAPABILITY_TO_GLOBAL_PREFIX[override.capabilityType]],
+    }
+  }
+
+  const prefix = CAPABILITY_TO_GLOBAL_PREFIX[override.capabilityType]
+  const global = settings.apiConfig.global
+  return {
+    api_key: String(global[`${prefix}ApiKey`] || ''),
+    api_base: String(global[`${prefix}ApiBase`] || ''),
+    llm_model: String(global[`${prefix}ApiModel`] || DEFAULT_MODEL_BY_PREFIX[prefix]),
+  }
+}
+
+function buildNodeConfigs(settings: AppSettings): Record<string, Record<string, any>> {
+  const durationToMinutes: Record<DurationPreference, number> = {
+    short: 8,
+    medium: 15,
+    long: 30,
+  }
+  const qualityToFormat: Record<AudioQuality, string> = {
+    standard: 'mp3',
+    high: 'mp3',
+    ultra: 'wav',
+  }
+  const searchMax = settings.capability.search.resultRange[1]
+  const ttsVoice = VOICE_TO_EDGE_VOICE[settings.capability.audio.defaultVoice] || VOICE_TO_EDGE_VOICE['warm-male']
+
+  return {
+    app_settings: settings,
+    fetch: {
+      breadth: settings.capability.search.intensity === 'deep' ? 5 : settings.capability.search.intensity === 'light' ? 2 : 3,
+      quality: settings.capability.text.balance === 'quality' ? 5 : settings.capability.text.balance === 'cost' ? 3 : 4,
+      freshness: 4,
+      min_relevance: settings.capability.search.intensity === 'deep' ? 2 : 3,
+      language_mix: settings.capability.search.language === 'zh'
+        ? 'chinese'
+        : settings.capability.search.language === 'en'
+          ? 'english'
+          : 'mixed',
+      max_articles: searchMax,
+      include_summary: true,
+      group_by_topic: true,
+    },
+    research: {
+      ...resolveApiSettings(settings, 'organize'),
+      temperature: settings.capability.text.mode === 'quality' ? 0.4 : 0.6,
+    },
+    topic_selection: {
+      ...resolveApiSettings(settings, 'ideate'),
+      temperature: settings.nodeBehavior.ideationChallenge === 'reverse' ? 0.8 : 0.3,
+    },
+    script: {
+      ...resolveApiSettings(settings, 'write'),
+      target_duration_minutes: durationToMinutes[settings.creatorPreferences.durationPreference],
+      dialogue_style: settings.creatorPreferences.toneStyle === 'rational' ? 'formal' : 'conversational',
+      require_approval: settings.nodeBehavior.assistLevel !== 'deep',
+      words_per_minute: 150,
+    },
+    stages: {
+      words_per_minute: 150,
+      max_segment_duration: settings.creatorPreferences.durationPreference === 'long' ? 180 : 120,
+    },
+    tts: {
+      engine: 'edge-tts',
+      default_voice: ttsVoice,
+      voice_mapping: {
+        'Host A': ttsVoice,
+        'Host B': ttsVoice,
+      },
+      rate: settings.capability.audio.quality === 'standard' ? '+0%' : '-5%',
+      volume: '+0%',
+    },
+    audio_postprocess: {
+      output_dir: 'out/episodes',
+      output_format: qualityToFormat[settings.capability.audio.quality],
+    },
+    review: {
+      require_approval: settings.capability.compliance.strictness === 'strict',
+    },
+    publish: {
+      storage_type: 'local',
+      local_base_dir: 'out/published',
+      rss_output_dir: 'out/rss',
+      podcast_title: 'Auto Podcast',
+      podcast_description: 'AI assisted local podcast production',
+      podcast_author: 'Auto-Podcast',
+      podcast_language: settings.capability.search.language === 'en' ? 'en-US' : 'zh-CN',
+      enabled_platforms: settings.system.defaultPlatforms,
+    },
+  }
 }
 
 // ============================================================
@@ -277,13 +400,32 @@ export default function SettingsPage({ visible, onClose }: Props) {
   // Save
   const handleSave = useCallback(async () => {
     setSaving(true)
-    // Simulate save
-    await new Promise(r => setTimeout(r, 600))
-    setSaving(false)
-    setHasChanges(false)
-    setSaveSuccess(true)
-    message.success({ content: '设置已保存', duration: 2, style: { marginTop: 60 } })
-    setTimeout(() => setSaveSuccess(false), 3000)
+    try {
+      if (!window.electronAPI?.saveNodeConfig) {
+        throw new Error('当前运行环境未连接 Electron 后端，无法写入本地节点配置')
+      }
+
+      const nodeConfigs = buildNodeConfigs(settings)
+      const results = await Promise.all(
+        Object.entries(nodeConfigs).map(([nodeName, config]) =>
+          window.electronAPI.saveNodeConfig(nodeName, config)
+        )
+      )
+      const failed = results.find(result => !result?.success)
+      if (failed) {
+        throw new Error(failed.error || '节点配置保存失败')
+      }
+
+      setHasChanges(false)
+      setSaveSuccess(true)
+      message.success({ content: '设置已保存到本地节点配置', duration: 2, style: { marginTop: 60 } })
+      setTimeout(() => setSaveSuccess(false), 3000)
+    } catch (error: any) {
+      setSaveSuccess(false)
+      message.error({ content: error?.message || '设置保存失败', duration: 3, style: { marginTop: 60 } })
+    } finally {
+      setSaving(false)
+    }
   }, [settings])
 
   // Reset

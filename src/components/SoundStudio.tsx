@@ -19,6 +19,7 @@ import {
   ThunderboltOutlined,
   PlusOutlined,
 } from '@ant-design/icons'
+import type { Workflow } from '../types/workflow'
 
 // ============================================================
 // Types
@@ -78,12 +79,27 @@ interface RecordingSegment {
   status: SegmentRecordingStatus
   durationSeconds: number
   waveformData: number[]
+  path?: string
+  mimeType?: string
+  size?: number
 }
 
 interface Props {
   visible: boolean
   onClose: () => void
+  workflow?: Workflow | null
   episodeTitle?: string
+  onSaveRecording?: (payload: {
+    episodeId: string
+    segmentId: string
+    mimeType: string
+    durationSeconds: number
+    data: ArrayBuffer
+  }) => Promise<{ success: boolean; path: string; size: number; mimeType: string; durationSeconds: number }>
+  onUpdateWorkflow?: (patch: Record<string, any>) => Promise<void> | void
+  onRunNodes?: (nodes: string[]) => Promise<void> | void
+  onOpenPath?: (targetPath: string) => Promise<{ success: boolean; error?: string }>
+  onShowItemInFolder?: (targetPath: string) => Promise<{ success: boolean; error?: string }>
   onProceedToPublish?: () => void
 }
 
@@ -805,7 +821,13 @@ function CompletionOverlay({
 export default function SoundStudio({
   visible,
   onClose,
+  workflow,
   episodeTitle = '',
+  onSaveRecording,
+  onUpdateWorkflow,
+  onRunNodes,
+  onOpenPath,
+  onShowItemInFolder,
   onProceedToPublish,
 }: Props) {
   // Mode
@@ -829,15 +851,26 @@ export default function SoundStudio({
   const [playheadPosition, setPlayheadPosition] = useState(0)
   const [activeSegmentId, setActiveSegmentId] = useState('seg_opening')
   const playIntervalRef = useRef<number | null>(null)
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const recordingStreamRef = useRef<MediaStream | null>(null)
+  const recordingChunksRef = useRef<Blob[]>([])
+  const recordingStartedAtRef = useRef<number>(0)
+
+  const segments = useMemo<ScriptSegment[]>(() => {
+    const stages = workflow?.state?.stages || []
+    if (!stages.length) return DEMO_SEGMENTS
+    return stages.map((stage: any, index: number) => ({
+      id: String(stage.id || `seg_${index + 1}`),
+      label: String(stage.label || `第 ${index + 1} 段`),
+      icon: index === 0 ? '🎬' : index === stages.length - 1 ? '🎤' : '📌',
+      color: ['#f59e0b', '#2563eb', '#8b5cf6', '#06b6d4', '#10b981'][index % 5],
+      content: String(stage.text || ''),
+      estimatedSeconds: Number(stage.estimated_duration || stage.duration || Math.max(10, Math.round(String(stage.text || '').length / 4))),
+    }))
+  }, [workflow?.state?.episode_id, workflow?.state?.stages])
 
   // Recording mode state
-  const [recordings, setRecordings] = useState<Record<string, RecordingSegment>>(() => {
-    const init: Record<string, RecordingSegment> = {}
-    DEMO_SEGMENTS.forEach(seg => {
-      init[seg.id] = { segmentId: seg.id, status: 'empty', durationSeconds: 0, waveformData: [] }
-    })
-    return init
-  })
+  const [recordings, setRecordings] = useState<Record<string, RecordingSegment>>({})
 
   // Generation & completion
   const [isGenerating, setIsGenerating] = useState(false)
@@ -857,13 +890,25 @@ export default function SoundStudio({
   const [outroTemplate, setOutroTemplate] = useState<IntroOutroTemplate>('minimal')
   const [transitionStyle, setTransitionStyle] = useState<TransitionStyle>('fade')
 
-  // Computed
-  const segments = DEMO_SEGMENTS
   const totalDuration = useMemo(() => segments.reduce((sum, s) => sum + s.estimatedSeconds, 0), [segments])
   const activeSegment = segments.find(s => s.id === activeSegmentId)
+  const finalAudioPath = workflow?.state?.final_audio_path || ''
 
   // Recording counts
   const recordedCount = Object.values(recordings).filter(r => r.status === 'recorded').length
+
+  useEffect(() => {
+    setRecordings(prev => {
+      const next: Record<string, RecordingSegment> = {}
+      for (const seg of segments) {
+        next[seg.id] = prev[seg.id] || { segmentId: seg.id, status: 'empty', durationSeconds: 0, waveformData: [] }
+      }
+      return next
+    })
+    if (!segments.some(seg => seg.id === activeSegmentId)) {
+      setActiveSegmentId(segments[0]?.id || 'seg_opening')
+    }
+  }, [segments, activeSegmentId])
 
   // ── Playback simulation ────────────────────────────────
   const togglePlay = useCallback(() => {
@@ -906,26 +951,99 @@ export default function SoundStudio({
   }, [segments, totalDuration])
 
   // ── Recording actions ──────────────────────────────────
-  const startRecording = useCallback((segId: string) => {
+  const startRecording = useCallback(async (segId: string) => {
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      message.error({ content: '当前环境不支持麦克风录制', duration: 2, style: { marginTop: 60 } })
+      return
+    }
+    if (!onSaveRecording) {
+      message.error({ content: '当前环境没有录音保存接口', duration: 2, style: { marginTop: 60 } })
+      return
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : 'audio/webm'
+      const recorder = new MediaRecorder(stream, { mimeType })
+      mediaRecorderRef.current = recorder
+      recordingStreamRef.current = stream
+      recordingChunksRef.current = []
+      recordingStartedAtRef.current = Date.now()
+
+      recorder.ondataavailable = event => {
+        if (event.data && event.data.size > 0) recordingChunksRef.current.push(event.data)
+      }
+      recorder.onstop = async () => {
+        const durationSeconds = Math.max(1, Math.round((Date.now() - recordingStartedAtRef.current) / 1000))
+        const blob = new Blob(recordingChunksRef.current, { type: mimeType })
+        recordingStreamRef.current?.getTracks().forEach(track => track.stop())
+        recordingStreamRef.current = null
+        mediaRecorderRef.current = null
+
+        try {
+          const saved = await onSaveRecording({
+            episodeId: workflow?.state?.episode_id || 'unknown',
+            segmentId: segId,
+            mimeType,
+            durationSeconds,
+            data: await blob.arrayBuffer(),
+          })
+          const nextRecording: RecordingSegment = {
+            segmentId: segId,
+            status: 'recorded',
+            durationSeconds: saved.durationSeconds || durationSeconds,
+            waveformData: generateWaveform(50),
+            path: saved.path,
+            mimeType: saved.mimeType,
+            size: saved.size,
+          }
+          const nextRecordings = { ...recordings, [segId]: nextRecording }
+          setRecordings(nextRecordings)
+          await onUpdateWorkflow?.({
+            recording_segments: Object.values(nextRecordings)
+              .filter(r => r.status === 'recorded' && r.path)
+              .map(r => ({
+                segmentId: r.segmentId,
+                path: r.path,
+                mimeType: r.mimeType,
+                durationSeconds: r.durationSeconds,
+                size: r.size,
+                label: segments.find(s => s.id === r.segmentId)?.label,
+                text: segments.find(s => s.id === r.segmentId)?.content,
+              })),
+          })
+          message.success({ content: '录制完成并已保存', duration: 1.5, style: { marginTop: 60 } })
+        } catch (error: any) {
+          setRecordings(prev => ({
+            ...prev,
+            [segId]: { ...prev[segId], status: 'empty', durationSeconds: 0, waveformData: [] },
+          }))
+          message.error({ content: `录音保存失败：${error?.message || String(error)}`, duration: 2, style: { marginTop: 60 } })
+        }
+      }
+
+      recorder.start(250)
     setRecordings(prev => ({
       ...prev,
       [segId]: { ...prev[segId], status: 'recording', waveformData: generateWaveform(50) },
     }))
-    message.info({ content: '🎙️ 开始录制…', duration: 1.5, style: { marginTop: 60 } })
-    // Simulate recording for 3 seconds
-    setTimeout(() => {
-      setRecordings(prev => ({
-        ...prev,
-        [segId]: { ...prev[segId], status: 'recorded', durationSeconds: 45, waveformData: generateWaveform(50) },
-      }))
-      message.success({ content: '录制完成', duration: 1.5, style: { marginTop: 60 } })
-    }, 3000)
-  }, [])
+      message.info({ content: '🎙️ 开始录制…', duration: 1.5, style: { marginTop: 60 } })
+    } catch (error: any) {
+      message.error({ content: `无法开始录制：${error?.message || String(error)}`, duration: 2, style: { marginTop: 60 } })
+    }
+  }, [onSaveRecording, onUpdateWorkflow, workflow?.state?.episode_id, recordings, segments])
 
   const stopRecording = useCallback((segId: string) => {
+    const recorder = mediaRecorderRef.current
+    if (recorder && recorder.state === 'recording') {
+      recorder.stop()
+      return
+    }
     setRecordings(prev => ({
       ...prev,
-      [segId]: { ...prev[segId], status: 'recorded', durationSeconds: 30, waveformData: generateWaveform(50) },
+      [segId]: { ...prev[segId], status: 'empty', durationSeconds: 0, waveformData: [] },
     }))
   }, [])
 
@@ -937,13 +1055,29 @@ export default function SoundStudio({
   }, [])
 
   const deleteRecording = useCallback((segId: string) => {
-    setRecordings(prev => ({
-      ...prev,
-      [segId]: { segmentId: segId, status: 'empty', durationSeconds: 0, waveformData: [] },
-    }))
-  }, [])
+    const next = {
+      ...recordings,
+      [segId]: { segmentId: segId, status: 'empty' as const, durationSeconds: 0, waveformData: [] },
+    }
+    setRecordings(next)
+    void onUpdateWorkflow?.({
+      recording_segments: Object.values(next)
+        .filter((r): r is RecordingSegment => r.status === 'recorded' && Boolean((r as RecordingSegment).path))
+        .map(r => ({
+          segmentId: r.segmentId,
+          path: r.path,
+          mimeType: r.mimeType,
+          durationSeconds: r.durationSeconds,
+          size: r.size,
+        })),
+    })
+  }, [recordings, onUpdateWorkflow])
 
   const playRecording = useCallback((segId: string) => {
+    const recording = recordings[segId]
+    if (recording?.path && onOpenPath) {
+      void onOpenPath(recording.path)
+    }
     setRecordings(prev => ({
       ...prev,
       [segId]: { ...prev[segId], status: 'playing' },
@@ -954,24 +1088,56 @@ export default function SoundStudio({
         [segId]: { ...prev[segId], status: 'recorded' },
       }))
     }, 2000)
-  }, [])
+  }, [recordings, onOpenPath])
 
   // ── Generate final audio ───────────────────────────────
-  const handleGenerate = useCallback(() => {
+  const handleGenerate = useCallback(async () => {
+    if (!onRunNodes) {
+      message.error({ content: '当前环境没有节点执行接口', duration: 2, style: { marginTop: 60 } })
+      return
+    }
+    if (!segments.some(s => s.content.trim())) {
+      message.warning({ content: '请先在写作页保存脚本分段', duration: 2, style: { marginTop: 60 } })
+      return
+    }
+
     setIsGenerating(true)
-    setGenerationProgress(0)
-    const interval = setInterval(() => {
-      setGenerationProgress(prev => {
-        if (prev >= 100) {
-          clearInterval(interval)
-          setIsGenerating(false)
-          setShowCompletion(true)
-          return 100
+    setGenerationProgress(10)
+    try {
+      if (mode === 'recording') {
+        const recorded = segments
+          .map(seg => recordings[seg.id])
+          .filter((rec): rec is RecordingSegment => Boolean(rec?.path && rec.status === 'recorded'))
+        if (recorded.length === 0) {
+          throw new Error('请至少完成一段真人录制')
         }
-        return prev + 2
-      })
-    }, 80)
-  }, [])
+        await onUpdateWorkflow?.({
+          audio_segments: recorded.map(r => r.path),
+          recording_segments: recorded.map(r => ({
+            segmentId: r.segmentId,
+            path: r.path,
+            mimeType: r.mimeType,
+            durationSeconds: r.durationSeconds,
+            size: r.size,
+            label: segments.find(s => s.id === r.segmentId)?.label,
+            text: segments.find(s => s.id === r.segmentId)?.content,
+          })),
+        })
+        setGenerationProgress(45)
+        await onRunNodes(['audio_postprocess', 'assets', 'review'])
+      } else {
+        setGenerationProgress(35)
+        await onRunNodes(['tts', 'audio_postprocess', 'assets', 'review'])
+      }
+      setGenerationProgress(100)
+      setShowCompletion(true)
+      message.success({ content: '音频已生成', duration: 1.5, style: { marginTop: 60 } })
+    } catch (error: any) {
+      message.error({ content: `音频生成失败：${error?.message || String(error)}`, duration: 2.5, style: { marginTop: 60 } })
+    } finally {
+      setIsGenerating(false)
+    }
+  }, [onRunNodes, onUpdateWorkflow, segments, mode, recordings])
 
   // ── Editing actions ──────────────────────────────────────
   const performEdit = useCallback((action: EditActionType, desc: string) => {
@@ -2328,11 +2494,21 @@ export default function SoundStudio({
           <CompletionOverlay
             title={episodeTitle}
             totalDuration={totalDuration}
-            onListen={() => {
-              message.info({ content: '正在播放完整音频…', duration: 2, style: { marginTop: 60 } })
+            onListen={async () => {
+              if (!finalAudioPath) {
+                message.warning({ content: '还没有生成成品音频', duration: 2, style: { marginTop: 60 } })
+                return
+              }
+              const result = await onOpenPath?.(finalAudioPath)
+              if (!result?.success) message.error({ content: result?.error || '打开音频失败', duration: 2, style: { marginTop: 60 } })
             }}
-            onDownload={() => {
-              message.success({ content: '音频已开始下载', duration: 2, style: { marginTop: 60 } })
+            onDownload={async () => {
+              if (!finalAudioPath) {
+                message.warning({ content: '还没有生成成品音频', duration: 2, style: { marginTop: 60 } })
+                return
+              }
+              const result = await onShowItemInFolder?.(finalAudioPath)
+              if (!result?.success) message.error({ content: result?.error || '定位音频失败', duration: 2, style: { marginTop: 60 } })
             }}
             onPublish={() => {
               setShowCompletion(false)

@@ -206,39 +206,31 @@ function AISuggestionCard({ icon, text, actionLabel }: {
 }
 
 // ============================================================
-// Mock Data
+// Real analytics data is not connected yet. Keep UI visible with explicit empty states.
 // ============================================================
 
-const MOCK_WEEKLY = [820, 950, 1100, 980, 1250, 1380, 1520]
-const MOCK_AUDIENCE_AGE = [
-  { label: '18-24 岁', value: 1200, max: 3500 },
-  { label: '25-34 岁', value: 3500, max: 3500 },
-  { label: '35-44 岁', value: 2100, max: 3500 },
-  { label: '45+ 岁', value: 800, max: 3500 },
-]
-const MOCK_LISTEN_HOURS = [
-  { label: '早间 6-9 点', value: 1800, max: 4200 },
-  { label: '午间 12-14 点', value: 2600, max: 4200 },
-  { label: '晚间 20-23 点', value: 4200, max: 4200 },
-  { label: '深夜 23-2 点', value: 1500, max: 4200 },
-]
-const MOCK_TOPICS = [
-  { label: '科技趋势', value: 4200, max: 4200 },
-  { label: '社会观察', value: 3800, max: 4200 },
-  { label: '财经分析', value: 2900, max: 4200 },
-  { label: '文化生活', value: 2200, max: 4200 },
-]
-const MOCK_PLATFORMS = [
-  { label: '小宇宙', value: 5200, max: 5200 },
-  { label: 'Apple Podcasts', value: 2800, max: 5200 },
-  { label: 'Spotify', value: 1600, max: 5200 },
-  { label: '喜马拉雅', value: 900, max: 5200 },
-]
-const MOCK_CONTENT_TREND = [
-  { type: '深度分析', trend: [65, 68, 72, 75, 78, 82, 85], color: '#2563eb', completionRate: '85%' },
-  { type: '新闻解读', trend: [70, 68, 65, 63, 60, 62, 64], color: '#10b981', completionRate: '64%' },
-  { type: '评论表达', trend: [55, 58, 60, 62, 65, 63, 68], color: '#f59e0b', completionRate: '68%' },
-]
+const WEEKLY_PLAYS: number[] = []
+const AUDIENCE_AGE: Array<{ label: string; value: number; max: number }> = []
+const LISTEN_HOURS: Array<{ label: string; value: number; max: number }> = []
+const TOPICS: Array<{ label: string; value: number; max: number }> = []
+const PLATFORMS: Array<{ label: string; value: number; max: number }> = []
+const CONTENT_TREND: Array<{ type: string; trend: number[]; color: string; completionRate: string }> = []
+
+function EmptyState({ text }: { text: string }) {
+  return (
+    <div style={{
+      padding: '14px',
+      borderRadius: 10,
+      border: '1px dashed var(--border-color)',
+      background: 'var(--bg-primary)',
+      fontSize: 12,
+      color: 'var(--text-tertiary)',
+      lineHeight: 1.6,
+    }}>
+      {text}
+    </div>
+  )
+}
 
 // ============================================================
 // Main Component
@@ -264,25 +256,25 @@ export default function SettingsAnalytics() {
           <StatCard
             icon={<PlayCircleOutlined />}
             label="总播放量"
-            value="12,840"
-            trend="up"
-            trendLabel="较上周 +18%"
+            value="0"
+            trend="flat"
+            trendLabel="暂无真实数据"
             color="var(--accent-primary)"
           />
           <StatCard
             icon={<ClockCircleOutlined />}
             label="平均完播率"
-            value="72%"
-            trend="up"
-            trendLabel="较上周 +3%"
+            value="暂无"
+            trend="flat"
+            trendLabel="等待平台数据"
             color="var(--success-color)"
           />
           <StatCard
             icon={<FireOutlined />}
             label="本周新增"
-            value="1,520"
-            trend="up"
-            trendLabel="连续增长"
+            value="0"
+            trend="flat"
+            trendLabel="未接入统计"
             color="#f59e0b"
           />
         </div>
@@ -297,9 +289,10 @@ export default function SettingsAnalytics() {
             <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)' }}>近 7 天播放趋势</span>
             <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>每日播放量</span>
           </div>
+          {WEEKLY_PLAYS.length === 0 && <EmptyState text="暂无真实播放趋势。接入平台统计或导入播放数据后会在这里显示。" />}
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, height: 60 }}>
-            {MOCK_WEEKLY.map((v, i) => {
-              const max = Math.max(...MOCK_WEEKLY)
+            {WEEKLY_PLAYS.map((v, i) => {
+              const max = Math.max(...WEEKLY_PLAYS)
               const pct = (v / max) * 100
               const days = ['一', '二', '三', '四', '五', '六', '日']
               return (
@@ -309,7 +302,7 @@ export default function SettingsAnalytics() {
                     maxWidth: 40,
                     height: `${pct}%`,
                     minHeight: 4,
-                    background: i === MOCK_WEEKLY.length - 1
+                    background: i === WEEKLY_PLAYS.length - 1
                       ? 'var(--accent-primary)'
                       : 'var(--accent-light)',
                     borderRadius: 4,
@@ -329,7 +322,8 @@ export default function SettingsAnalytics() {
           {/* Age */}
           <div style={{ padding: '14px', borderRadius: 10, border: '1px solid var(--border-color)', background: 'var(--bg-primary)' }}>
             <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 10 }}>年龄分布</div>
-            {MOCK_AUDIENCE_AGE.map((d, i) => (
+            {AUDIENCE_AGE.length === 0 && <EmptyState text="暂无真实听众年龄数据。" />}
+            {AUDIENCE_AGE.map((d, i) => (
               <MiniBar key={i} value={d.value} max={d.max} color="var(--accent-primary)" label={d.label} />
             ))}
             <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 6, lineHeight: 1.5 }}>
@@ -340,7 +334,8 @@ export default function SettingsAnalytics() {
           {/* Listen time */}
           <div style={{ padding: '14px', borderRadius: 10, border: '1px solid var(--border-color)', background: 'var(--bg-primary)' }}>
             <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 10 }}>收听时间段</div>
-            {MOCK_LISTEN_HOURS.map((d, i) => (
+            {LISTEN_HOURS.length === 0 && <EmptyState text="暂无真实收听时间数据。" />}
+            {LISTEN_HOURS.map((d, i) => (
               <MiniBar key={i} value={d.value} max={d.max} color="#10b981" label={d.label} />
             ))}
             <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 6, lineHeight: 1.5 }}>
@@ -351,7 +346,8 @@ export default function SettingsAnalytics() {
           {/* Popular topics */}
           <div style={{ padding: '14px', borderRadius: 10, border: '1px solid var(--border-color)', background: 'var(--bg-primary)' }}>
             <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 10 }}>常听主题</div>
-            {MOCK_TOPICS.map((d, i) => (
+            {TOPICS.length === 0 && <EmptyState text="暂无真实主题偏好数据。" />}
+            {TOPICS.map((d, i) => (
               <MiniBar key={i} value={d.value} max={d.max} color="#8b5cf6" label={d.label} />
             ))}
           </div>
@@ -359,7 +355,8 @@ export default function SettingsAnalytics() {
           {/* Platform source */}
           <div style={{ padding: '14px', borderRadius: 10, border: '1px solid var(--border-color)', background: 'var(--bg-primary)' }}>
             <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 10 }}>平台来源</div>
-            {MOCK_PLATFORMS.map((d, i) => (
+            {PLATFORMS.length === 0 && <EmptyState text="暂无真实平台来源数据。" />}
+            {PLATFORMS.map((d, i) => (
               <MiniBar key={i} value={d.value} max={d.max} color="#f59e0b" label={d.label} />
             ))}
           </div>
@@ -369,7 +366,8 @@ export default function SettingsAnalytics() {
       {/* ======== Section 3: Content Trend ======== */}
       <AnalyticsSection title="内容表现趋势" icon={<LineChartOutlined />}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {MOCK_CONTENT_TREND.map((item, i) => (
+          {CONTENT_TREND.length === 0 && <EmptyState text="暂无真实内容表现趋势。完成发布并导入平台数据后会生成趋势分析。" />}
+          {CONTENT_TREND.map((item, i) => (
             <div key={i} style={{
               display: 'flex',
               alignItems: 'center',
@@ -411,7 +409,7 @@ export default function SettingsAnalytics() {
           lineHeight: 1.6,
         }}>
           <BulbOutlined style={{ color: 'var(--accent-primary)', marginRight: 6 }} />
-          深度分析类内容完播率持续走高，表明听众对有深度的内容有更强的粘性。
+          当前没有足够真实数据生成趋势结论。
         </div>
       </AnalyticsSection>
 
@@ -423,7 +421,7 @@ export default function SettingsAnalytics() {
           color: 'var(--text-tertiary)',
           lineHeight: 1.5,
         }}>
-          基于近期数据分析，以下建议可能帮助你提升内容表现。这些只是参考，你随时可以忽略。
+          尚未接入真实表现数据，暂不生成表现建议。
         </div>
 
         <AISuggestionCard

@@ -3,6 +3,8 @@
 // Types & Constants
 // ============================================================
 
+import type { Workflow } from '../../types/workflow'
+
 // ── Core Types ──────────────────────────────────────────────
 
 export type GlobalTone = 'analytical' | 'deep_dive' | 'casual' | 'direct' | 'narrative'
@@ -73,10 +75,12 @@ export interface AgentConfig {
 export interface WritingLayerProps {
   visible: boolean
   onClose: () => void
+  workflow?: Workflow | null
   episodeTitle?: string
   episodeDesc?: string
   initialScript?: { title?: string; dialogue?: Array<{ speaker: string; text: string }> }
-  onProceedToProduction?: (segments: WritingSegment[], globalTone: GlobalTone) => void
+  onSaveDraft?: (patch: Record<string, any>) => Promise<void> | void
+  onProceedToProduction?: (patch: Record<string, any>) => Promise<void> | void
 }
 
 // ============================================================
@@ -225,64 +229,3 @@ export function getSegmentHints(segment: WritingSegment, totalSeconds: number, a
   return hints
 }
 
-// ── Mock AI Suggestion Generator ────────────────────────────
-// In production, this would call a real AI backend.
-// For now it generates plausible mock suggestions.
-
-const MOCK_SUGGESTIONS: Record<AgentRole, (text: string, intensity: AIIntensity) => { suggested: string; reason: string }> = {
-  clarity_editor: (text, intensity) => {
-    if (!text || text.length < 10) return { suggested: text, reason: '文本太短，无需润色' }
-    const trimmed = text.replace(/其实/g, '').replace(/就是说/g, '').replace(/然后的话/g, '').trim()
-    return {
-      suggested: intensity === 'light' ? trimmed : trimmed.replace(/，/g, '，\n'),
-      reason: '移除了口语化填充词，使表达更直接清晰',
-    }
-  },
-  tone_stylist: (text, _intensity) => ({
-    suggested: text,
-    reason: '已按目标风格调整语气词和句式节奏',
-  }),
-  argument_enhancer: (text, _intensity) => ({
-    suggested: text,
-    reason: '强化了论点的逻辑递进关系，增加了过渡语句',
-  }),
-  conciseness_coach: (text, _intensity) => {
-    if (!text || text.length < 20) return { suggested: text, reason: '段落已足够精简' }
-    const shortened = text.slice(0, Math.floor(text.length * 0.8))
-    return {
-      suggested: shortened + '…',
-      reason: `精简了约 ${Math.floor(text.length * 0.2)} 字，去除了重复表述`,
-    }
-  },
-  hook_designer: (text, _intensity) => ({
-    suggested: text,
-    reason: '优化了开头的吸引力，使用悬念式引入',
-  }),
-}
-
-export function generateMockSuggestion(
-  agentRole: AgentRole,
-  segmentId: string,
-  text: string,
-  scope: CollaborationScope,
-  intensity: AIIntensity,
-  selectionRange?: { start: number; end: number },
-): AISuggestion {
-  const targetText = selectionRange
-    ? text.slice(selectionRange.start, selectionRange.end)
-    : text
-  const { suggested, reason } = MOCK_SUGGESTIONS[agentRole](targetText, intensity)
-  return {
-    id: `sug_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-    agentRole,
-    segmentId,
-    scope,
-    intensity,
-    originalText: targetText,
-    suggestedText: suggested,
-    reason,
-    status: 'pending',
-    timestamp: Date.now(),
-    selectionRange,
-  }
-}

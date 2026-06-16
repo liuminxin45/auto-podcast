@@ -5,6 +5,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getWorkflow: (workflowId) => ipcRenderer.invoke('workflow:get', workflowId),
   approveNode: (workflowId, nodeName, approved, modifiedOutput) => 
     ipcRenderer.invoke('workflow:approve', workflowId, nodeName, approved, modifiedOutput),
+  updateWorkflowState: (workflowId, patch) => ipcRenderer.invoke('workflow:updateState', workflowId, patch),
+  runWorkflowNodes: (workflowId, nodeNames) => ipcRenderer.invoke('workflow:runNodes', workflowId, nodeNames),
+  saveRecording: (payload) => ipcRenderer.invoke('recording:save', payload),
+  openPath: (targetPath) => ipcRenderer.invoke('file:openPath', targetPath),
+  showItemInFolder: (targetPath) => ipcRenderer.invoke('file:showItemInFolder', targetPath),
   onWorkflowUpdate: (callback) => ipcRenderer.on('workflow:update', (_, data) => callback(data)),
   onNeedApproval: (callback) => ipcRenderer.on('workflow:needApproval', (_, data) => callback(data)),
   onRadarUpdate: (callback) => ipcRenderer.on('radar:update', (_, data) => callback(data)),

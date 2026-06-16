@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require('electron')
+const { app, BrowserWindow, ipcMain, shell } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const { spawn } = require('child_process')
@@ -9,6 +9,17 @@ const { validateNodeOutput } = require('./nodeValidator')
 // shell:true is required on Windows so that .bat shims (e.g. pyenv-win) are resolved.
 const PYTHON_PATH = process.platform === 'win32' ? 'python' : 'python3'
 const SPAWN_SHELL = process.platform === 'win32'
+const CDP_ACCEPTANCE_PORT = process.env.CDP_ACCEPTANCE_PORT
+const ENABLE_FAKE_MEDIA = process.env.CDP_ACCEPTANCE === '1' || process.env.CDP_FAKE_MEDIA === '1'
+
+if (CDP_ACCEPTANCE_PORT) {
+  app.commandLine.appendSwitch('remote-debugging-port', String(CDP_ACCEPTANCE_PORT))
+}
+
+if (ENABLE_FAKE_MEDIA) {
+  app.commandLine.appendSwitch('use-fake-device-for-media-stream')
+  app.commandLine.appendSwitch('use-fake-ui-for-media-stream')
+}
 
 let mainWindow = null
 let configManager = null
@@ -35,6 +46,63 @@ const DEFAULT_RADAR_STATE = {
 let radarState = { ...DEFAULT_RADAR_STATE }
 let radarTimer = null
 
+function broadcastWorkflowUpdate() {
+  if (mainWindow && currentWorkflow) {
+    mainWindow.webContents.send('workflow:update', currentWorkflow)
+  }
+}
+
+function isPlainObject(value) {
+  return value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function mergeStatePatch(target, patch) {
+  if (!isPlainObject(patch)) return target
+  for (const [key, value] of Object.entries(patch)) {
+    if (isPlainObject(value) && isPlainObject(target[key])) {
+      target[key] = mergeStatePatch({ ...target[key] }, value)
+    } else {
+      target[key] = value
+    }
+  }
+  return target
+}
+
+function sanitizePathPart(value, fallback = 'unknown') {
+  const safe = String(value || '').replace(/[^a-zA-Z0-9_-]/g, '_').replace(/_+/g, '_')
+  return safe || fallback
+}
+
+function createInitialState(episodeId, runtimeConfig) {
+  return {
+    episode_id: episodeId,
+    created_at: new Date().toISOString(),
+    runtime_config: runtimeConfig || {},
+    logs: [],
+    errors: [],
+    fetch_contents: [],
+    manual_contents: [],
+    raw_contents: [],
+    cleaned_contents: [],
+    researched_contents: [],
+    selected_topic: {},
+    selected_materials: [],
+    script: {},
+    stages: [],
+    audio_segments: [],
+    recording_segments: [],
+    final_audio_path: '',
+    audio_metadata: {},
+    cover_path: '',
+    intro_outro_paths: {},
+    review_summary: {},
+    storage_info: {},
+    rss_path: '',
+    publish_status: {},
+    subtitle_path: ''
+  }
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1400,
@@ -52,6 +120,22 @@ function createWindow() {
     mainWindow.webContents.openDevTools()
   } else {
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'))
+  }
+
+  if (process.env.CDP_ACCEPTANCE === '1') {
+    mainWindow.webContents.once('did-finish-load', () => {
+      setTimeout(() => {
+        const { runCdpAcceptance } = require('./acceptanceRunner')
+        runCdpAcceptance({
+          app,
+          mainWindow,
+          projectRoot: path.join(__dirname, '..')
+        }).catch((error) => {
+          console.error('[CDP Acceptance] Unhandled failure:', error)
+          app.quit()
+        })
+      }, 500)
+    })
   }
 }
 
@@ -296,45 +380,24 @@ ipcMain.handle('workflow:create', async (event, config) => {
 
   const workflowId = Date.now().toString()
   const episodeId = `ep_${new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '_')}`
+  const shouldAutoRun = config?.autoRun !== false
+  const runtimeConfig = { ...(config || {}) }
+  delete runtimeConfig.autoRun
   
   currentWorkflow = {
     id: workflowId,
-    state: {
-      episode_id: episodeId,
-      created_at: new Date().toISOString(),
-      runtime_config: config || {},
-      logs: [],
-      errors: [],
-      fetch_contents: [],
-      manual_contents: [],
-      raw_contents: [],
-      cleaned_contents: [],
-      researched_contents: [],
-      selected_topic: {},
-      selected_materials: [],
-      script: {},
-      stages: [],
-      audio_segments: [],
-      final_audio_path: '',
-      audio_metadata: {},
-      cover_path: '',
-      intro_outro_paths: {},
-      storage_info: {},
-      rss_path: '',
-      publish_status: {},
-      subtitle_path: ''
-    },
-    status: 'running',
+    state: createInitialState(episodeId, runtimeConfig),
+    status: shouldAutoRun ? 'running' : 'draft',
     currentNode: null,
     nodeExecutions: {},
     approvals: {}
   }
 
-  if (mainWindow) {
-    mainWindow.webContents.send('workflow:update', currentWorkflow)
-  }
+  broadcastWorkflowUpdate()
 
-  setImmediate(() => runWorkflow(workflowId))
+  if (shouldAutoRun) {
+    setImmediate(() => runWorkflow(workflowId))
+  }
 
   return { workflowId, episodeId }
 })
@@ -356,6 +419,83 @@ ipcMain.handle('workflow:approve', async (event, workflowId, nodeName, approved,
   }
   
   return { status: 'ok' }
+})
+
+ipcMain.handle('workflow:updateState', async (event, workflowId, patch) => {
+  if (!currentWorkflow || currentWorkflow.id !== workflowId) {
+    throw new Error('Workflow not found')
+  }
+
+  currentWorkflow.state = mergeStatePatch({ ...currentWorkflow.state }, patch || {})
+  currentWorkflow.state.logs = currentWorkflow.state.logs || []
+  currentWorkflow.state.logs.push(`[Electron] State updated from UI at ${new Date().toISOString()}`)
+  broadcastWorkflowUpdate()
+  return currentWorkflow
+})
+
+ipcMain.handle('workflow:runNodes', async (event, workflowId, nodeNames) => {
+  if (!currentWorkflow || currentWorkflow.id !== workflowId) {
+    throw new Error('Workflow not found')
+  }
+  const requested = Array.isArray(nodeNames) ? nodeNames.filter(Boolean) : []
+  if (requested.length === 0) {
+    throw new Error('No nodes requested')
+  }
+  if (currentWorkflow.status === 'running') {
+    throw new Error('Workflow is already running')
+  }
+
+  currentWorkflow.status = 'running'
+  currentWorkflow.currentNode = null
+  broadcastWorkflowUpdate()
+  await runWorkflow(workflowId, null, requested)
+  return currentWorkflow
+})
+
+ipcMain.handle('recording:save', async (event, payload) => {
+  const episodeId = sanitizePathPart(payload?.episodeId || currentWorkflow?.state?.episode_id)
+  const segmentId = sanitizePathPart(payload?.segmentId || `segment_${Date.now()}`)
+  const mimeType = String(payload?.mimeType || 'audio/webm')
+  const extension = mimeType.includes('wav') ? 'wav' : mimeType.includes('mpeg') || mimeType.includes('mp3') ? 'mp3' : 'webm'
+  const rawData = payload?.data
+
+  if (!rawData) {
+    throw new Error('Missing recording data')
+  }
+
+  const buffer = Buffer.from(rawData instanceof ArrayBuffer ? new Uint8Array(rawData) : rawData)
+  if (buffer.length === 0) {
+    throw new Error('Recording data is empty')
+  }
+
+  const outDir = path.join(__dirname, '..', 'out', 'recordings', episodeId)
+  fs.mkdirSync(outDir, { recursive: true })
+  const filePath = path.join(outDir, `${segmentId}_${Date.now()}.${extension}`)
+  fs.writeFileSync(filePath, buffer)
+
+  return {
+    success: true,
+    path: filePath,
+    size: buffer.length,
+    mimeType,
+    durationSeconds: Number(payload?.durationSeconds || 0)
+  }
+})
+
+ipcMain.handle('file:openPath', async (event, targetPath) => {
+  if (!targetPath || !fs.existsSync(targetPath)) {
+    return { success: false, error: 'Path does not exist' }
+  }
+  const error = await shell.openPath(targetPath)
+  return error ? { success: false, error } : { success: true }
+})
+
+ipcMain.handle('file:showItemInFolder', async (event, targetPath) => {
+  if (!targetPath || !fs.existsSync(targetPath)) {
+    return { success: false, error: 'Path does not exist' }
+  }
+  shell.showItemInFolder(targetPath)
+  return { success: true }
 })
 
 ipcMain.handle('node:getSchema', async (event, nodeName) => {
@@ -635,10 +775,10 @@ ipcMain.handle('fetch:getSources', async (event) => {
   })
 })
 
-async function runWorkflow(workflowId, resumeFrom = null) {
+async function runWorkflow(workflowId, resumeFrom = null, onlyNodes = null) {
   // 6-stage creator workflow: 发现 → 整理 → 构思 → 写作 → 制作 → 发布
   // Each stage groups internal sub-nodes
-  const nodes = [
+  const defaultNodes = [
     'fetch', 'manual', 'merge',           // 发现 (discover)
     'preprocess',                          // 整理 (organize)
     'research', 'topic_selection',         // 构思 (ideate) — creation studio
@@ -648,7 +788,9 @@ async function runWorkflow(workflowId, resumeFrom = null) {
     'publish'                              // 发布 (publish) — store + distribute
   ]
 
+  const nodes = Array.isArray(onlyNodes) && onlyNodes.length > 0 ? onlyNodes : defaultNodes
   let startIndex = resumeFrom ? nodes.indexOf(resumeFrom) : 0
+  if (startIndex < 0) startIndex = 0
 
   for (let i = startIndex; i < nodes.length; i++) {
     const nodeName = nodes[i]
@@ -659,9 +801,7 @@ async function runWorkflow(workflowId, resumeFrom = null) {
       startedAt: new Date().toISOString()
     }
 
-    if (mainWindow) {
-      mainWindow.webContents.send('workflow:update', currentWorkflow)
-    }
+    broadcastWorkflowUpdate()
 
     try {
       // 加载节点配置
@@ -696,9 +836,7 @@ async function runWorkflow(workflowId, resumeFrom = null) {
         console.warn(`Node ${nodeName} completed with errors:`, result.errors)
       }
 
-      if (mainWindow) {
-        mainWindow.webContents.send('workflow:update', currentWorkflow)
-      }
+      broadcastWorkflowUpdate()
 
       // 检查是否需要审批（针对script节点）
       if (nodeName === 'script' && !currentWorkflow.approvals?.script) {
@@ -714,7 +852,7 @@ async function runWorkflow(workflowId, resumeFrom = null) {
           currentWorkflow.nodeExecutions[nodeName].status = 'waiting_approval'
           
           if (mainWindow) {
-            mainWindow.webContents.send('workflow:update', currentWorkflow)
+            broadcastWorkflowUpdate()
             // 发送审批请求事件
             console.log('[Approval] Sending needApproval event to frontend')
             mainWindow.webContents.send('workflow:needApproval', {
@@ -747,16 +885,15 @@ async function runWorkflow(workflowId, resumeFrom = null) {
       })
 
       if (mainWindow) {
-        mainWindow.webContents.send('workflow:update', currentWorkflow)
+        broadcastWorkflowUpdate()
       }
       return
     }
   }
 
   currentWorkflow.status = 'completed'
-  if (mainWindow) {
-    mainWindow.webContents.send('workflow:update', currentWorkflow)
-  }
+  currentWorkflow.currentNode = null
+  broadcastWorkflowUpdate()
 }
 
 app.whenReady().then(() => {

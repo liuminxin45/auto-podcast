@@ -28,7 +28,6 @@ import {
   STATUS_CONFIG,
   formatDuration,
   estimateReadingSeconds,
-  generateMockSuggestion,
 } from './types'
 import SegmentCard from './SegmentCard'
 import AgentPanel from './AgentPanel'
@@ -140,11 +139,15 @@ function VersionPanel({
 // Main Component
 // ============================================================
 
+const segmentTypes = ['opening', 'main_1', 'main_2', 'discussion', 'closing'] as const
+
 export default function WritingLayer({
   visible,
   onClose,
+  workflow,
   episodeTitle = '',
   episodeDesc = '',
+  onSaveDraft,
   onProceedToProduction,
 }: WritingLayerProps) {
   // Global tone
@@ -219,6 +222,81 @@ export default function WritingLayer({
   const activeSegment = segments.find(s => s.id === activeSegmentId)
   const currentGlobalTone = GLOBAL_TONES.find(t => t.key === globalTone)
 
+  const buildWorkflowPatch = useCallback(() => {
+    const cleanSegments = segments.filter(s => s.content.trim().length > 0)
+    const stages = cleanSegments.map((segment, index) => ({
+      id: segment.id,
+      order: index + 1,
+      speaker: 'Host',
+      text: segment.content.trim(),
+      label: segment.label,
+      estimated_duration: segment.estimatedSeconds,
+    }))
+
+    return {
+      selected_topic: {
+        ...(workflow?.state?.selected_topic || {}),
+        title,
+        description: desc,
+      },
+      script: {
+        ...(workflow?.state?.script || {}),
+        title,
+        description: desc,
+        dialogue: cleanSegments.map(segment => ({
+          speaker: 'Host',
+          text: segment.content.trim(),
+        })),
+      },
+      stages,
+      writing_meta: {
+        globalTone,
+        updated_at: new Date().toISOString(),
+      },
+    }
+  }, [segments, title, desc, globalTone, workflow])
+
+  useEffect(() => {
+    if (!visible) return
+    const state = workflow?.state
+    const sourceStages = state?.stages?.length ? state.stages : []
+    const dialogue = state?.script?.dialogue || []
+
+    if (state?.script?.title || episodeTitle) setTitle(state?.script?.title || episodeTitle)
+    if (state?.script?.description || episodeDesc) setDesc(state?.script?.description || episodeDesc)
+
+    const source = sourceStages.length > 0
+      ? sourceStages.map((stage: any, index: number) => ({
+          id: String(stage.id || `seg_${index + 1}`),
+          label: stage.label || SEGMENT_TYPE_CONFIG[segmentTypes[index] || 'discussion'].label,
+          content: String(stage.text || ''),
+          estimatedSeconds: Number(stage.estimated_duration || stage.duration || estimateReadingSeconds(String(stage.text || ''))),
+        }))
+      : dialogue.map((line: any, index: number) => ({
+          id: `seg_${index + 1}`,
+          label: SEGMENT_TYPE_CONFIG[segmentTypes[index] || 'discussion'].label,
+          content: String(line.text || ''),
+          estimatedSeconds: estimateReadingSeconds(String(line.text || '')),
+        }))
+
+    if (source.length > 0) {
+      setSegments(source.map((item: any, index: number) => {
+        const type = segmentTypes[index] || 'discussion'
+        return {
+          id: item.id,
+          type,
+          label: item.label,
+          content: item.content,
+          tone: 'default',
+          estimatedSeconds: item.estimatedSeconds,
+          status: item.content.length > 0 ? 'editing' : 'draft',
+          collapsed: false,
+        }
+      }))
+      setActiveSegmentId(source[0].id)
+    }
+  }, [visible, workflow?.state?.episode_id])
+
   // ── Segment Actions ───────────────────────────────────────
 
   const updateSegmentContent = useCallback((id: string, content: string) => {
@@ -245,7 +323,7 @@ export default function WritingLayer({
 
   // ── Version Actions ───────────────────────────────────────
 
-  const saveVersion = useCallback(() => {
+  const saveVersion = useCallback(async () => {
     const now = new Date()
     const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`
     const v: Version = {
@@ -257,8 +335,13 @@ export default function WritingLayer({
     }
     setVersions(prev => [v, ...prev])
     setCurrentVersionIdx(0)
-    message.success({ content: '版本已保存', duration: 1.5, style: { marginTop: 60 } })
-  }, [segments, globalTone])
+    try {
+      await onSaveDraft?.(buildWorkflowPatch())
+      message.success({ content: '版本已保存到工作流', duration: 1.5, style: { marginTop: 60 } })
+    } catch (error: any) {
+      message.error({ content: `保存失败：${error?.message || String(error)}`, duration: 2, style: { marginTop: 60 } })
+    }
+  }, [segments, globalTone, onSaveDraft, buildWorkflowPatch])
 
   const restoreVersion = useCallback((idx: number) => {
     const v = versions[idx]
@@ -285,7 +368,85 @@ export default function WritingLayer({
 
   // ── AI Agent Actions ──────────────────────────────────────
 
-  const handleInvokeAgent = useCallback((role: AgentRole) => {
+  const requestAISuggestion = useCallback(async (
+    role: AgentRole,
+    segmentId: string,
+    text: string,
+    scope: CollaborationScope,
+    selectionRange?: { start: number; end: number },
+  ): Promise<AISuggestion> => {
+    if (!window.electronAPI?.loadAllConfigs) {
+      throw new Error('当前环境没有 Electron 配置接口，无法调用真实 AI 建议')
+    }
+    const configs = await window.electronAPI.loadAllConfigs()
+    const cfg = configs.script || configs.research || configs.topic_selection || {}
+    const apiKey = String(cfg.api_key || '').trim()
+    const apiBase = String(cfg.api_base || '').trim().replace(/\/$/, '')
+    const model = String(cfg.llm_model || 'gpt-4o-mini').trim()
+
+    if (!apiKey || !apiBase) {
+      throw new Error('请先在脚本/研究节点配置 API Base 与 API Key')
+    }
+
+    const roleLabel = AI_AGENTS_MAP[role]
+    const response = await fetch(`${apiBase}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        temperature: cfg.temperature ?? 0.4,
+        messages: [
+          {
+            role: 'system',
+            content: '你是播客脚本文案编辑。只返回 JSON，不要输出 Markdown。JSON 字段为 suggestedText 和 reason。',
+          },
+          {
+            role: 'user',
+            content: [
+              `编辑角色：${roleLabel}`,
+              `强度：${aiIntensity}`,
+              `作用范围：${scope}`,
+              '要求：不添加未经提供的新事实；保留原意；适合作为中文播客口播稿。',
+              `原文：${text}`,
+            ].join('\n'),
+          },
+        ],
+      }),
+    })
+
+    if (!response.ok) {
+      throw new Error(`AI 请求失败：HTTP ${response.status}`)
+    }
+
+    const data = await response.json()
+    const raw = data?.choices?.[0]?.message?.content || ''
+    let parsed: { suggestedText?: string; reason?: string } = {}
+    try {
+      const match = raw.match(/\{[\s\S]*\}/)
+      parsed = JSON.parse(match ? match[0] : raw)
+    } catch {
+      parsed = { suggestedText: raw, reason: '模型返回非 JSON，已按纯文本建议处理' }
+    }
+
+    return {
+      id: `sug_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      agentRole: role,
+      segmentId,
+      scope,
+      intensity: aiIntensity,
+      originalText: text,
+      suggestedText: String(parsed.suggestedText || text),
+      reason: String(parsed.reason || '已根据当前角色生成真实 AI 建议'),
+      status: 'pending',
+      timestamp: Date.now(),
+      selectionRange,
+    }
+  }, [aiIntensity])
+
+  const handleInvokeAgent = useCallback(async (role: AgentRole) => {
     if (!activeSegment || activeSegment.content.length < 5) {
       message.warning({ content: '请先在段落中写入一些内容', duration: 1.5, style: { marginTop: 60 } })
       return
@@ -297,36 +458,39 @@ export default function WritingLayer({
 
     // For full-text scope, generate suggestions for all non-empty segments
     if (collaborationScope === 'full') {
-      const newSuggestions = segments
+      try {
+        const candidates = segments
         .filter(s => s.content.length >= 5)
-        .map(s => generateMockSuggestion(role, s.id, s.content, 'full', aiIntensity))
-      setSuggestions(prev => [...newSuggestions, ...prev])
-      message.info({
-        content: `${AI_AGENTS_MAP[role]} 已对全文 ${newSuggestions.length} 个段落生成建议`,
-        duration: 2,
-        style: { marginTop: 60 },
-      })
+        const newSuggestions = await Promise.all(
+          candidates.map(s => requestAISuggestion(role, s.id, s.content, 'full'))
+        )
+        setSuggestions(prev => [...newSuggestions, ...prev])
+        message.info({
+          content: `${AI_AGENTS_MAP[role]} 已对全文 ${newSuggestions.length} 个段落生成真实 AI 建议`,
+          duration: 2,
+          style: { marginTop: 60 },
+        })
+      } catch (error: any) {
+        message.error({ content: error?.message || String(error), duration: 2.5, style: { marginTop: 60 } })
+      }
       return
     }
 
-    const suggestion = generateMockSuggestion(
-      role,
-      activeSegmentId,
-      targetText,
-      collaborationScope,
-      aiIntensity,
-      collaborationScope === 'selection' && selectedText
+    try {
+      const selectionRange = collaborationScope === 'selection' && selectedText
         ? { start: activeSegment.content.indexOf(selectedText), end: activeSegment.content.indexOf(selectedText) + selectedText.length }
-        : undefined,
-    )
-
-    setSuggestions(prev => [suggestion, ...prev])
-    message.info({
-      content: `${AI_AGENTS_MAP[role]} 已生成建议`,
-      duration: 1.5,
-      style: { marginTop: 60 },
-    })
-  }, [activeSegment, activeSegmentId, collaborationScope, selectedText, aiIntensity, segments])
+        : undefined
+      const suggestion = await requestAISuggestion(role, activeSegmentId, targetText, collaborationScope, selectionRange)
+      setSuggestions(prev => [suggestion, ...prev])
+      message.info({
+        content: `${AI_AGENTS_MAP[role]} 已生成真实 AI 建议`,
+        duration: 1.5,
+        style: { marginTop: 60 },
+      })
+    } catch (error: any) {
+      message.error({ content: error?.message || String(error), duration: 2.5, style: { marginTop: 60 } })
+    }
+  }, [activeSegment, activeSegmentId, collaborationScope, selectedText, segments, requestAISuggestion])
 
   const handleAcceptSuggestion = useCallback((suggestion: AISuggestion, finalText?: string) => {
     const seg = segments.find(s => s.id === suggestion.segmentId)
@@ -375,10 +539,14 @@ export default function WritingLayer({
     setSelectedText(text)
   }, [])
 
-  const handleProceed = useCallback(() => {
-    onProceedToProduction?.(segments, globalTone)
-    onClose()
-  }, [segments, globalTone, onProceedToProduction, onClose])
+  const handleProceed = useCallback(async () => {
+    try {
+      await onProceedToProduction?.(buildWorkflowPatch())
+      onClose()
+    } catch (error: any) {
+      message.error({ content: `进入制作失败：${error?.message || String(error)}`, duration: 2, style: { marginTop: 60 } })
+    }
+  }, [buildWorkflowPatch, onProceedToProduction, onClose])
 
   if (!visible) return null
 
