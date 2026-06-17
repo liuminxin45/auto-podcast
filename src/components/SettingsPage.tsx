@@ -152,7 +152,7 @@ function buildNodeConfigs(settings: AppSettings): Record<string, Record<string, 
     tts: {
       engine: audioProvider,
       api_key: audioProvider === 'openai-compatible' ? audioConfig.api_key : '',
-      api_base: audioProvider === 'openai-compatible' ? audioConfig.api_base : 'https://api.openai.com/v1',
+      api_base: audioProvider === 'openai-compatible' ? audioConfig.api_base : '',
       model: audioProvider === 'openai-compatible' ? audioConfig.llm_model : 'tts-1',
       default_voice: audioProvider === 'openai-compatible' ? 'alloy' : ttsVoice,
       voice_mapping: {
@@ -186,7 +186,7 @@ function buildNodeConfigs(settings: AppSettings): Record<string, Record<string, 
 function mergeSettings(saved: Partial<AppSettings> | null | undefined): AppSettings {
   const defaults = structuredClone(DEFAULT_SETTINGS)
   if (!saved) return defaults
-  return {
+  const merged = {
     ...defaults,
     ...saved,
     capability: { ...defaults.capability, ...saved.capability },
@@ -203,6 +203,22 @@ function mergeSettings(saved: Partial<AppSettings> | null | undefined): AppSetti
       },
     },
   }
+  const global = merged.apiConfig.global
+  if (
+    global.searchApiBase === 'https://api.openai.com/v1' &&
+    !global.searchApiKey &&
+    !global.searchApiModel
+  ) {
+    global.searchApiBase = ''
+  }
+  if (
+    global.audioProvider === 'edge-tts' &&
+    global.audioApiBase === 'https://api.openai.com/v1' &&
+    !global.audioApiKey
+  ) {
+    global.audioApiBase = ''
+  }
+  return merged
 }
 
 // ============================================================

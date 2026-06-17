@@ -72,6 +72,38 @@ const AUDIO_PROVIDER_OPTIONS: Array<{ key: AudioProvider; label: string; desc: s
   { key: 'openai-compatible', label: 'OpenAI 兼容语音', desc: '调用 /audio/speech，使用 /models 测试连接' },
 ]
 
+function usesRemoteGlobalConfig(capKey: 'text' | 'search' | 'audio', audioProvider: AudioProvider): boolean {
+  if (capKey === 'text') return true
+  if (capKey === 'audio') return audioProvider === 'openai-compatible'
+  return false
+}
+
+function getLocalCapabilityCopy(capKey: 'search' | 'audio', audioProvider: AudioProvider): {
+  title: string
+  desc: string
+  badge: string
+} {
+  if (capKey === 'search') {
+    return {
+      title: '使用内置信息抓取源',
+      desc: '发现层实际使用抓取源、手动素材和 TrendRadar。抓取源配置在发现页维护，不需要在这里填写 OpenAI API Base。',
+      badge: '内置可用',
+    }
+  }
+  if (audioProvider === 'edge-tts') {
+    return {
+      title: '使用本地 Edge TTS',
+      desc: '默认音频生成走 edge-tts，不需要 API Key、API Base 或模型。切换到 OpenAI 兼容语音后才需要远程接口配置。',
+      badge: '本地可用',
+    }
+  }
+  return {
+    title: '使用 OpenAI 兼容语音接口',
+    desc: '该模式会调用 /audio/speech 生成音频，并使用 /models 做连接测试。',
+    badge: '需配置',
+  }
+}
+
 // ============================================================
 // Connection Status Badge
 // ============================================================
@@ -238,6 +270,12 @@ function NodeOverrideCard({ stageId, settings, updateSettings }: {
   const nodeConfig = settings.apiConfig.nodeOverrides[stageId]
   const capLabel = CAPABILITY_LABELS[nodeConfig.capabilityType]
   const modelKey = `node-${stageId}`
+  const audioProvider = settings.apiConfig.global.audioProvider
+  const remoteEnabled = nodeConfig.capabilityType !== 'search' &&
+    (nodeConfig.capabilityType !== 'audio' || audioProvider === 'openai-compatible')
+  const localCopy = remoteEnabled
+    ? null
+    : getLocalCapabilityCopy(nodeConfig.capabilityType === 'audio' ? 'audio' : 'search', audioProvider)
   const [modelOptions, setModelOptions] = useState<Record<string, string[]>>({})
   const [modelLoading, setModelLoading] = useState<Record<string, boolean>>({})
 
@@ -261,11 +299,15 @@ function NodeOverrideCard({ stageId, settings, updateSettings }: {
     }))
     let success = false
     try {
-      if (!nodeConfig.apiBase || !nodeConfig.apiKey) {
-        throw new Error('请先填写 API Base 与 API Key')
+      if (!remoteEnabled) {
+        success = true
+      } else {
+        if (!nodeConfig.apiBase || !nodeConfig.apiKey) {
+          throw new Error('请先填写 API Base 与 API Key')
+        }
+        await fetchModels(nodeConfig.apiBase, nodeConfig.apiKey)
+        success = true
       }
-      await fetchModels(nodeConfig.apiBase, nodeConfig.apiKey)
-      success = true
     } catch {
       success = false
     }
@@ -282,9 +324,9 @@ function NodeOverrideCard({ stageId, settings, updateSettings }: {
     if (success) {
       message.success({ content: `${meta.label}能力连接成功`, duration: 2, style: { marginTop: 60 } })
     } else {
-      message.error({ content: `${meta.label}连接失败，请检查密钥`, duration: 3, style: { marginTop: 60 } })
+      message.error({ content: `${meta.label}连接失败，请检查 API Base 与密钥`, duration: 3, style: { marginTop: 60 } })
     }
-  }, [stageId, meta.label, nodeConfig.apiBase, nodeConfig.apiKey, updateSettings])
+  }, [stageId, meta.label, nodeConfig.apiBase, nodeConfig.apiKey, remoteEnabled, updateSettings])
 
   const handleFetchModels = useCallback(async () => {
     if (!nodeConfig.apiKey || !nodeConfig.apiBase) {
@@ -500,86 +542,118 @@ function NodeOverrideCard({ stageId, settings, updateSettings }: {
                 </div>
               </div>
 
-              {/* API Key for this node */}
-              <div style={{ marginBottom: 14 }}>
-                <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 8 }}>
-                  接入密钥（可选，留空则使用全局密钥）
+              {localCopy && (
+                <div style={{
+                  marginBottom: 14,
+                  padding: '10px 12px',
+                  borderRadius: 8,
+                  background: 'var(--success-bg)',
+                  border: '1px solid rgba(16,185,129,0.25)',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                    <CheckOutlined style={{ color: 'var(--success-color)' }} />
+                    <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>
+                      {localCopy.title}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                    {localCopy.desc}
+                  </div>
                 </div>
-                <APIKeyInput
-                  value={nodeConfig.apiKeyMasked}
-                  status={nodeConfig.connectionStatus}
-                  onSave={(key) => {
-                    const masked = key.slice(0, 4) + '····' + key.slice(-4)
-                    updateSettings('apiConfig', c => ({
-                      ...c,
-                      nodeOverrides: {
-                        ...c.nodeOverrides,
-                        [stageId]: {
-                          ...c.nodeOverrides[stageId],
-                          apiKey: key,
-                          apiKeySet: true,
-                          apiKeyMasked: masked,
+              )}
+
+              {remoteEnabled && (
+                <>
+                  {/* API Key for this node */}
+                  <div style={{ marginBottom: 14 }}>
+                    <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 8 }}>
+                      接入密钥（可选，留空则使用全局密钥）
+                    </div>
+                    <APIKeyInput
+                      value={nodeConfig.apiKeyMasked}
+                      status={nodeConfig.connectionStatus}
+                      onSave={(key) => {
+                        const masked = key.slice(0, 4) + '····' + key.slice(-4)
+                        updateSettings('apiConfig', c => ({
+                          ...c,
+                          nodeOverrides: {
+                            ...c.nodeOverrides,
+                            [stageId]: {
+                              ...c.nodeOverrides[stageId],
+                              apiKey: key,
+                              apiKeySet: true,
+                              apiKeyMasked: masked,
+                              connectionStatus: 'untested',
+                            },
+                          },
+                        }))
+                      }}
+                    />
+                  </div>
+
+                  {/* API Base */}
+                  <div style={{ marginBottom: 12 }}>
+                    <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 6 }}>
+                      API Base URL
+                    </div>
+                    <Input
+                      value={nodeConfig.apiBase}
+                      onChange={e => updateSettings('apiConfig', c => ({
+                        ...c,
+                        nodeOverrides: {
+                          ...c.nodeOverrides,
+                          [stageId]: {
+                            ...c.nodeOverrides[stageId],
+                            apiBase: e.target.value,
+                            connectionStatus: 'untested',
+                          },
                         },
-                      },
-                    }))
-                  }}
-                />
-              </div>
+                      }))}
+                      placeholder="https://api.openai.com/v1"
+                      style={{ borderRadius: 8, fontSize: 12 }}
+                    />
+                  </div>
 
-              {/* API Base */}
-              <div style={{ marginBottom: 12 }}>
-                <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 6 }}>
-                  API Base URL
-                </div>
-                <Input
-                  value={nodeConfig.apiBase}
-                  onChange={e => updateSettings('apiConfig', c => ({
-                    ...c,
-                    nodeOverrides: {
-                      ...c.nodeOverrides,
-                      [stageId]: { ...c.nodeOverrides[stageId], apiBase: e.target.value },
-                    },
-                  }))}
-                  placeholder="https://api.openai.com/v1"
-                  style={{ borderRadius: 8, fontSize: 12 }}
-                />
-              </div>
+                  {/* Model */}
+                  <div style={{ marginBottom: 14 }}>
+                    <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 6 }}>
+                      Model
+                    </div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <AutoComplete
+                        value={nodeConfig.apiModel}
+                        options={(modelOptions[modelKey] || []).map(model => ({ value: model, label: model }))}
+                        onChange={(val) => updateSettings('apiConfig', c => ({
+                          ...c,
+                          nodeOverrides: {
+                            ...c.nodeOverrides,
+                            [stageId]: {
+                              ...c.nodeOverrides[stageId],
+                              apiModel: val,
+                              connectionStatus: 'untested',
+                            },
+                          },
+                        }))}
+                        placeholder="输入或自动获取模型"
+                        style={{ flex: 1 }}
+                        filterOption={(inputValue, option) =>
+                          option?.value.toLowerCase().includes(inputValue.toLowerCase()) || false
+                        }
+                      />
+                      <Button
+                        size="small"
+                        icon={<SearchOutlined />}
+                        loading={modelLoading[modelKey]}
+                        onClick={handleFetchModels}
+                        style={{ height: 32, borderRadius: 8, fontSize: 12 }}
+                      >
+                        自动获取
+                      </Button>
+                    </div>
+                  </div>
+                </>
+              )}
 
-              {/* Model */}
-              <div style={{ marginBottom: 14 }}>
-                <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 6 }}>
-                  Model
-                </div>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <AutoComplete
-                    value={nodeConfig.apiModel}
-                    options={(modelOptions[modelKey] || []).map(model => ({ value: model, label: model }))}
-                    onChange={(val) => updateSettings('apiConfig', c => ({
-                      ...c,
-                      nodeOverrides: {
-                        ...c.nodeOverrides,
-                        [stageId]: { ...c.nodeOverrides[stageId], apiModel: val },
-                      },
-                    }))}
-                    placeholder="输入或自动获取模型"
-                    style={{ flex: 1 }}
-                    filterOption={(inputValue, option) =>
-                      option?.value.toLowerCase().includes(inputValue.toLowerCase()) || false
-                    }
-                  />
-                  <Button
-                    size="small"
-                    icon={<SearchOutlined />}
-                    loading={modelLoading[modelKey]}
-                    onClick={handleFetchModels}
-                    style={{ height: 32, borderRadius: 8, fontSize: 12 }}
-                  >
-                    自动获取
-                  </Button>
-                </div>
-              </div>
-
-              {/* Test connection */}
               <Button
                 size="small"
                 icon={<LinkOutlined />}
@@ -591,7 +665,7 @@ function NodeOverrideCard({ stageId, settings, updateSettings }: {
                   borderRadius: 6,
                 }}
               >
-                测试连接
+                {remoteEnabled ? '测试连接' : '检查状态'}
               </Button>
 
               {nodeConfig.connectionStatus === 'failed' && (
@@ -634,14 +708,14 @@ export default function SettingsAPIConfig({ settings, updateSettings }: Props) {
     }))
     let success = false
     try {
-      if (capKey === 'audio' && audioProvider === 'edge-tts') {
+      if (!usesRemoteGlobalConfig(capKey, audioProvider)) {
         success = true
       } else {
-      if (!apiBase || !apiKey) {
-        throw new Error('请先填写 API Base 与 API Key')
-      }
-      await fetchModels(apiBase, apiKey)
-      success = true
+        if (!apiBase || !apiKey) {
+          throw new Error('请先填写 API Base 与 API Key')
+        }
+        await fetchModels(apiBase, apiKey)
+        success = true
       }
     } catch {
       success = false
@@ -653,7 +727,7 @@ export default function SettingsAPIConfig({ settings, updateSettings }: Props) {
     if (success) {
       message.success({ content: '能力连接成功', duration: 2, style: { marginTop: 60 } })
     } else {
-      message.error({ content: '连接失败，请检查密钥', duration: 3, style: { marginTop: 60 } })
+      message.error({ content: '连接失败，请检查 API Base 与密钥', duration: 3, style: { marginTop: 60 } })
     }
   }, [settings.apiConfig.global, updateSettings])
 
@@ -706,7 +780,7 @@ export default function SettingsAPIConfig({ settings, updateSettings }: Props) {
           全局默认能力
         </div>
         <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 16 }}>
-          在此设置各类能力的默认接入密钥，所有节点默认使用这些配置
+          在此设置各类能力的默认来源。远程模型需要接入密钥，内置能力会直接使用本地或内置实现
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -725,6 +799,8 @@ export default function SettingsAPIConfig({ settings, updateSettings }: Props) {
             const status = settings.apiConfig.global[statusKey] as APIConnectionStatus
             const audioProvider = settings.apiConfig.global.audioProvider
             const modelKey = `global-${cap.key}`
+            const remoteEnabled = usesRemoteGlobalConfig(cap.key, audioProvider)
+            const localCopy = remoteEnabled ? null : getLocalCapabilityCopy(cap.key as 'search' | 'audio', audioProvider)
 
             return (
               <div key={cap.key} style={{
@@ -739,25 +815,25 @@ export default function SettingsAPIConfig({ settings, updateSettings }: Props) {
                     <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{cap.label}</div>
                     <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{cap.desc}</div>
                   </div>
-                  <StatusBadge status={status} />
+                  {remoteEnabled ? (
+                    <StatusBadge status={status} />
+                  ) : (
+                    <span style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      fontSize: 11,
+                      fontWeight: 500,
+                      color: 'var(--success-color)',
+                      background: 'var(--success-bg)',
+                      padding: '2px 8px',
+                      borderRadius: 6,
+                    }}>
+                      <CheckOutlined />
+                      {localCopy?.badge}
+                    </span>
+                  )}
                 </div>
-
-                <APIKeyInput
-                  value={masked}
-                  status={status}
-                  onSave={(key) => {
-                    const m = key.slice(0, 4) + '····' + key.slice(-4)
-                    updateSettings('apiConfig', c => ({
-                      ...c,
-                      global: {
-                        ...c.global,
-                        [apiKeyKey]: key,
-                        [apiKeySetKey]: true,
-                        [apiKeyMaskedKey]: m,
-                      },
-                    }))
-                  }}
-                />
 
                 {cap.key === 'audio' && (
                   <div style={{ marginTop: 10 }}>
@@ -794,58 +870,116 @@ export default function SettingsAPIConfig({ settings, updateSettings }: Props) {
                   </div>
                 )}
 
-                <div style={{ marginTop: 10 }}>
-                  <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 6 }}>
-                    API Base URL
+                {localCopy && (
+                  <div style={{
+                    marginTop: 10,
+                    padding: '10px 12px',
+                    borderRadius: 8,
+                    background: 'var(--success-bg)',
+                    border: '1px solid rgba(16,185,129,0.25)',
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                      <CheckOutlined style={{ color: 'var(--success-color)' }} />
+                      <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>
+                        {localCopy.title}
+                      </span>
+                      <span style={{
+                        fontSize: 10,
+                        color: 'var(--success-color)',
+                        background: 'rgba(16,185,129,0.12)',
+                        padding: '1px 6px',
+                        borderRadius: 999,
+                      }}>
+                        {localCopy.badge}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                      {localCopy.desc}
+                    </div>
                   </div>
-                  <Input
-                    value={apiBase}
-                    onChange={e => updateSettings('apiConfig', c => ({
-                      ...c,
-                      global: {
-                        ...c.global,
-                        [apiBaseKey]: e.target.value,
-                      },
-                    }))}
-                    placeholder="https://api.openai.com/v1"
-                    style={{ borderRadius: 8, fontSize: 12 }}
-                  />
-                </div>
+                )}
 
-                <div style={{ marginTop: 10 }}>
-                  <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 6 }}>
-                    Model
-                  </div>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <AutoComplete
-                      value={apiModel}
-                      options={(modelOptions[modelKey] || []).map(model => ({ value: model, label: model }))}
-                      onChange={(val) => updateSettings('apiConfig', c => ({
-                        ...c,
-                        global: {
-                          ...c.global,
-                          [apiModelKey]: val,
-                        },
-                      }))}
-                      placeholder="输入或自动获取模型"
-                      style={{ flex: 1 }}
-                      filterOption={(inputValue, option) =>
-                        option?.value.toLowerCase().includes(inputValue.toLowerCase()) || false
-                      }
-                    />
-                    <Button
-                      size="small"
-                      icon={<SearchOutlined />}
-                      loading={modelLoading[modelKey]}
-                      onClick={() => handleFetchGlobalModels(cap.key, apiBase, apiKey)}
-                      style={{ height: 32, borderRadius: 8, fontSize: 12 }}
-                    >
-                      自动获取
-                    </Button>
-                  </div>
-                </div>
+                {remoteEnabled && (
+                  <>
+                    <div style={{ marginTop: 10 }}>
+                      <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 8 }}>
+                        接入密钥
+                      </div>
+                      <APIKeyInput
+                        value={masked}
+                        status={status}
+                        onSave={(key) => {
+                          const m = key.slice(0, 4) + '····' + key.slice(-4)
+                          updateSettings('apiConfig', c => ({
+                            ...c,
+                            global: {
+                              ...c.global,
+                              [apiKeyKey]: key,
+                              [apiKeySetKey]: true,
+                              [apiKeyMaskedKey]: m,
+                              [statusKey]: 'untested',
+                            },
+                          }))
+                        }}
+                      />
+                    </div>
 
-                {(isSet || (cap.key === 'audio' && audioProvider === 'edge-tts')) && (
+                    <div style={{ marginTop: 10 }}>
+                      <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 6 }}>
+                        API Base URL
+                      </div>
+                      <Input
+                        value={apiBase}
+                        onChange={e => updateSettings('apiConfig', c => ({
+                          ...c,
+                          global: {
+                            ...c.global,
+                            [apiBaseKey]: e.target.value,
+                            [statusKey]: 'untested',
+                          },
+                        }))}
+                        placeholder="https://api.openai.com/v1"
+                        style={{ borderRadius: 8, fontSize: 12 }}
+                      />
+                    </div>
+
+                    <div style={{ marginTop: 10 }}>
+                      <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 6 }}>
+                        Model
+                      </div>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <AutoComplete
+                          value={apiModel}
+                          options={(modelOptions[modelKey] || []).map(model => ({ value: model, label: model }))}
+                          onChange={(val) => updateSettings('apiConfig', c => ({
+                            ...c,
+                            global: {
+                              ...c.global,
+                              [apiModelKey]: val,
+                              [statusKey]: 'untested',
+                            },
+                          }))}
+                          placeholder="输入或自动获取模型"
+                          style={{ flex: 1 }}
+                          filterOption={(inputValue, option) =>
+                            option?.value.toLowerCase().includes(inputValue.toLowerCase()) || false
+                          }
+                        />
+                        <Button
+                          size="small"
+                          icon={<SearchOutlined />}
+                          loading={modelLoading[modelKey]}
+                          onClick={() => handleFetchGlobalModels(cap.key, apiBase, apiKey)}
+                          style={{ height: 32, borderRadius: 8, fontSize: 12 }}
+                        >
+                          自动获取
+                        </Button>
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {(remoteEnabled ? isSet : true) && (
                   <div style={{ marginTop: 8 }}>
                     <Button
                       size="small"
@@ -854,7 +988,7 @@ export default function SettingsAPIConfig({ settings, updateSettings }: Props) {
                       onClick={() => handleTestGlobal(cap.key)}
                       style={{ fontSize: 11, height: 26, borderRadius: 6 }}
                     >
-                      测试连接
+                      {remoteEnabled ? '测试连接' : '检查状态'}
                     </Button>
                   </div>
                 )}
@@ -891,7 +1025,7 @@ export default function SettingsAPIConfig({ settings, updateSettings }: Props) {
           gap: 6,
         }}>
           <LockOutlined style={{ color: 'var(--accent-primary)', marginTop: 2 }} />
-          <span>所有密钥均加密存储在本地，不会上传至任何服务器。你可以随时更换或删除。</span>
+          <span>密钥仅保存到本机 Electron 配置目录，不会上传至项目服务器。请避免提交个人配置文件。</span>
         </div>
       </div>
 
