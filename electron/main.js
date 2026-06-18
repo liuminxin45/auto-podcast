@@ -45,6 +45,7 @@ const DEFAULT_RADAR_STATE = {
   lastFetchedCount: 0,
   running: false,
   runStartedAt: null,
+  lastRunContents: [],
   contents: []
 }
 
@@ -490,6 +491,7 @@ async function runRadarOnce(configOverride = null) {
       const key = `${item?.url || ''}|${item?.title || ''}|${item?.source || ''}`
       return !existingKeys.has(key)
     }).length
+    radarState.lastRunContents = incoming
     radarState.contents = mergeRadarContents(radarState.contents || [], incoming, radarState.keepLast)
     radarState.lastNewCount = newCount
     radarState.lastFetchedCount = incoming.length
@@ -502,6 +504,7 @@ async function runRadarOnce(configOverride = null) {
     radarState.lastError = error.message
     radarState.lastNewCount = 0
     radarState.lastFetchedCount = 0
+    radarState.lastRunContents = []
   } finally {
     radarState.running = false
     saveRadarCache()
@@ -510,17 +513,20 @@ async function runRadarOnce(configOverride = null) {
   return radarState
 }
 
-function startRadarService(configOverride = null) {
+function startRadarService(configOverride = null, options = {}) {
   const fetchConfig = applyRadarDefaults(
     configOverride || (configManager ? configManager.loadNodeConfig('fetch') : null) || {}
   )
+  const runImmediately = options.runImmediately !== false
   radarState.enabled = true
   radarState.intervalMin = fetchConfig.monitor_interval_min || 30
   radarState.keepLast = fetchConfig.monitor_keep_last || 100
   scheduleRadar()
   saveRadarCache()
   broadcastRadarUpdate()
-  runRadarOnce(fetchConfig)
+  if (runImmediately) {
+    runRadarOnce(fetchConfig)
+  }
 }
 
 function stopRadarService() {
@@ -966,6 +972,7 @@ ipcMain.handle('radar:runOnce', async (event, config) => {
 
 ipcMain.handle('radar:clearContents', async () => {
   radarState.contents = []
+  radarState.lastRunContents = []
   radarState.lastNewCount = 0
   radarState.lastFetchedCount = 0
   saveRadarCache()
@@ -1244,7 +1251,7 @@ app.whenReady().then(() => {
   radarState.intervalMin = fetchConfig.monitor_interval_min || radarState.intervalMin
   radarState.keepLast = fetchConfig.monitor_keep_last || radarState.keepLast
   if (fetchConfig.monitor_enabled) {
-    startRadarService(fetchConfig)
+    startRadarService(fetchConfig, { runImmediately: false })
   } else {
     radarState.enabled = false
     saveRadarCache()

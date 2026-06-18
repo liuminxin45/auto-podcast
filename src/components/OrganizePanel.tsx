@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback, useRef, useEffect } from 'react'
 import { Input, Button, Tag, Tooltip, message } from 'antd'
 import {
   SearchOutlined,
+  ArrowLeftOutlined,
   CloseOutlined,
   CheckCircleOutlined,
   ArrowRightOutlined,
@@ -765,7 +766,7 @@ export default function OrganizePanel({
           </div>
 
           <Tooltip title="返回">
-            <Button type="text" icon={<CloseOutlined />} onClick={onClose} style={{ color: 'var(--text-tertiary)' }} />
+            <Button type="text" icon={<ArrowLeftOutlined />} onClick={onClose} style={{ color: 'var(--text-tertiary)' }} />
           </Tooltip>
         </div>
       </div>

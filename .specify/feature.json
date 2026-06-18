@@ -1,0 +1,10 @@
+{
+  "feature_directory": "specs/001-fix-discover-page-state",
+  "spec_branch": "001-fix-discover-page-state",
+  "branch_local_only": true,
+  "task_type": "bugfix",
+  "risk_level": "medium",
+  "delivery_profile": "standard-bugfix",
+  "affected_repositories": ["auto-podcast"],
+  "intake_summary": "修复发现页新节目状态污染、立即采集 loading、返回图标、LLM 依赖提示、console 刷屏和雷达设置图标。"
+}

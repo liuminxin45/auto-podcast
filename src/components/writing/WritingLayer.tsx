@@ -1,6 +1,7 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react'
 import { Input, Button, Tag, Tooltip, Badge, message } from 'antd'
 import {
+  ArrowLeftOutlined,
   CloseOutlined,
   SoundOutlined,
   HistoryOutlined,
@@ -715,7 +716,7 @@ export default function WritingLayer({
             进入制作
           </Button>
           <Tooltip title="返回">
-            <Button type="text" icon={<CloseOutlined />} onClick={onClose}
+            <Button type="text" icon={<ArrowLeftOutlined />} onClick={onClose}
               style={{ color: 'var(--text-tertiary)' }} />
           </Tooltip>
         </div>

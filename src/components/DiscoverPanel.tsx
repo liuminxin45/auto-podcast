@@ -3,7 +3,7 @@ import { Input, Button, Tag, Badge, Tooltip, message } from 'antd'
 import {
   SearchOutlined,
   PlusOutlined,
-  CloseOutlined,
+  ArrowLeftOutlined,
   StarOutlined,
   StarFilled,
   CheckCircleOutlined,
@@ -17,6 +17,7 @@ import {
   ArrowRightOutlined,
   FieldTimeOutlined,
   RadarChartOutlined,
+  SettingOutlined,
   FireOutlined,
   ThunderboltOutlined,
   BulbOutlined,
@@ -65,7 +66,6 @@ type DiscoverPrefs = {
   sensitivity: SensitivityLevel
   freshness: FreshnessFilter
   viewMode: ViewMode
-  llmAutoTagEnabled: boolean
   smartRankMode: SmartRankMode
 }
 
@@ -95,6 +95,19 @@ function saveDiscoverPrefs(prefs: Partial<DiscoverPrefs>) {
   } catch {
     // ignore localStorage failures
   }
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, messageText: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      reject(new Error(messageText))
+    }, timeoutMs)
+
+    promise
+      .then(resolve)
+      .catch(reject)
+      .finally(() => window.clearTimeout(timer))
+  })
 }
 
 function getContentIdentity(item: ContentItem): string {
@@ -145,6 +158,7 @@ interface Props {
     lastRunAt: string | null
     lastError: string | null
     running: boolean
+    lastRunContents?: ContentItem[]
   } | null
   onRadarRunOnce?: (config: Record<string, any>) => Promise<any>
   onClearContents?: () => Promise<void>
@@ -851,9 +865,11 @@ export default function DiscoverPanel({
   const taggingInProgress = useRef(false)
   const fetchContentsRef = useRef(fetchContents)
   const abortControllerRef = useRef<AbortController | null>(null)
+  const stateSyncInitializedRef = useRef(false)
+  const lastStateSyncSignatureRef = useRef('')
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
   const [tagVersion, setTagVersion] = useState(0) // bump to force re-render after tagging
-  const [llmAutoTagEnabled, setLlmAutoTagEnabled] = useState(Boolean(initialPrefs.llmAutoTagEnabled))
+  const [llmAutoTagEnabled, setLlmAutoTagEnabled] = useState(false)
   const [retryTrigger, setRetryTrigger] = useState(0) // bump to force auto-tag re-trigger on retry
   const [taggingCycle, setTaggingCycle] = useState(0) // bump when a tagging run fully settles
 
@@ -877,6 +893,7 @@ export default function DiscoverPanel({
         setLlmConfig(config)
       } else {
         console.log('[DiscoverPanel] No LLM config found')
+        setLlmAutoTagEnabled(false)
       }
     }).catch(err => {
       console.warn('[DiscoverPanel] Failed to load LLM config:', err)
@@ -887,8 +904,8 @@ export default function DiscoverPanel({
 
   // Persist discover panel interaction preferences
   useEffect(() => {
-    saveDiscoverPrefs({ sensitivity, freshness, viewMode, llmAutoTagEnabled, smartRankMode })
-  }, [sensitivity, freshness, viewMode, llmAutoTagEnabled, smartRankMode])
+    saveDiscoverPrefs({ sensitivity, freshness, viewMode, smartRankMode })
+  }, [sensitivity, freshness, viewMode, smartRankMode])
 
   // ── Auto-tag: ONLY when toggle is ON + LLM config ready ───
   useEffect(() => {
@@ -1022,6 +1039,12 @@ export default function DiscoverPanel({
     if (!onClearContents) return
     try {
       await onClearContents()
+      setCandidateItems([])
+      setCandidateSet(new Set())
+      setSavedToInbox([])
+      setInboxStatuses(new Map())
+      setStarredSet(new Set())
+      setFeedbackMap(new Map())
       setTagVersion(v => v + 1)
       setClassifyProgress({ total: 0, tagged: 0, untagged: 0, status: 'idle' })
       message.success('已清空所有新闻')
@@ -1048,7 +1071,11 @@ export default function DiscoverPanel({
     if (!onRadarRunOnce || runningRadarOnce) return
     setRunningRadarOnce(true)
     try {
-      const result = await onRadarRunOnce(fetchConfig)
+      const result = await withTimeout(
+        onRadarRunOnce(fetchConfig),
+        60_000,
+        '采集超时：请检查信息源配置或网络连接',
+      )
       const newCount = result?.lastNewCount ?? 0
       const fetchedCount = result?.lastFetchedCount ?? 0
       if (result?.lastError) {
@@ -1065,10 +1092,37 @@ export default function DiscoverPanel({
     }
   }, [onRadarRunOnce, runningRadarOnce, fetchConfig])
 
+  const handleToggleLlmAutoTag = useCallback(() => {
+    if (llmAutoTagEnabled) {
+      handleStopTagging()
+      return
+    }
+
+    if (!llmConfigReady) {
+      message.info('正在读取大模型配置，请稍后再试')
+      return
+    }
+
+    if (!llmConfig?.apiKey) {
+      setLlmAutoTagEnabled(false)
+      setClassifyProgress(prev => ({
+        ...prev,
+        status: 'error',
+        error: '未配置大模型',
+        detail: '请先到右上角“设置”的智能能力接口中配置可用的大模型 API',
+      }))
+      message.warning('智能标签需要先配置大模型 API。请到右上角“设置”中完成配置。', 6)
+      return
+    }
+
+    setLlmAutoTagEnabled(true)
+    setClassifyProgress(prev => ({ ...prev, status: 'idle', detail: '准备恢复自动分类...' }))
+    setRetryTrigger(n => n + 1)
+  }, [llmAutoTagEnabled, llmConfigReady, llmConfig, handleStopTagging])
+
   // ── Filtered signals ──────────────────────────────────────
   const filteredSignals = useMemo(() => {
     let items = [...fetchContents]
-    console.log(`[DiscoverPanel] fetchContents: ${fetchContents.length}, sensitivity: ${sensitivity}, freshness: ${freshness}`)
 
     // Text search
     if (search.trim()) {
@@ -1264,6 +1318,21 @@ export default function DiscoverPanel({
         }
       }
     })
+    const syncSignature = JSON.stringify({
+      candidateItems: candidateItems.map(getContentIdentity),
+      savedToInbox: savedToInbox.map(getContentIdentity),
+      inboxStatuses: Array.from(inboxStatuses.entries()),
+      candidates: candidates.map(getContentIdentity),
+    })
+    if (!stateSyncInitializedRef.current) {
+      stateSyncInitializedRef.current = true
+      lastStateSyncSignatureRef.current = syncSignature
+      return
+    }
+    if (lastStateSyncSignatureRef.current === syncSignature) {
+      return
+    }
+    lastStateSyncSignatureRef.current = syncSignature
     onStateChange?.({
       candidateItems,
       savedToInbox,
@@ -1449,7 +1518,7 @@ export default function DiscoverPanel({
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <Tooltip title="雷达设置">
             <Button
-              type="text" icon={<RadarChartOutlined />}
+              type="text" icon={<SettingOutlined />}
               onClick={() => setFetchModalVisible(true)}
               style={{ color: 'var(--accent-primary)', borderRadius: 8 }}
             />
@@ -1457,15 +1526,15 @@ export default function DiscoverPanel({
           <Tooltip title="立即采集">
             <Button
               type="text"
-              loading={runningRadarOnce}
-              icon={<LoadingOutlined spin={runningRadarOnce} />}
+      loading={runningRadarOnce}
+              icon={!runningRadarOnce ? <ThunderboltOutlined /> : undefined}
               onClick={handleQuickRunRadar}
               disabled={!onRadarRunOnce}
               style={{ color: 'var(--text-secondary)', borderRadius: 8 }}
             />
           </Tooltip>
           <Tooltip title="返回">
-            <Button type="text" icon={<CloseOutlined />} onClick={onClose} style={{ color: 'var(--text-tertiary)' }} />
+            <Button type="text" icon={<ArrowLeftOutlined />} onClick={onClose} style={{ color: 'var(--text-tertiary)' }} />
           </Tooltip>
         </div>
       </div>
@@ -1617,15 +1686,7 @@ export default function DiscoverPanel({
                 : '开启后，新采集的新闻将自动用大模型分类打标签'
               }>
                 <div
-                  onClick={() => {
-                    if (llmAutoTagEnabled) {
-                      handleStopTagging()
-                    } else {
-                      setLlmAutoTagEnabled(true)
-                      setClassifyProgress(prev => ({ ...prev, status: 'idle', detail: '准备恢复自动分类...' }))
-                      setRetryTrigger(n => n + 1)
-                    }
-                  }}
+                  onClick={handleToggleLlmAutoTag}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 4,
                     padding: '3px 8px', borderRadius: 5, cursor: 'pointer',

@@ -68,6 +68,7 @@ declare global {
         lastRunAt: string | null
         lastError: string | null
         running: boolean
+        lastRunContents?: ContentItem[]
         contents: ContentItem[]
       }) => void) => void
       getNodeSchema: (nodeName: string) => Promise<any>
@@ -127,6 +128,7 @@ function App() {
     lastRunAt: string | null
     lastError: string | null
     running: boolean
+    lastRunContents?: ContentItem[]
     contents: ContentItem[]
   } | null>(null)
   const hasElectronBackend = Boolean(window.electronAPI?.getFetchSources)
@@ -682,9 +684,7 @@ function App() {
           key={`discover-${workflow?.id || 'none'}`}
           visible={discoverVisible}
           onClose={returnToEpisodeManager}
-          fetchContents={(radarState?.enabled || radarState?.contents?.length)
-            ? (radarState?.contents || [])
-            : (workflow?.state?.fetch_contents || [])}
+          fetchContents={(workflow?.state?.fetch_contents || [])}
           manualContents={workflow?.state?.manual_contents || []}
           initialCandidateItems={(workflow?.state?.selected_materials || []) as any}
           initialSavedToInbox={(workflow?.state?.discover_ui?.savedToInbox || []) as any}
@@ -703,7 +703,22 @@ function App() {
             })
           }}
           onRadarRunOnce={async (values) => {
-            return await window.electronAPI.radarRunOnce(values)
+            const result = await window.electronAPI.radarRunOnce(values)
+            const currentRunContents = Array.isArray(result?.lastRunContents)
+              ? result.lastRunContents
+              : []
+            await updateWorkflowPatch({
+              fetch_contents: currentRunContents,
+              discover_ui: {
+                candidateItems: [],
+                savedToInbox: [],
+                inboxStatuses: [],
+              },
+              selected_materials: [],
+            })
+            setDiscoverCandidates([])
+            setOrganizeCandidates([])
+            return result
           }}
           onFetchConfigSave={async (values) => {
             const result = await window.electronAPI.saveNodeConfig('fetch', values)
@@ -720,9 +735,28 @@ function App() {
           }}
           onClearContents={async () => {
             await window.electronAPI.radarClearContents()
+            await updateWorkflowPatch({
+              fetch_contents: [],
+              raw_contents: [],
+              selected_materials: [],
+              discover_ui: {
+                candidateItems: [],
+                savedToInbox: [],
+                inboxStatuses: [],
+              },
+              organize_ui: {
+                candidates: [],
+                ignoredIds: [],
+                mode: workflow?.state?.organize_ui?.mode || 'quick',
+              },
+              cleaned_contents: [],
+            })
+            setDiscoverCandidates([])
+            setOrganizeCandidates([])
           }}
           onUpdateContents={async (contents) => {
             await window.electronAPI.radarUpdateContents(contents)
+            await updateWorkflowPatch({ fetch_contents: contents })
           }}
           onProceedToOrganize={(candidates) => {
             setDiscoverCandidates(candidates)

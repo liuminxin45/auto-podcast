@@ -1,6 +1,7 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react'
 import { Button, Tooltip, message } from 'antd'
 import {
+  ArrowLeftOutlined,
   CloseOutlined,
   SoundOutlined,
   AudioOutlined,
@@ -1416,7 +1417,7 @@ export default function SoundStudio({
             {isGenerating ? `生成中 ${generationProgress}%` : '生成音频'}
           </Button>
           <Tooltip title="返回">
-            <Button type="text" icon={<CloseOutlined />} onClick={onClose}
+            <Button type="text" icon={<ArrowLeftOutlined />} onClick={onClose}
               style={{ color: 'var(--text-tertiary)' }} />
           </Tooltip>
         </div>

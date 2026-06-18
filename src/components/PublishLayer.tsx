@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useMemo } from 'react'
 import { Button, Tooltip, message, Modal } from 'antd'
 import {
-  CloseOutlined,
+  ArrowLeftOutlined,
   CheckCircleOutlined,
   RocketOutlined,
   ThunderboltOutlined,
@@ -1275,7 +1275,7 @@ export default function PublishLayer({
           )}
           {phase !== 'publishing' && (
             <Tooltip title="返回">
-              <Button type="text" icon={<CloseOutlined />} onClick={onClose}
+              <Button type="text" icon={<ArrowLeftOutlined />} onClick={onClose}
                 style={{ color: 'var(--text-tertiary)' }} />
             </Tooltip>
           )}

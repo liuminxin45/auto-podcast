@@ -1,0 +1,20 @@
+{
+  "feature": "001-fix-discover-page-state",
+  "task_type": "bugfix",
+  "risk_level": "medium",
+  "delivery_profile": "standard-bugfix",
+  "branch_local_only": true,
+  "current_stage": "specify",
+  "affected_repositories": [
+    {
+      "repository": "auto-podcast",
+      "path": ".",
+      "role": "electron-react-python-podcast-workbench"
+    }
+  ],
+  "validation_expectations": [
+    "npm run verify",
+    "npm run build",
+    "发现页 UI/CDP smoke"
+  ]
+}

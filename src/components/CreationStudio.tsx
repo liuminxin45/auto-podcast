@@ -13,6 +13,7 @@ import {
   QuestionCircleOutlined,
   SoundOutlined,
   FileTextOutlined,
+  ArrowLeftOutlined,
   CloseOutlined,
   ArrowRightOutlined,
   LockOutlined,
@@ -313,7 +314,7 @@ export default function CreationStudio({
             确认结构，进入写作
           </Button>
           <Tooltip title="返回工作流">
-            <Button type="text" icon={<CloseOutlined />} onClick={onClose} style={{ color: 'var(--text-tertiary)' }} />
+            <Button type="text" icon={<ArrowLeftOutlined />} onClick={onClose} style={{ color: 'var(--text-tertiary)' }} />
           </Tooltip>
         </div>
       </div>

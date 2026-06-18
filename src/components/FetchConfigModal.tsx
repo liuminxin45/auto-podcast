@@ -78,6 +78,19 @@ interface Props {
   onRunOnce?: (config: Record<string, any>) => Promise<any>
 }
 
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, messageText: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      reject(new Error(messageText))
+    }, timeoutMs)
+
+    promise
+      .then(resolve)
+      .catch(reject)
+      .finally(() => window.clearTimeout(timer))
+  })
+}
+
 // ============================================================
 // Presets
 // ============================================================
@@ -443,10 +456,14 @@ export default function FetchConfigModal({
 
     setRunningOnce(true)
     try {
-      const result = await onRunOnce(runConfig as any)
+      const result = await withTimeout(
+        onRunOnce(runConfig as any),
+        60_000,
+        '采集超时：请检查信息源配置或网络连接',
+      )
       const newCount = result?.lastNewCount ?? 0
       const fetchedCount = result?.lastFetchedCount ?? 0
-      const totalCount = result?.contents?.length ?? 0
+      const totalCount = result?.lastRunContents?.length ?? result?.contents?.length ?? 0
       const lastError = result?.lastError
       if (lastError) {
         message.error(`采集出错：${lastError}`, 6)
