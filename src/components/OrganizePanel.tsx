@@ -15,7 +15,7 @@ import {
   FilterOutlined,
   ExperimentOutlined,
   EditOutlined,
-} from '@ant-design/icons'
+} from '../icons/antdCompat'
 import type { ContentItem } from '../types/workflow'
 import { runFullAnalysis, PRIORITY_HINT_CONFIG, type AIAnalysisResult, type ItemAIHints, type TopicCluster } from './organizeAI'
 import { PRIORITY_CONFIG, prioritySortKey, type Priority } from '../constants/priorities'
@@ -357,7 +357,7 @@ function CandidateCard({
                 <div style={{
                   position: 'absolute', right: 0, top: 26, zIndex: 100,
                   background: 'var(--bg-secondary)', borderRadius: 8,
-                  border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-lg)',
+                  border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-soft)',
                   padding: 4, minWidth: 120,
                   animation: 'fadeIn 0.15s ease',
                 }}>
@@ -706,11 +706,11 @@ export default function OrganizePanel({
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{
             width: 30, height: 30, borderRadius: 8,
-            background: 'linear-gradient(135deg, #06b6d4 0%, #2563eb 100%)',
+            background: 'var(--bg-secondary)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             color: '#fff', fontSize: 15,
           }}>
-            🗂
+            夹
           </div>
           <div>
             <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.3 }}>
@@ -927,7 +927,7 @@ export default function OrganizePanel({
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   margin: '0 auto 16px', fontSize: 24,
                 }}>
-                  📭
+                  空
                 </div>
                 <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 6 }}>
                   还没有待整理的内容
@@ -939,7 +939,7 @@ export default function OrganizePanel({
             ) : poolItems.length === 0 ? (
               <div style={{ padding: '40px 30px', textAlign: 'center' }}>
                 <div style={{ fontSize: 13, color: 'var(--text-tertiary)', lineHeight: 1.6 }}>
-                  {search || activeCategory ? '当前筛选下没有信号' : '所有信号已处理完毕 👍'}
+                  {search || activeCategory ? '当前筛选下没有信号' : '所有信号已处理完毕 好'}
                 </div>
               </div>
             ) : (() => {
@@ -1109,7 +1109,7 @@ export default function OrganizePanel({
                 fontSize: 10, padding: '0 6px', lineHeight: '18px', borderRadius: 4,
                 background: '#dbeafe', color: '#1d4ed8', margin: 0,
               }}>
-                🎯 主线 {primaryCount}
+                准 主线 {primaryCount}
               </Tag>
             )}
             {importantCount > 0 && (
@@ -1140,7 +1140,7 @@ export default function OrganizePanel({
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   margin: '0 auto 16px', fontSize: 24, color: 'var(--text-tertiary)',
                 }}>
-                  ☰
+                  列
                 </div>
                 <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 6 }}>
                   从左侧选择你认为值得讲的内容
@@ -1178,7 +1178,7 @@ export default function OrganizePanel({
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           {primaryCount > 0 && (
             <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-              🎯 主线 {primaryCount}
+              准 主线 {primaryCount}
             </span>
           )}
           {importantCount > 0 && (

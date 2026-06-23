@@ -1,5 +1,5 @@
 import { Button, Empty } from 'antd'
-import { PlayCircleOutlined, ArrowRightOutlined } from '@ant-design/icons'
+import { PlayCircleOutlined, ArrowRightOutlined } from '../icons/antdCompat'
 import EpisodeManager from './EpisodeManager'
 import type { Workflow, WorkflowSummary } from '../types/workflow'
 import {

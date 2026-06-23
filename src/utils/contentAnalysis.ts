@@ -97,7 +97,7 @@ export function getQualitySignals(
   }
 
   if (item.source && RELIABLE_SOURCES.some(s => (item.source || '').toLowerCase().includes(s))) {
-    signals.push({ icon: '✦', text: '来自可靠来源' })
+    signals.push({ icon: '点', text: '来自可靠来源' })
   }
 
   return signals.slice(0, 2)

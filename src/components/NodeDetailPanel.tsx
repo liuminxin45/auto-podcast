@@ -11,11 +11,11 @@ import {
   CodeOutlined,
   DashboardOutlined,
   ClockCircleOutlined
-} from '@ant-design/icons'
+} from '../icons/antdCompat'
 import DynamicConfigForm from './DynamicConfigForm'
 import FetchConfigModal from './FetchConfigModal'
 import ManualConfigModal from './ManualConfigModal'
-import { RadarChartOutlined, InboxOutlined } from '@ant-design/icons'
+import { RadarChartOutlined, InboxOutlined } from '../icons/antdCompat'
 
 const { Title, Paragraph, Text } = Typography
 
@@ -464,7 +464,7 @@ export default function NodeDetailPanel({ nodeName, workflow, onClose }: Props) 
               width: 56,
               height: 56,
               borderRadius: 16,
-              background: 'linear-gradient(135deg, #2563eb 0%, #7c3aed 100%)',
+              background: 'var(--bg-secondary)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -544,7 +544,7 @@ export default function NodeDetailPanel({ nodeName, workflow, onClose }: Props) 
               width: 56,
               height: 56,
               borderRadius: 16,
-              background: 'linear-gradient(135deg, #f59e0b 0%, #ef4444 100%)',
+              background: 'var(--bg-secondary)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -567,7 +567,7 @@ export default function NodeDetailPanel({ nodeName, workflow, onClose }: Props) 
               icon={<InboxOutlined />}
               onClick={() => setManualModalVisible(true)}
               style={{
-                background: 'linear-gradient(135deg, #f59e0b 0%, #ef4444 100%)',
+                background: 'var(--bg-secondary)',
                 borderColor: 'transparent',
                 borderRadius: 10,
                 height: 42,

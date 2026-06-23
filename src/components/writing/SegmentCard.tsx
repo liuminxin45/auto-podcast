@@ -5,7 +5,7 @@ import {
   HolderOutlined,
   DownOutlined,
   UpOutlined,
-} from '@ant-design/icons'
+} from '../../icons/antdCompat'
 import type { WritingSegment, SegmentTone, SegmentStatus } from './types'
 import {
   SEGMENT_TYPE_CONFIG,
@@ -93,7 +93,7 @@ export default function SegmentCard({
         background: 'var(--bg-secondary)',
         overflow: showToneMenu ? 'visible' : 'hidden',
         transition: 'all 0.25s cubic-bezier(0.25, 0.8, 0.25, 1)',
-        boxShadow: isActive ? `0 0 0 3px ${cfg.color}12, var(--shadow-md)` : 'var(--shadow-sm)',
+        boxShadow: isActive ? `0 0 0 3px ${cfg.color}12, var(--shadow-soft)` : 'var(--shadow-sm)',
         animation: 'writingCardIn 0.3s ease-out',
       }}
     >
@@ -158,7 +158,7 @@ export default function SegmentCard({
               color: 'var(--text-primary)',
               resize: 'none',
               padding: '8px 4px',
-              fontFamily: "'Inter', 'Noto Sans SC', sans-serif",
+              fontFamily: "var(--font-ui)",
             }}
           />
 
@@ -182,7 +182,7 @@ export default function SegmentCard({
                   gap: 6,
                   lineHeight: 1.5,
                 }}>
-                  <span style={{ fontSize: 10, flexShrink: 0 }}>💡</span>
+                  <span style={{ fontSize: 10, flexShrink: 0 }}>想</span>
                   {hint}
                 </div>
               ))}
@@ -219,14 +219,14 @@ export default function SegmentCard({
                     fontWeight: 500,
                   }}
                 >
-                  🎭 {currentToneLabel}
+                  风 {currentToneLabel}
                   <DownOutlined style={{ fontSize: 8 }} />
                 </button>
                 {showToneMenu && (
                   <div style={{
                     position: 'absolute', left: 0, top: 30, zIndex: 40,
                     background: 'var(--bg-secondary)', borderRadius: 10,
-                    border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-lg)',
+                    border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-soft)',
                     padding: 4, minWidth: 140,
                     animation: 'fadeIn 0.15s ease',
                   }}>

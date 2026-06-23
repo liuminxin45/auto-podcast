@@ -9,7 +9,7 @@ import {
   PlayCircleOutlined,
   FireOutlined,
   StarOutlined,
-} from '@ant-design/icons'
+} from '../icons/antdCompat'
 
 // ============================================================
 // Mini Bar Chart (pure CSS)
@@ -425,21 +425,21 @@ export default function SettingsAnalytics() {
         </div>
 
         <AISuggestionCard
-          icon="📈"
+          icon="升"
           text="近期深度分析类节目完播率比均值高出 18%，考虑增加此类内容的比重。"
           actionLabel="查看相关节目"
         />
         <AISuggestionCard
-          icon="🌙"
+          icon="夜"
           text="晚间 20:00-21:00 发布的节目平均播放量高出 25%，建议在此时段发布。"
         />
         <AISuggestionCard
-          icon="⏱️"
+          icon="⏱"
           text="开头 30 秒对留存影响显著——快速进入核心话题的节目完播率更高。"
           actionLabel="查看开头优化建议"
         />
         <AISuggestionCard
-          icon="🎯"
+          icon="准"
           text="15-25 分钟时长的节目表现最稳定，当前你的平均时长在合理范围内。"
         />
 

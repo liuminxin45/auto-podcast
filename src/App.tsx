@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Layout, Button, Space, Typography, ConfigProvider, theme, Modal, Tooltip } from 'antd'
-import { CloseOutlined, FolderOpenOutlined, SaveOutlined, SettingOutlined } from '@ant-design/icons'
+import { AudioOutlined, CloseOutlined, FolderOpenOutlined, SaveOutlined, SettingOutlined } from './icons/antdCompat'
 import ApprovalModal from './components/ApprovalModal'
 import CreationStudio from './components/CreationStudio'
 import DiscoverPanel from './components/DiscoverPanel'
@@ -533,12 +533,12 @@ function App() {
       theme={{
         algorithm: theme.defaultAlgorithm,
         token: {
-          colorPrimary: '#2563eb',
+          colorPrimary: '#2f3437',
           colorBgBase: '#ffffff',
           colorBgContainer: '#ffffff',
           colorBgElevated: '#ffffff',
-          colorBorder: '#e5e7eb',
-          fontFamily: "'Inter', sans-serif",
+          colorBorder: '#e7e3da',
+          fontFamily: "var(--font-ui)",
           borderRadius: 6,
         },
       }}
@@ -556,7 +556,19 @@ function App() {
           zIndex: 20
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <span style={{ fontSize: '20px' }}>🎙️</span>
+            <span style={{
+              width: 24,
+              height: 24,
+              border: '1px solid var(--border-color)',
+              borderRadius: 6,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: 'var(--text-primary)',
+              background: 'var(--bg-tertiary)',
+            }}>
+              <AudioOutlined />
+            </span>
             <Title level={5} style={{ color: 'var(--text-primary)', margin: 0, fontWeight: 600 }}>
               Auto-Podcast Studio
             </Title>
@@ -571,9 +583,9 @@ function App() {
                     disabled={!hasUnsavedChanges}
                     aria-label="保存节目"
                     style={{
-                      background: hasUnsavedChanges ? 'var(--accent-light)' : 'transparent',
+                      background: hasUnsavedChanges ? 'var(--bg-muted)' : 'transparent',
                       borderColor: hasUnsavedChanges ? 'var(--accent-primary)' : 'var(--border-color)',
-                      color: hasUnsavedChanges ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                      color: hasUnsavedChanges ? 'var(--text-primary)' : 'var(--text-secondary)',
                       height: '32px',
                       width: '32px',
                       padding: 0,
@@ -603,9 +615,9 @@ function App() {
                 onClick={openEpisodeManager}
                 aria-label="节目管理"
                 style={{
-                  background: homePage === 'episodes' ? 'var(--accent-light)' : 'transparent',
+                  background: homePage === 'episodes' ? 'var(--bg-muted)' : 'transparent',
                   borderColor: homePage === 'episodes' ? 'var(--accent-primary)' : 'var(--border-color)',
-                  color: homePage === 'episodes' ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                  color: homePage === 'episodes' ? 'var(--text-primary)' : 'var(--text-secondary)',
                   height: '32px',
                   width: '32px',
                   padding: 0,

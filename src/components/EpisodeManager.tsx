@@ -10,7 +10,7 @@ import {
   FolderOpenOutlined,
   ImportOutlined,
   PlusOutlined,
-} from '@ant-design/icons'
+} from '../icons/antdCompat'
 import type { WorkflowSummary } from '../types/workflow'
 
 interface EpisodeMetaPatch {
@@ -187,10 +187,10 @@ export default function EpisodeManager({
                 onMouseLeave={() => setHoveredEpisodeId(prev => prev === episode.id ? null : prev)}
                 style={{
                   border: `1px solid ${active || selected || hovered ? 'var(--accent-primary)' : 'var(--border-color)'}`,
-                  background: hovered || selected ? 'var(--accent-light)' : 'var(--bg-secondary)',
+                  background: hovered || selected ? 'var(--bg-tertiary)' : 'var(--bg-secondary)',
                   borderRadius: 8,
                   overflow: 'hidden',
-                  boxShadow: active || selected || hovered ? '0 8px 22px rgba(37, 99, 235, 0.12)' : 'var(--shadow-sm)',
+                  boxShadow: active || selected || hovered ? 'var(--shadow-soft)' : 'var(--shadow-subtle)',
                   cursor: 'pointer',
                   transform: hovered ? 'translateY(-1px)' : 'translateY(0)',
                   transition: 'border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease',
@@ -198,7 +198,7 @@ export default function EpisodeManager({
               >
                 <div style={{
                   height: 104,
-                  background: 'linear-gradient(135deg, #eef2ff, #f8fafc)',
+                  background: 'var(--bg-secondary)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',

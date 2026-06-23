@@ -10,7 +10,7 @@ import {
   PlusOutlined,
   ArrowRightOutlined,
   UndoOutlined,
-} from '@ant-design/icons'
+} from '../../icons/antdCompat'
 import type {
   GlobalTone,
   SegmentTone,
@@ -52,7 +52,7 @@ function VersionPanel({
     <div style={{
       position: 'absolute', right: 0, top: 0, bottom: 0, width: 320,
       background: 'var(--bg-secondary)', borderLeft: '1px solid var(--border-color)',
-      boxShadow: 'var(--shadow-lg)', zIndex: 50,
+      boxShadow: 'var(--shadow-soft)', zIndex: 50,
       display: 'flex', flexDirection: 'column',
       animation: 'slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
     }}>
@@ -69,7 +69,7 @@ function VersionPanel({
       <div style={{ flex: 1, overflow: 'auto', padding: '12px 16px' }}>
         {versions.length === 0 ? (
           <div style={{ padding: '40px 20px', textAlign: 'center' }}>
-            <div style={{ fontSize: 32, marginBottom: 12 }}>📝</div>
+            <div style={{ fontSize: 32, marginBottom: 12 }}>记</div>
             <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 4 }}>
               还没有保存的版本
             </div>
@@ -573,11 +573,11 @@ export default function WritingLayer({
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{
             width: 30, height: 30, borderRadius: 8,
-            background: 'linear-gradient(135deg, #f59e0b 0%, #ef4444 100%)',
+            background: 'var(--bg-secondary)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             color: '#fff', fontSize: 15,
           }}>
-            ✍️
+            写
           </div>
           <div>
             <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.3 }}>
@@ -616,7 +616,7 @@ export default function WritingLayer({
               position: 'absolute', left: '50%', transform: 'translateX(-50%)',
               top: 42, zIndex: 100,
               background: 'var(--bg-secondary)', borderRadius: 14,
-              border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-lg)',
+              border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-soft)',
               padding: 8, minWidth: 260,
               animation: 'writingToneDropIn 0.2s ease-out',
             }}>
@@ -688,7 +688,7 @@ export default function WritingLayer({
               onClick={saveVersion}
               style={{ color: 'var(--text-tertiary)', fontSize: 13 }}
             >
-              💾
+              存
             </Button>
           </Tooltip>
           <Tooltip title="试听预览">
@@ -882,7 +882,7 @@ export default function WritingLayer({
                 textAlign: 'center',
                 animation: 'fadeIn 0.5s ease',
               }}>
-                <div style={{ fontSize: 40, marginBottom: 12 }}>✍️</div>
+                <div style={{ fontSize: 40, marginBottom: 12 }}>写</div>
                 <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 8 }}>
                   多智能体协作编辑空间
                 </div>
@@ -975,9 +975,9 @@ export default function WritingLayer({
 
 // Agent label lookup for messages
 const AI_AGENTS_MAP: Record<AgentRole, string> = {
-  clarity_editor: '✨ 表达润色官',
-  tone_stylist: '🎭 风格塑造师',
-  argument_enhancer: '🧠 逻辑强化师',
-  conciseness_coach: '✂️ 精简裁剪师',
-  hook_designer: '🎯 开场结尾优化官',
+  clarity_editor: '润 表达润色官',
+  tone_stylist: '风 风格塑造师',
+  argument_enhancer: '理 逻辑强化师',
+  conciseness_coach: '剪 精简裁剪师',
+  hook_designer: '准 开场结尾优化官',
 }

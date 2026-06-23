@@ -273,7 +273,7 @@ function createWindow() {
 
   // Load React app
   if (process.env.NODE_ENV === 'development') {
-    mainWindow.loadURL('http://localhost:5173')
+    mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL || 'http://127.0.0.1:5174')
     if (process.env.OPEN_DEVTOOLS === '1') {
       mainWindow.webContents.openDevTools()
     }

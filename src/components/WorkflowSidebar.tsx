@@ -32,7 +32,7 @@ function WorkflowStep({ stage, workflow, active, onStageClick }: {
       style={{
         width: '100%',
         border: `${borderWidth}px solid ${borderColor}`,
-        background: active ? 'var(--accent-light)' : status === 'pending' ? 'var(--bg-secondary)' : `${stage.color}08`,
+        background: active ? 'var(--bg-muted)' : status === 'pending' ? 'var(--bg-secondary)' : 'var(--bg-tertiary)',
         borderRadius: 8,
         padding: borderWidth === 2 ? '9px 11px' : '10px 12px',
         display: 'flex',
@@ -40,7 +40,7 @@ function WorkflowStep({ stage, workflow, active, onStageClick }: {
         position: 'relative',
         textAlign: 'left',
         cursor: 'pointer',
-        boxShadow: active ? '0 8px 22px rgba(37, 99, 235, 0.14)' : status === 'running' ? `0 8px 22px ${stage.color}14` : 'none',
+        boxShadow: active ? 'var(--shadow-soft)' : 'none',
         transition: 'border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease, transform 0.2s ease',
       }}
       title={`${stage.label}：${getStatusLabel(status)}`}
@@ -78,7 +78,7 @@ function WorkflowConnector() {
       <div style={{
         width: 1,
         height: 18,
-        background: 'linear-gradient(180deg, var(--border-color), var(--text-tertiary))',
+        background: 'var(--border-color)',
         opacity: 0.55,
       }} />
       <div style={{
@@ -102,7 +102,7 @@ export default function WorkflowSidebar({ workflow, activeStageId, onStageClick 
       flexShrink: 0,
       height: '100%',
       borderRight: '1px solid var(--border-color)',
-      background: 'var(--bg-secondary)',
+      background: 'var(--bg-tertiary)',
       display: 'flex',
       flexDirection: 'column',
       position: 'relative',

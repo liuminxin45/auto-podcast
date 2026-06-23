@@ -1,6 +1,6 @@
 import { Form, Input, InputNumber, Switch, Space, Button, Row, Col, Card } from 'antd'
 import { useEffect, useState } from 'react'
-import { SaveOutlined, ReloadOutlined, SettingOutlined } from '@ant-design/icons'
+import { SaveOutlined, ReloadOutlined, SettingOutlined } from '../icons/antdCompat'
 import FetchSourcesConfig from './FetchSourcesConfig'
 import LLMConfigFields from './LLMConfigFields'
 import ManualNewsConfig from './ManualNewsConfig'

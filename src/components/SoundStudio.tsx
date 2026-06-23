@@ -19,7 +19,7 @@ import {
   ScissorOutlined,
   ThunderboltOutlined,
   PlusOutlined,
-} from '@ant-design/icons'
+} from '../icons/antdCompat'
 import type { Workflow } from '../types/workflow'
 
 // ============================================================
@@ -110,12 +110,12 @@ interface Props {
 // ============================================================
 
 const VOICE_STYLES: Array<{ key: VoiceStyle; label: string; desc: string; icon: string }> = [
-  { key: 'natural', label: '自然', desc: '日常对话感，真实亲切', icon: '🗣️' },
-  { key: 'steady', label: '稳重', desc: '沉稳有力，像资深主播', icon: '🎙️' },
-  { key: 'deep', label: '深度', desc: '低沉磁性，引人深思', icon: '🌊' },
-  { key: 'relaxed', label: '轻松', desc: '慵懒随意，像深夜电台', icon: '☕' },
-  { key: 'warm', label: '温暖', desc: '柔和关怀，让人安心', icon: '🌅' },
-  { key: 'energetic', label: '活力', desc: '充满激情，富有感染力', icon: '⚡' },
+  { key: 'natural', label: '自然', desc: '日常对话感，真实亲切', icon: '讲' },
+  { key: 'steady', label: '稳重', desc: '沉稳有力，像资深主播', icon: '录' },
+  { key: 'deep', label: '深度', desc: '低沉磁性，引人深思', icon: '深' },
+  { key: 'relaxed', label: '轻松', desc: '慵懒随意，像深夜电台', icon: '谈' },
+  { key: 'warm', label: '温暖', desc: '柔和关怀，让人安心', icon: '暖' },
+  { key: 'energetic', label: '活力', desc: '充满激情，富有感染力', icon: '快' },
 ]
 
 const AUDIO_PROVIDERS: Array<{ key: AudioProvider; label: string; desc: string }> = [
@@ -160,10 +160,10 @@ const PAUSE_STYLES: Array<{ key: PauseStyle; label: string; desc: string }> = [
 ]
 
 const BGM_STYLES: Array<{ key: BGMStyle; label: string; icon: string; desc: string }> = [
-  { key: 'news', label: '新闻风', icon: '📰', desc: '节奏明快，信息感强' },
-  { key: 'interview', label: '访谈风', icon: '🎤', desc: '轻柔铺底，不抢注意力' },
-  { key: 'latenight', label: '深夜电台', icon: '🌙', desc: '舒缓悠远，氛围感十足' },
-  { key: 'none', label: '无音乐', icon: '🔇', desc: '纯人声，干净直接' },
+  { key: 'news', label: '新闻风', icon: '讯', desc: '节奏明快，信息感强' },
+  { key: 'interview', label: '访谈风', icon: '声', desc: '轻柔铺底，不抢注意力' },
+  { key: 'latenight', label: '深夜电台', icon: '夜', desc: '舒缓悠远，氛围感十足' },
+  { key: 'none', label: '无音乐', icon: '静', desc: '纯人声，干净直接' },
 ]
 
 const BGM_VOLUMES: Array<{ key: BGMVolume; label: string }> = [
@@ -173,38 +173,38 @@ const BGM_VOLUMES: Array<{ key: BGMVolume; label: string }> = [
 ]
 
 const EXPRESSION_TONES: Array<{ key: ExpressionTone; label: string; icon: string }> = [
-  { key: 'firm', label: '更坚定', icon: '💪' },
-  { key: 'friendly', label: '更亲切', icon: '🤗' },
-  { key: 'calm', label: '更冷静', icon: '🧊' },
+  { key: 'firm', label: '更坚定', icon: '坚' },
+  { key: 'friendly', label: '更亲切', icon: '亲' },
+  { key: 'calm', label: '更冷静', icon: '冷' },
 ]
 
 const QUICK_EDIT_ACTIONS: Array<{ key: EditActionType; label: string; icon: string; desc: string; color: string }> = [
-  { key: 'trim_edges', label: '裁掉多余', icon: '✂️', desc: '去除开头结尾的空白', color: '#8b5cf6' },
-  { key: 'compress_pauses', label: '缩短停顿', icon: '⏩', desc: '把过长的沉默变紧凑', color: '#f59e0b' },
-  { key: 'clean_silence', label: '清理空白', icon: '🧹', desc: '自动去除无声片段', color: '#10b981' },
-  { key: 'remove_noise', label: '去除杂音', icon: '✨', desc: '让声音更干净清晰', color: '#2563eb' },
+  { key: 'trim_edges', label: '裁掉多余', icon: '剪', desc: '去除开头结尾的空白', color: '#8b5cf6' },
+  { key: 'compress_pauses', label: '缩短停顿', icon: '快', desc: '把过长的沉默变紧凑', color: '#f59e0b' },
+  { key: 'clean_silence', label: '清理空白', icon: '净', desc: '自动去除无声片段', color: '#10b981' },
+  { key: 'remove_noise', label: '去除杂音', icon: '润', desc: '让声音更干净清晰', color: '#2563eb' },
 ]
 
 const TRANSITION_STYLES: Array<{ key: TransitionStyle; label: string; icon: string; desc: string }> = [
-  { key: 'fade', label: '淡入淡出', icon: '🌅', desc: '柔和过渡' },
-  { key: 'crossfade', label: '交叉融合', icon: '🔀', desc: '前后声音融合' },
-  { key: 'musical', label: '音乐过渡', icon: '🎵', desc: '用一小段旋律衔接' },
-  { key: 'silence', label: '自然留白', icon: '💭', desc: '短暂的安静' },
+  { key: 'fade', label: '淡入淡出', icon: '暖', desc: '柔和过渡' },
+  { key: 'crossfade', label: '交叉融合', icon: '合', desc: '前后声音融合' },
+  { key: 'musical', label: '音乐过渡', icon: '音', desc: '用一小段旋律衔接' },
+  { key: 'silence', label: '自然留白', icon: '思', desc: '短暂的安静' },
 ]
 
 const INTRO_TEMPLATES: Array<{ key: IntroOutroTemplate; label: string; icon: string; desc: string; duration: string }> = [
-  { key: 'professional', label: '专业范', icon: '🏢', desc: '新闻播报感开场', duration: '5秒' },
-  { key: 'casual', label: '轻松聊', icon: '☕', desc: '朋友闲聊的氛围', duration: '4秒' },
-  { key: 'minimal', label: '极简风', icon: '🎯', desc: '干净利落，直入主题', duration: '3秒' },
-  { key: 'cinematic', label: '电影感', icon: '🎬', desc: '有故事氛围的开场', duration: '6秒' },
+  { key: 'professional', label: '专业范', icon: '专', desc: '新闻播报感开场', duration: '5秒' },
+  { key: 'casual', label: '轻松聊', icon: '谈', desc: '朋友闲聊的氛围', duration: '4秒' },
+  { key: 'minimal', label: '极简风', icon: '准', desc: '干净利落，直入主题', duration: '3秒' },
+  { key: 'cinematic', label: '电影感', icon: '片', desc: '有故事氛围的开场', duration: '6秒' },
 ]
 
 const SEGMENT_BGM_OPTIONS: Array<{ key: string; label: string; icon: string }> = [
-  { key: 'same', label: '跟随全局', icon: '🔗' },
-  { key: 'tension', label: '紧张感', icon: '⚡' },
-  { key: 'warm', label: '温暖', icon: '🌅' },
-  { key: 'reflective', label: '沉思', icon: '💭' },
-  { key: 'none', label: '纯人声', icon: '🔇' },
+  { key: 'same', label: '跟随全局', icon: '链' },
+  { key: 'tension', label: '紧张感', icon: '快' },
+  { key: 'warm', label: '温暖', icon: '暖' },
+  { key: 'reflective', label: '沉思', icon: '思' },
+  { key: 'none', label: '纯人声', icon: '静' },
 ]
 
 function formatTime(seconds: number): string {
@@ -397,7 +397,7 @@ function EnhancedTimeline({ segments, totalDuration, activeId, playheadPosition,
               {hasInsertAt(seg.id, 'before') && (
                 <div style={{
                   position: 'absolute', left: -1, top: 0, bottom: 0, width: 3,
-                  background: `linear-gradient(180deg, #f59e0b 0%, transparent 100%)`,
+                  background: `var(--bg-secondary)`,
                   zIndex: 3,
                 }} />
               )}
@@ -454,7 +454,7 @@ function EnhancedTimeline({ segments, totalDuration, activeId, playheadPosition,
           {enableIntro && (
             <div style={{
               position: 'absolute', left: 0, top: 0, bottom: 0, width: '2.5%',
-              background: 'linear-gradient(90deg, rgba(16,185,129,0.15) 0%, transparent 100%)',
+              background: 'var(--bg-secondary)',
               borderRight: '1px dashed #10b981',
               zIndex: 1,
             }}>
@@ -469,7 +469,7 @@ function EnhancedTimeline({ segments, totalDuration, activeId, playheadPosition,
           {enableOutro && (
             <div style={{
               position: 'absolute', right: 0, top: 0, bottom: 0, width: '2%',
-              background: 'linear-gradient(270deg, rgba(16,185,129,0.15) 0%, transparent 100%)',
+              background: 'var(--bg-secondary)',
               borderLeft: '1px dashed #10b981',
               zIndex: 1,
             }}>
@@ -600,7 +600,7 @@ function RecordingSegmentCard({
         background: 'var(--bg-secondary)',
         overflow: 'hidden',
         transition: 'all 0.25s cubic-bezier(0.25, 0.8, 0.25, 1)',
-        boxShadow: isActive ? `0 0 0 3px ${segment.color}12, var(--shadow-md)` : 'var(--shadow-sm)',
+        boxShadow: isActive ? `0 0 0 3px ${segment.color}12, var(--shadow-soft)` : 'var(--shadow-sm)',
         animation: 'soundStudioCardIn 0.3s ease-out',
         cursor: 'pointer',
       }}
@@ -748,16 +748,16 @@ function CompletionOverlay({
         {/* Cover artwork placeholder */}
         <div style={{
           width: 200, height: 200, borderRadius: 24,
-          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+          background: 'var(--bg-secondary)',
           margin: '0 auto 28px', boxShadow: '0 20px 40px rgba(102,126,234,0.3)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           position: 'relative', overflow: 'hidden',
         }}>
           <div style={{
             position: 'absolute', inset: 0,
-            background: 'radial-gradient(circle at 30% 30%, rgba(255,255,255,0.15) 0%, transparent 60%)',
+            background: 'var(--bg-secondary)',
           }} />
-          <span style={{ fontSize: 56, filter: 'drop-shadow(0 4px 8px rgba(0,0,0,0.2))' }}>🎧</span>
+          <span style={{ fontSize: 56, filter: 'drop-shadow(0 4px 8px rgba(0,0,0,0.2))' }}>听</span>
         </div>
 
         {/* Title */}
@@ -814,7 +814,7 @@ function CompletionOverlay({
           style={{
             borderRadius: 12, height: 52, paddingInline: 40,
             fontSize: 15, fontWeight: 700,
-            background: 'linear-gradient(135deg, #2563eb 0%, #7c3aed 100%)',
+            background: 'var(--bg-secondary)',
             border: 'none',
             boxShadow: '0 8px 24px rgba(37,99,235,0.3)',
           }}
@@ -881,7 +881,7 @@ export default function SoundStudio({
     return stages.map((stage: any, index: number) => ({
       id: String(stage.id || `seg_${index + 1}`),
       label: String(stage.label || `第 ${index + 1} 段`),
-      icon: index === 0 ? '🎬' : index === stages.length - 1 ? '🎤' : '📌',
+      icon: index === 0 ? '片' : index === stages.length - 1 ? '声' : '点',
       color: ['#f59e0b', '#2563eb', '#8b5cf6', '#06b6d4', '#10b981'][index % 5],
       content: String(stage.text || ''),
       estimatedSeconds: Number(stage.estimated_duration || stage.duration || Math.max(10, Math.round(String(stage.text || '').length / 4))),
@@ -1076,7 +1076,7 @@ export default function SoundStudio({
       ...prev,
       [segId]: { ...prev[segId], status: 'recording', waveformData: generateWaveform(50) },
     }))
-      message.info({ content: '🎙️ 开始录制…', duration: 1.5, style: { marginTop: 60 } })
+      message.info({ content: '录 开始录制…', duration: 1.5, style: { marginTop: 60 } })
     } catch (error: any) {
       message.error({ content: `无法开始录制：${error?.message || String(error)}`, duration: 2, style: { marginTop: 60 } })
     }
@@ -1268,21 +1268,21 @@ export default function SoundStudio({
     })
     setEditHistoryIndex(prev => prev + 1)
     setTimelineSelection(null)
-    message.success({ content: `✅ ${desc}`, duration: 2, style: { marginTop: 60 } })
+    message.success({ content: `完 ${desc}`, duration: 2, style: { marginTop: 60 } })
   }, [editHistoryIndex])
 
   const handleUndo = useCallback(() => {
     if (editHistoryIndex < 0) return
     const entry = editHistory[editHistoryIndex]
     setEditHistoryIndex(prev => prev - 1)
-    message.info({ content: `↩️ 已撤销：${entry.description}`, duration: 1.5, style: { marginTop: 60 } })
+    message.info({ content: `撤 已撤销：${entry.description}`, duration: 1.5, style: { marginTop: 60 } })
   }, [editHistoryIndex, editHistory])
 
   const handleRedo = useCallback(() => {
     if (editHistoryIndex >= editHistory.length - 1) return
     const entry = editHistory[editHistoryIndex + 1]
     setEditHistoryIndex(prev => prev + 1)
-    message.info({ content: `↪️ 已重做：${entry.description}`, duration: 1.5, style: { marginTop: 60 } })
+    message.info({ content: `↪ 已重做：${entry.description}`, duration: 1.5, style: { marginTop: 60 } })
   }, [editHistoryIndex, editHistory])
 
   const handleDeleteSelection = useCallback(() => {
@@ -1297,7 +1297,7 @@ export default function SoundStudio({
       message.info({ content: '已移除过渡音乐', duration: 1.5, style: { marginTop: 60 } })
     } else {
       setMusicInserts(prev => [...prev, { id: `mi_${Date.now()}`, segmentId: segId, position, style: transitionStyle }])
-      message.success({ content: '🎵 已添加过渡音乐', duration: 1.5, style: { marginTop: 60 } })
+      message.success({ content: '音 已添加过渡音乐', duration: 1.5, style: { marginTop: 60 } })
     }
   }, [musicInserts, transitionStyle])
 
@@ -1354,13 +1354,13 @@ export default function SoundStudio({
           <div style={{
             width: 30, height: 30, borderRadius: 8,
             background: mode === 'ai'
-              ? 'linear-gradient(135deg, #2563eb 0%, #7c3aed 100%)'
-              : 'linear-gradient(135deg, #ef4444 0%, #f59e0b 100%)',
+              ? 'var(--bg-secondary)'
+              : 'var(--bg-secondary)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             color: '#fff', fontSize: 15,
             transition: 'background 0.3s ease',
           }}>
-            {mode === 'ai' ? '🤖' : '🎙️'}
+            {mode === 'ai' ? '智' : '录'}
           </div>
           <div>
             <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.3 }}>
@@ -1559,14 +1559,14 @@ export default function SoundStudio({
                 <div style={{
                   width: 100, height: 100, borderRadius: 24,
                   background: mode === 'ai'
-                    ? 'linear-gradient(135deg, #eff6ff 0%, #ede9fe 100%)'
-                    : 'linear-gradient(135deg, #fef2f2 0%, #fffbeb 100%)',
+                    ? 'var(--bg-secondary)'
+                    : 'var(--bg-secondary)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   marginBottom: 24,
                   border: '1px solid var(--border-color)',
                 }}>
                   <span style={{ fontSize: 44 }}>
-                    {mode === 'ai' ? '🎧' : '🎙️'}
+                    {mode === 'ai' ? '听' : '录'}
                   </span>
                 </div>
 
@@ -1634,12 +1634,12 @@ export default function SoundStudio({
               }}>
                 <div style={{
                   width: 80, height: 80, borderRadius: 20,
-                  background: 'linear-gradient(135deg, #2563eb 0%, #7c3aed 100%)',
+                  background: 'var(--bg-secondary)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   marginBottom: 24,
                   animation: 'soundStudioPulse 2s ease-in-out infinite',
                 }}>
-                  <span style={{ fontSize: 36, filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.2))' }}>🎵</span>
+                  <span style={{ fontSize: 36, filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.2))' }}>音</span>
                 </div>
                 <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 8 }}>
                   正在制作你的播客…
@@ -1658,7 +1658,7 @@ export default function SoundStudio({
                   <div style={{
                     width: `${generationProgress}%`, height: '100%',
                     borderRadius: 3,
-                    background: 'linear-gradient(90deg, #2563eb, #7c3aed)',
+                    background: 'var(--bg-secondary)',
                     transition: 'width 0.3s ease',
                   }} />
                 </div>
@@ -1809,9 +1809,9 @@ export default function SoundStudio({
             display: 'flex', borderBottom: '1px solid var(--border-color)',
           }}>
             {([
-              { key: 'voice' as const, label: mode === 'ai' ? '🎭 声音' : '🎙️ 录音' },
-              { key: 'atmosphere' as const, label: '🎶 氛围' },
-              { key: 'editing' as const, label: '✂️ 轻剪辑' },
+              { key: 'voice' as const, label: mode === 'ai' ? '风 声音' : '录 录音' },
+              { key: 'atmosphere' as const, label: '氛 氛围' },
+              { key: 'editing' as const, label: '剪 轻剪辑' },
             ]).map(tab => (
               <button
                 key={tab.key}
@@ -2027,7 +2027,7 @@ export default function SoundStudio({
                   background: 'var(--bg-primary)', border: '1px solid var(--border-color)',
                 }}>
                   <div style={{ fontSize: 11, color: 'var(--text-tertiary)', lineHeight: 1.6 }}>
-                    💡 点击左侧段落或下方播放按钮即时试听效果。每次调整都可以立刻听到变化。
+                    想 点击左侧段落或下方播放按钮即时试听效果。每次调整都可以立刻听到变化。
                   </div>
                 </div>
               </div>
@@ -2038,12 +2038,12 @@ export default function SoundStudio({
                 {/* Recording guidance */}
                 <div style={{
                   padding: '16px', borderRadius: 12,
-                  background: 'linear-gradient(135deg, #fef2f2 0%, #fffbeb 100%)',
+                  background: 'var(--bg-secondary)',
                   border: '1px solid #fecaca',
                   marginBottom: 16,
                 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: '#991b1b', marginBottom: 6 }}>
-                    🎙️ 录音提示
+                    录 录音提示
                   </div>
                   <div style={{ fontSize: 11, color: '#92400e', lineHeight: 1.7 }}>
                     <div style={{ marginBottom: 4 }}>• 找一个安静的环境</div>
@@ -2209,7 +2209,7 @@ export default function SoundStudio({
                       <div style={{
                         fontSize: 18, marginBottom: 4,
                       }}>
-                        🎬
+                        片
                       </div>
                       <div style={{
                         fontSize: 12, fontWeight: enableIntro ? 600 : 500,
@@ -2234,7 +2234,7 @@ export default function SoundStudio({
                       <div style={{
                         fontSize: 18, marginBottom: 4,
                       }}>
-                        🎵
+                        音
                       </div>
                       <div style={{
                         fontSize: 12, fontWeight: enableOutro ? 600 : 500,
@@ -2255,7 +2255,7 @@ export default function SoundStudio({
                   background: 'var(--bg-primary)', border: '1px solid var(--border-color)',
                 }}>
                   <div style={{ fontSize: 11, color: 'var(--text-tertiary)', lineHeight: 1.6 }}>
-                    🎧 试听时会叠加背景音效果，让你预览最终成品的氛围。
+                    听 试听时会叠加背景音效果，让你预览最终成品的氛围。
                   </div>
                 </div>
               </div>
@@ -2323,7 +2323,7 @@ export default function SoundStudio({
                   marginBottom: 20,
                 }}>
                   <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--accent-primary)', marginBottom: 4 }}>
-                    ✂️ 选区编辑
+                    剪 选区编辑
                   </div>
                   <div style={{ fontSize: 10, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
                     {timelineSelection
@@ -2419,7 +2419,7 @@ export default function SoundStudio({
                             {seg.label} → {nextSeg.label}
                           </span>
                           {hasInsert
-                            ? <span style={{ fontSize: 9, color: '#f59e0b', fontWeight: 600 }}>🎵 已添加</span>
+                            ? <span style={{ fontSize: 9, color: '#f59e0b', fontWeight: 600 }}>音 已添加</span>
                             : <PlusOutlined style={{ color: 'var(--text-tertiary)', fontSize: 10 }} />
                           }
                         </button>
@@ -2439,7 +2439,7 @@ export default function SoundStudio({
                   {enableIntro && (
                     <div style={{ marginBottom: 8 }}>
                       <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
-                        🎬 片头风格
+                        片 片头风格
                       </div>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
                         {INTRO_TEMPLATES.map(tmpl => {
@@ -2475,7 +2475,7 @@ export default function SoundStudio({
                   {enableOutro && (
                     <div>
                       <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
-                        🎵 片尾风格
+                        音 片尾风格
                       </div>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
                         {INTRO_TEMPLATES.map(tmpl => {
@@ -2621,7 +2621,7 @@ export default function SoundStudio({
                   background: 'var(--bg-primary)', border: '1px solid var(--border-color)',
                 }}>
                   <div style={{ fontSize: 11, color: 'var(--text-tertiary)', lineHeight: 1.6 }}>
-                    💡 所有修改都可以用 ↩️ 撤销。放心尝试，直到满意为止。
+                    想 所有修改都可以用 撤 撤销。放心尝试，直到满意为止。
                   </div>
                 </div>
               </div>
@@ -2668,7 +2668,7 @@ export default function SoundStudio({
           <div style={{
             height: '100%',
             width: `${generationProgress}%`,
-            background: 'linear-gradient(90deg, #2563eb, #7c3aed)',
+            background: 'var(--bg-secondary)',
             transition: 'width 0.3s ease',
             borderRadius: '0 2px 2px 0',
           }} />

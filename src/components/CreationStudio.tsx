@@ -21,7 +21,7 @@ import {
   CheckCircleOutlined,
   SaveOutlined,
   HistoryOutlined,
-} from '@ant-design/icons'
+} from '../icons/antdCompat'
 
 const { TextArea } = Input
 
@@ -274,7 +274,7 @@ export default function CreationStudio({
         flexShrink: 0,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span style={{ fontSize: 20 }}>📋</span>
+          <span style={{ fontSize: 20 }}>表</span>
           <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>
             创作台
           </span>
@@ -336,7 +336,7 @@ export default function CreationStudio({
           <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
               <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
-                🔭 素材池
+                察 素材池
               </span>
               <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
                 {filteredMaterials.length} 条
@@ -365,7 +365,7 @@ export default function CreationStudio({
                     ...(filterChannel === ch ? {} : { background: 'var(--bg-tertiary)', borderColor: 'transparent', color: 'var(--text-secondary)' })
                   }}
                 >
-                  {ch === 'all' ? '全部' : ch === 'auto' ? '🔭 雷达' : '📥 手动'}
+                  {ch === 'all' ? '全部' : ch === 'auto' ? '察 雷达' : '入 手动'}
                 </Button>
               ))}
             </div>
@@ -669,7 +669,7 @@ export default function CreationStudio({
               border: '1px solid var(--border-color)',
             }}>
               <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 10 }}>
-                📐 节目结构预览
+                构 节目结构预览
               </div>
               <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                 {blocks.filter(b => b.materials.length > 0 || b.notes).map((b, i) => (
@@ -710,7 +710,7 @@ export default function CreationStudio({
           {/* Right header */}
           <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)' }}>
             <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
-              💡 创作洞察
+              想 创作洞察
             </span>
           </div>
 
@@ -895,7 +895,7 @@ export default function CreationStudio({
               border: '1px solid var(--border-color)',
             }}>
               <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 10 }}>
-                📊 素材概览
+                数 素材概览
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-secondary)' }}>

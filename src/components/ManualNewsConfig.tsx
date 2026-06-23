@@ -1,5 +1,5 @@
 import { Input, Button, Space, Card, Typography, Divider } from 'antd'
-import { PlusOutlined, DeleteOutlined } from '@ant-design/icons'
+import { PlusOutlined, DeleteOutlined } from '../icons/antdCompat'
 import { useState } from 'react'
 
 const { TextArea } = Input

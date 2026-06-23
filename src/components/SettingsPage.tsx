@@ -17,7 +17,7 @@ import {
   LineChartOutlined,
   TrophyOutlined,
   FileTextOutlined,
-} from '@ant-design/icons'
+} from '../icons/antdCompat'
 import SettingsAPIConfig from './SettingsAPIConfig'
 import SettingsAnalytics from './SettingsAnalytics'
 import SettingsGrowth from './SettingsGrowth'
@@ -510,9 +510,9 @@ export default function SettingsPage({ visible, workflow, onClose }: Props) {
           <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 10 }}>搜索深度</div>
           <div style={{ display: 'flex', gap: 10 }}>
             {([
-              { key: 'light' as SearchIntensity, icon: '🔍', title: '快速浏览', desc: '快速获取核心信息' },
-              { key: 'standard' as SearchIntensity, icon: '📡', title: '标准搜索', desc: '平衡速度与覆盖面' },
-              { key: 'deep' as SearchIntensity, icon: '🔬', title: '深度挖掘', desc: '全面搜索，覆盖更多来源' },
+              { key: 'light' as SearchIntensity, icon: '查', title: '快速浏览', desc: '快速获取核心信息' },
+              { key: 'standard' as SearchIntensity, icon: '源', title: '标准搜索', desc: '平衡速度与覆盖面' },
+              { key: 'deep' as SearchIntensity, icon: '析', title: '深度挖掘', desc: '全面搜索，覆盖更多来源' },
             ]).map(opt => (
               <OptionCard
                 key={opt.key}
@@ -530,9 +530,9 @@ export default function SettingsPage({ visible, workflow, onClose }: Props) {
           <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 10 }}>语言偏好</div>
           <div style={{ display: 'flex', gap: 10 }}>
             {([
-              { key: 'zh' as SearchLanguage, icon: '🇨🇳', title: '中文优先', desc: '优先搜索中文内容' },
-              { key: 'en' as SearchLanguage, icon: '🌍', title: '英文优先', desc: '优先搜索英文内容' },
-              { key: 'auto' as SearchLanguage, icon: '🔄', title: '智能匹配', desc: '根据话题自动选择' },
+              { key: 'zh' as SearchLanguage, icon: 'CN', title: '中文优先', desc: '优先搜索中文内容' },
+              { key: 'en' as SearchLanguage, icon: '全', title: '英文优先', desc: '优先搜索英文内容' },
+              { key: 'auto' as SearchLanguage, icon: '循', title: '智能匹配', desc: '根据话题自动选择' },
             ]).map(opt => (
               <OptionCard
                 key={opt.key}
@@ -571,9 +571,9 @@ export default function SettingsPage({ visible, workflow, onClose }: Props) {
           <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 10 }}>处理模式</div>
           <div style={{ display: 'flex', gap: 10 }}>
             {([
-              { key: 'standard' as TextMode, icon: '⚡', title: '标准模式', desc: '满足日常创作，响应快速' },
-              { key: 'deep' as TextMode, icon: '🧠', title: '深度模式', desc: '更深入的分析与理解' },
-              { key: 'quality' as TextMode, icon: '💎', title: '高质量模式', desc: '最佳输出质量，耗时更长' },
+              { key: 'standard' as TextMode, icon: '快', title: '标准模式', desc: '满足日常创作，响应快速' },
+              { key: 'deep' as TextMode, icon: '理', title: '深度模式', desc: '更深入的分析与理解' },
+              { key: 'quality' as TextMode, icon: '质', title: '高质量模式', desc: '最佳输出质量，耗时更长' },
             ]).map(opt => (
               <OptionCard
                 key={opt.key}
@@ -591,9 +591,9 @@ export default function SettingsPage({ visible, workflow, onClose }: Props) {
           <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 10 }}>效率与质量</div>
           <div style={{ display: 'flex', gap: 10 }}>
             {([
-              { key: 'cost' as CostQualityBalance, icon: '🚀', title: '效率优先', desc: '更快完成，节省资源' },
-              { key: 'balanced' as CostQualityBalance, icon: '⚖️', title: '均衡模式', desc: '兼顾效率与质量' },
-              { key: 'quality' as CostQualityBalance, icon: '🎯', title: '质量优先', desc: '不计资源，追求最佳' },
+              { key: 'cost' as CostQualityBalance, icon: '发', title: '效率优先', desc: '更快完成，节省资源' },
+              { key: 'balanced' as CostQualityBalance, icon: '衡', title: '均衡模式', desc: '兼顾效率与质量' },
+              { key: 'quality' as CostQualityBalance, icon: '准', title: '质量优先', desc: '不计资源，追求最佳' },
             ]).map(opt => (
               <OptionCard
                 key={opt.key}
@@ -618,7 +618,7 @@ export default function SettingsPage({ visible, workflow, onClose }: Props) {
                 key={voice.id}
                 selected={settings.capability.audio.defaultVoice === voice.id}
                 onClick={() => updateSettings('capability', c => ({ ...c, audio: { ...c.audio, defaultVoice: voice.id } }))}
-                icon={voice.emoji}
+                icon={voice.icon}
                 title={voice.label}
                 desc={voice.desc}
               />
@@ -630,9 +630,9 @@ export default function SettingsPage({ visible, workflow, onClose }: Props) {
           <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 10 }}>音频质量</div>
           <div style={{ display: 'flex', gap: 10 }}>
             {([
-              { key: 'standard' as AudioQuality, icon: '📻', title: '标准', desc: '文件较小，适合日常' },
-              { key: 'high' as AudioQuality, icon: '🎵', title: '高品质', desc: '清晰自然，推荐使用' },
-              { key: 'ultra' as AudioQuality, icon: '🎼', title: '无损', desc: '极致音质，文件较大' },
+              { key: 'standard' as AudioQuality, icon: '播', title: '标准', desc: '文件较小，适合日常' },
+              { key: 'high' as AudioQuality, icon: '音', title: '高品质', desc: '清晰自然，推荐使用' },
+              { key: 'ultra' as AudioQuality, icon: '谱', title: '无损', desc: '极致音质，文件较大' },
             ]).map(opt => (
               <OptionCard
                 key={opt.key}
@@ -668,9 +668,9 @@ export default function SettingsPage({ visible, workflow, onClose }: Props) {
           <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 10 }}>审查严格度</div>
           <div style={{ display: 'flex', gap: 10 }}>
             {([
-              { key: 'relaxed' as ComplianceStrictness, icon: '🟢', title: '宽松', desc: '仅标记高风险内容' },
-              { key: 'standard' as ComplianceStrictness, icon: '🟡', title: '标准', desc: '平衡安全与创作自由' },
-              { key: 'strict' as ComplianceStrictness, icon: '🔴', title: '严格', desc: '全面审查，适合敏感话题' },
+              { key: 'relaxed' as ComplianceStrictness, icon: '绿', title: '宽松', desc: '仅标记高风险内容' },
+              { key: 'standard' as ComplianceStrictness, icon: '黄', title: '标准', desc: '平衡安全与创作自由' },
+              { key: 'strict' as ComplianceStrictness, icon: '红', title: '严格', desc: '全面审查，适合敏感话题' },
             ]).map(opt => (
               <OptionCard
                 key={opt.key}
@@ -688,9 +688,9 @@ export default function SettingsPage({ visible, workflow, onClose }: Props) {
           <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 10 }}>提醒强度</div>
           <div style={{ display: 'flex', gap: 10 }}>
             {([
-              { key: 'gentle' as ReminderIntensity, icon: '💬', title: '温和提醒', desc: '轻量提示，不打断创作' },
-              { key: 'standard' as ReminderIntensity, icon: '⚠️', title: '标准提醒', desc: '明确标注风险点' },
-              { key: 'strong' as ReminderIntensity, icon: '🚨', title: '强力提醒', desc: '高亮显示并要求确认' },
+              { key: 'gentle' as ReminderIntensity, icon: '议', title: '温和提醒', desc: '轻量提示，不打断创作' },
+              { key: 'standard' as ReminderIntensity, icon: '警', title: '标准提醒', desc: '明确标注风险点' },
+              { key: 'strong' as ReminderIntensity, icon: '急', title: '强力提醒', desc: '高亮显示并要求确认' },
             ]).map(opt => (
               <OptionCard
                 key={opt.key}
@@ -724,20 +724,20 @@ export default function SettingsPage({ visible, workflow, onClose }: Props) {
           {([
             {
               key: 'light' as AIAssistLevel,
-              icon: '🌿',
+              icon: '轻',
               title: '轻辅助',
               desc: '仅在你需要时出现，最少提示与干预',
             },
             {
               key: 'standard' as AIAssistLevel,
-              icon: '🤝',
+              icon: '协',
               title: '标准协作',
               desc: '适度提供建议和分析，保持创作节奏',
               badge: '推荐',
             },
             {
               key: 'deep' as AIAssistLevel,
-              icon: '🧠',
+              icon: '理',
               title: '深度协作',
               desc: '主动分析、多角度建议、深入挖掘',
             },
@@ -775,19 +775,19 @@ export default function SettingsPage({ visible, workflow, onClose }: Props) {
           {([
             {
               key: 'smart' as PublishFlowMode,
-              icon: '🚀',
+              icon: '发',
               title: '智能发布',
               desc: '经过智能助手优化后发布',
             },
             {
               key: 'quick' as PublishFlowMode,
-              icon: '⚡',
+              icon: '快',
               title: '快速发布',
               desc: '跳过优化步骤，直接发布',
             },
             {
               key: 'remember' as PublishFlowMode,
-              icon: '📌',
+              icon: '点',
               title: '记住上次',
               desc: '自动使用上次选择的方式',
             },
@@ -810,19 +810,19 @@ export default function SettingsPage({ visible, workflow, onClose }: Props) {
           {([
             {
               key: 'normal' as IdeationChallenge,
-              icon: '💡',
+              icon: '想',
               title: '普通模式',
               desc: '温和地补充和完善你的想法',
             },
             {
               key: 'critical' as IdeationChallenge,
-              icon: '🔍',
+              icon: '查',
               title: '批判模式',
               desc: '指出薄弱环节，提供改进方向',
             },
             {
               key: 'reverse' as IdeationChallenge,
-              icon: '🔄',
+              icon: '循',
               title: '反向挑战',
               desc: '提出对立观点，激发深层思考',
             },
@@ -846,9 +846,9 @@ export default function SettingsPage({ visible, workflow, onClose }: Props) {
           color: 'var(--text-secondary)',
           lineHeight: 1.6,
         }}>
-          {settings.nodeBehavior.ideationChallenge === 'normal' && '💡 普通模式适合快速产出，智能助手会顺着你的思路补充细节。'}
-          {settings.nodeBehavior.ideationChallenge === 'critical' && '🔍 批判模式会帮你发现论点漏洞，让内容更经得起推敲。'}
-          {settings.nodeBehavior.ideationChallenge === 'reverse' && '🔄 反向挑战会提出完全相反的观点，帮你打磨更有深度的内容。慎用！'}
+          {settings.nodeBehavior.ideationChallenge === 'normal' && '想 普通模式适合快速产出，智能助手会顺着你的思路补充细节。'}
+          {settings.nodeBehavior.ideationChallenge === 'critical' && '查 批判模式会帮你发现论点漏洞，让内容更经得起推敲。'}
+          {settings.nodeBehavior.ideationChallenge === 'reverse' && '循 反向挑战会提出完全相反的观点，帮你打磨更有深度的内容。慎用！'}
         </div>
       </SubsectionBlock>
     </div>
@@ -869,10 +869,10 @@ export default function SettingsPage({ visible, workflow, onClose }: Props) {
       <SubsectionBlock title="默认语气风格" desc="你的节目整体语气倾向">
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
           {([
-            { key: 'rational' as ToneStyle, icon: '📊', title: '理性分析', desc: '数据驱动，逻辑清晰，客观中立' },
-            { key: 'calm' as ToneStyle, icon: '🧊', title: '冷静评论', desc: '不急不缓，娓娓道来，从容大气' },
-            { key: 'passionate' as ToneStyle, icon: '🔥', title: '热情表达', desc: '充满热情，感染力强，观点鲜明' },
-            { key: 'latenight' as ToneStyle, icon: '🌙', title: '深夜电台', desc: '温暖私密，像朋友间的深度对话' },
+            { key: 'rational' as ToneStyle, icon: '数', title: '理性分析', desc: '数据驱动，逻辑清晰，客观中立' },
+            { key: 'calm' as ToneStyle, icon: '冷', title: '冷静评论', desc: '不急不缓，娓娓道来，从容大气' },
+            { key: 'passionate' as ToneStyle, icon: '热', title: '热情表达', desc: '充满热情，感染力强，观点鲜明' },
+            { key: 'latenight' as ToneStyle, icon: '夜', title: '深夜电台', desc: '温暖私密，像朋友间的深度对话' },
           ]).map(opt => (
             <OptionCard
               key={opt.key}
@@ -890,10 +890,10 @@ export default function SettingsPage({ visible, workflow, onClose }: Props) {
       <SubsectionBlock title="内容倾向" desc="你更擅长和偏好的表达方式">
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
           {([
-            { key: 'news' as ContentTendency, icon: '📰', title: '新闻解读', desc: '聚焦事件本身，提供背景与解读' },
-            { key: 'commentary' as ContentTendency, icon: '🎤', title: '评论表达', desc: '基于事件发表观点，引发思考' },
-            { key: 'analysis' as ContentTendency, icon: '🔬', title: '深度分析', desc: '抽丝剥茧，挖掘深层逻辑与影响' },
-            { key: 'narrative' as ContentTendency, icon: '📖', title: '讲述型表达', desc: '以故事化手法呈现，引人入胜' },
+            { key: 'news' as ContentTendency, icon: '讯', title: '新闻解读', desc: '聚焦事件本身，提供背景与解读' },
+            { key: 'commentary' as ContentTendency, icon: '声', title: '评论表达', desc: '基于事件发表观点，引发思考' },
+            { key: 'analysis' as ContentTendency, icon: '析', title: '深度分析', desc: '抽丝剥茧，挖掘深层逻辑与影响' },
+            { key: 'narrative' as ContentTendency, icon: '文', title: '讲述型表达', desc: '以故事化手法呈现，引人入胜' },
           ]).map(opt => (
             <OptionCard
               key={opt.key}
@@ -911,9 +911,9 @@ export default function SettingsPage({ visible, workflow, onClose }: Props) {
       <SubsectionBlock title="节目时长偏好" desc="影响内容节奏与结构建议">
         <div style={{ display: 'flex', gap: 10 }}>
           {([
-            { key: 'short' as DurationPreference, icon: '⚡', title: '短节目', desc: '5-10 分钟，快节奏要点播报' },
-            { key: 'medium' as DurationPreference, icon: '🎧', title: '中等时长', desc: '15-30 分钟，深入但不冗长', badge: '推荐' },
-            { key: 'long' as DurationPreference, icon: '📻', title: '长节目', desc: '45-60 分钟，沉浸式深度内容' },
+            { key: 'short' as DurationPreference, icon: '快', title: '短节目', desc: '5-10 分钟，快节奏要点播报' },
+            { key: 'medium' as DurationPreference, icon: '听', title: '中等时长', desc: '15-30 分钟，深入但不冗长', badge: '推荐' },
+            { key: 'long' as DurationPreference, icon: '播', title: '长节目', desc: '45-60 分钟，沉浸式深度内容' },
           ]).map(opt => (
             <OptionCard
               key={opt.key}
@@ -1000,9 +1000,9 @@ export default function SettingsPage({ visible, workflow, onClose }: Props) {
       <SubsectionBlock title="发布记录保留策略" desc="管理历史发布记录的保存方式">
         <div style={{ display: 'flex', gap: 10 }}>
           {([
-            { key: 'forever' as RetentionPolicy, icon: '♾️', title: '永久保留', desc: '保留所有发布记录' },
-            { key: 'recent50' as RetentionPolicy, icon: '📋', title: '最近 50 条', desc: '仅保留最近 50 条记录' },
-            { key: 'recent20' as RetentionPolicy, icon: '📝', title: '最近 20 条', desc: '仅保留最近 20 条记录' },
+            { key: 'forever' as RetentionPolicy, icon: '久', title: '永久保留', desc: '保留所有发布记录' },
+            { key: 'recent50' as RetentionPolicy, icon: '表', title: '最近 50 条', desc: '仅保留最近 50 条记录' },
+            { key: 'recent20' as RetentionPolicy, icon: '记', title: '最近 20 条', desc: '仅保留最近 20 条记录' },
           ]).map(opt => (
             <OptionCard
               key={opt.key}

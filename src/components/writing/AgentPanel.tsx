@@ -5,7 +5,7 @@ import {
   UpOutlined,
   EyeInvisibleOutlined,
   EyeOutlined,
-} from '@ant-design/icons'
+} from '../../icons/antdCompat'
 import type {
   AgentRole,
   AIIntensity,

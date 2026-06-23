@@ -30,7 +30,7 @@ import {
   TagOutlined,
   RobotOutlined,
   CaretDownOutlined,
-} from '@ant-design/icons'
+} from '../icons/antdCompat'
 import FetchConfigModal from './FetchConfigModal'
 import type { ContentItem } from '../types/workflow'
 import { 
@@ -231,7 +231,7 @@ function TodayHighlightCard({
         position: 'absolute', left: 0, top: 0, bottom: 0, width: 3,
         background: isCandidate
           ? 'var(--success-color)'
-          : 'linear-gradient(180deg, #2563eb 0%, #7c3aed 100%)',
+          : 'var(--bg-secondary)',
       }} />
 
       <div style={{ padding: '14px 16px 12px 16px' }}>
@@ -1498,7 +1498,7 @@ export default function DiscoverPanel({
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{
             width: 30, height: 30, borderRadius: 8,
-            background: 'linear-gradient(135deg, #2563eb 0%, #7c3aed 100%)',
+            background: 'var(--bg-secondary)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             color: '#fff', fontSize: 14,
           }}>
@@ -1818,7 +1818,7 @@ export default function DiscoverPanel({
               display: 'flex', alignItems: 'center', gap: 8,
               padding: '6px 20px',
               background: classifyProgress.status === 'running'
-                ? 'linear-gradient(90deg, #2563eb08 0%, #7c3aed08 100%)'
+                ? 'var(--bg-secondary)'
                 : classifyProgress.status === 'error'
                   ? '#fef2f2'
                   : classifyProgress.status === 'stopped'
@@ -1900,7 +1900,7 @@ export default function DiscoverPanel({
                 </>
               ) : classifyProgress.status === 'error' ? (
                 <>
-                  <span style={{ color: '#dc2626', fontWeight: 500 }}>⚠ 分类失败</span>
+                  <span style={{ color: '#dc2626', fontWeight: 500 }}>警 分类失败</span>
                   <span style={{ color: '#dc2626', fontSize: 10, flex: 1 }}>
                     {classifyProgress.error?.slice(0, 80)}
                   </span>
@@ -1980,7 +1980,7 @@ export default function DiscoverPanel({
               <div style={{ padding: '80px 40px', textAlign: 'center', maxWidth: 400, margin: '0 auto' }}>
                 <div style={{
                   width: 64, height: 64, borderRadius: 16,
-                  background: 'linear-gradient(135deg, #2563eb10 0%, #7c3aed10 100%)',
+                  background: 'var(--bg-secondary)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   margin: '0 auto 20px', color: 'var(--accent-primary)', fontSize: 28,
                 }}>
@@ -2054,7 +2054,7 @@ export default function DiscoverPanel({
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <div style={{
                           width: 22, height: 22, borderRadius: 6,
-                          background: 'linear-gradient(135deg, #2563eb 0%, #7c3aed 100%)',
+                          background: 'var(--bg-secondary)',
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
                           color: '#fff', fontSize: 11,
                         }}>

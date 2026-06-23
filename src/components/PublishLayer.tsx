@@ -15,7 +15,7 @@ import {
   ExclamationCircleOutlined,
   ClockCircleOutlined,
   SoundOutlined,
-} from '@ant-design/icons'
+} from '../icons/antdCompat'
 import { AGENTS } from '../constants'
 import { formatDuration } from '../utils'
 import type { Workflow } from '../types/workflow'
@@ -55,10 +55,12 @@ function AgentAvatar({ agent, size = 32 }: { agent: typeof AGENTS[number]; size?
   return (
     <div style={{
       width: size, height: size, borderRadius: size * 0.3,
-      background: agent.gradient,
+      background: agent.lightBg,
+      color: agent.color,
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       fontSize: size * 0.5, flexShrink: 0,
-      boxShadow: `0 2px 8px ${agent.color}30`,
+      border: `1px solid ${agent.color}33`,
+      boxShadow: 'var(--shadow-soft)',
     }}>
       {agent.icon}
     </div>
@@ -321,8 +323,8 @@ export default function PublishLayer({
       suggestionsAccepted: [step1Status, step2Status, step3Status].filter(status => status === 'accepted').length,
       suggestionsTotal: 3,
       platforms: [
-        { id: 'local', name: '本地目录', icon: '📁', status: publishDir ? 'success' : 'failed', url: publishDir || undefined },
-        { id: 'rss', name: 'RSS', icon: '🔗', status: rssPath ? 'success' : 'failed', url: rssPath || undefined },
+        { id: 'local', name: '本地目录', icon: '夹', status: publishDir ? 'success' : 'failed', url: publishDir || undefined },
+        { id: 'rss', name: 'RSS', icon: '链', status: rssPath ? 'success' : 'failed', url: rssPath || undefined },
         ...DEFAULT_PLATFORMS.map(platform => ({ ...platform, status: 'unconfigured' as const })),
       ],
     }]
@@ -487,7 +489,7 @@ export default function PublishLayer({
                   )}
                 </div>
 
-                {/* Agent emoji */}
+                {/* Agent mark */}
                 <span style={{ fontSize: 14, opacity: isActive ? 1 : 0.3 }}>
                   {step.agent.icon}
                 </span>
@@ -509,7 +511,7 @@ export default function PublishLayer({
       {/* Cover visual */}
       <div style={{
         width: '100%', aspectRatio: '16/9', borderRadius: 12,
-        background: 'linear-gradient(135deg, #1e1b4b 0%, #312e81 40%, #4c1d95 100%)',
+        background: 'var(--bg-secondary)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         marginBottom: 14, position: 'relative', overflow: 'hidden',
       }}>
@@ -525,7 +527,7 @@ export default function PublishLayer({
           background: 'rgba(255,255,255,0.03)',
         }} />
         <div style={{ textAlign: 'center', zIndex: 1 }}>
-          <div style={{ fontSize: 32, marginBottom: 6 }}>🎙️</div>
+          <div style={{ fontSize: 32, marginBottom: 6 }}>录</div>
           <div style={{
             fontSize: 11, color: 'rgba(255,255,255,0.7)',
             fontWeight: 500, letterSpacing: 0.5,
@@ -687,7 +689,7 @@ export default function PublishLayer({
       <div style={{ maxWidth: 720, width: '100%' }}>
         {/* Hero text */}
         <div style={{ textAlign: 'center', marginBottom: 40 }}>
-          <div style={{ fontSize: 36, marginBottom: 12 }}>🚀</div>
+          <div style={{ fontSize: 36, marginBottom: 12 }}>发</div>
           <div style={{
             fontSize: 22, fontWeight: 700, color: 'var(--text-primary)',
             marginBottom: 8,
@@ -721,12 +723,12 @@ export default function PublishLayer({
           >
             <div style={{
               width: 48, height: 48, borderRadius: 14,
-              background: 'linear-gradient(135deg, #2563eb 0%, #7c3aed 100%)',
+              background: 'var(--bg-secondary)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               fontSize: 22, marginBottom: 16,
               boxShadow: '0 4px 12px rgba(37, 99, 235, 0.2)',
             }}>
-              🧭
+              导
             </div>
             <div style={{
               fontSize: 18, fontWeight: 700, color: 'var(--text-primary)',
@@ -793,7 +795,7 @@ export default function PublishLayer({
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               fontSize: 22, marginBottom: 16,
             }}>
-              ⚡
+              快
             </div>
             <div style={{
               fontSize: 18, fontWeight: 700, color: 'var(--text-primary)',
@@ -951,7 +953,7 @@ export default function PublishLayer({
           maxWidth: 520, width: '100%', textAlign: 'center',
           animation: 'publishReadyIn 0.5s ease-out',
         }}>
-          <div style={{ fontSize: 48, marginBottom: 16 }}>✅</div>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>完</div>
           <div style={{
             fontSize: 22, fontWeight: 700, color: 'var(--text-primary)',
             marginBottom: 8,
@@ -1003,7 +1005,7 @@ export default function PublishLayer({
             onClick={() => doPublish('smart')}
             className="publish-main-btn"
             style={{
-              background: 'linear-gradient(135deg, #2563eb 0%, #7c3aed 100%)',
+              background: 'var(--bg-secondary)',
               borderColor: 'transparent',
               borderRadius: 12, fontWeight: 700, fontSize: 16,
               height: 52, paddingLeft: 32, paddingRight: 32,
@@ -1032,14 +1034,14 @@ export default function PublishLayer({
         {/* Animated icon */}
         <div style={{
           width: 80, height: 80, borderRadius: 20,
-          background: 'linear-gradient(135deg, #2563eb 0%, #7c3aed 100%)',
+          background: 'var(--bg-secondary)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           margin: '0 auto 24px',
           fontSize: 36,
           animation: 'publishingPulse 2s ease-in-out infinite',
           boxShadow: '0 8px 30px rgba(37, 99, 235, 0.25)',
         }}>
-          🚀
+          发
         </div>
 
         <div style={{
@@ -1062,7 +1064,7 @@ export default function PublishLayer({
         }}>
           <div style={{
             height: '100%', borderRadius: 3,
-            background: 'linear-gradient(90deg, #2563eb, #7c3aed)',
+            background: 'var(--bg-secondary)',
             width: `${publishProgress}%`,
             transition: 'width 0.4s ease',
           }} />
@@ -1092,7 +1094,7 @@ export default function PublishLayer({
             fontSize: 56, marginBottom: 16,
             animation: 'publishCelebrate 0.6s ease-out 0.2s both',
           }}>
-            🎉
+            成
           </div>
           <div style={{
             fontSize: 24, fontWeight: 700, color: 'var(--text-primary)',
@@ -1129,7 +1131,7 @@ export default function PublishLayer({
             fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)',
             marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6,
           }}>
-            📡 平台状态
+            源 平台状态
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {currentPlatforms.map(p => (
@@ -1229,11 +1231,11 @@ export default function PublishLayer({
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{
             width: 30, height: 30, borderRadius: 8,
-            background: 'linear-gradient(135deg, #2563eb 0%, #7c3aed 100%)',
+            background: 'var(--bg-secondary)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             color: '#fff', fontSize: 15,
           }}>
-            🚀
+            发
           </div>
           <div>
             <div style={{
@@ -1346,7 +1348,7 @@ export default function PublishLayer({
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             margin: '0 auto 16px', fontSize: 28,
           }}>
-            ⚡
+            快
           </div>
           <div style={{
             fontSize: 18, fontWeight: 700, color: 'var(--text-primary)',
@@ -1398,7 +1400,7 @@ export default function PublishLayer({
           <div style={{
             height: '100%',
             width: `${publishProgress}%`,
-            background: 'linear-gradient(90deg, #2563eb, #7c3aed)',
+            background: 'var(--bg-secondary)',
             transition: 'width 0.4s ease',
             borderRadius: '0 2px 2px 0',
           }} />

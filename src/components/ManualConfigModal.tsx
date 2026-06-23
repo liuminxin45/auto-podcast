@@ -17,7 +17,7 @@ import {
   CompressOutlined,
   SmileOutlined,
   ClockCircleOutlined,
-} from '@ant-design/icons'
+} from '../icons/antdCompat'
 
 const { TextArea } = Input
 
@@ -337,9 +337,9 @@ export default function ManualConfigModal({ visible, onClose, initialConfig, onS
           {materials.length} 条素材
         </span>
         <span style={{ width: 1, height: 14, background: 'var(--border-color)' }} />
-        {linkCount > 0 && <span>🔗 {linkCount}</span>}
-        {textCount > 0 && <span>📄 {textCount}</span>}
-        {ideaCount > 0 && <span>💡 {ideaCount}</span>}
+        {linkCount > 0 && <span>链 {linkCount}</span>}
+        {textCount > 0 && <span>页 {textCount}</span>}
+        {ideaCount > 0 && <span>想 {ideaCount}</span>}
         {importantCount > 0 && (
           <>
             <span style={{ width: 1, height: 14, background: 'var(--border-color)' }} />
@@ -903,7 +903,7 @@ export default function ManualConfigModal({ visible, onClose, initialConfig, onS
             width: 34,
             height: 34,
             borderRadius: 10,
-            background: 'linear-gradient(135deg, #f59e0b 0%, #ef4444 100%)',
+            background: 'var(--bg-secondary)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',

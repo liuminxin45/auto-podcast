@@ -36,7 +36,7 @@ function getStageStyle(status: string, stageColor: string) {
     color: 'var(--text-primary)',
     fontSize: '13px',
     fontWeight: 500 as const,
-    boxShadow: 'var(--shadow-md)',
+    boxShadow: 'var(--shadow-soft)',
     transition: 'all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1)',
     textAlign: 'left' as const,
   }
@@ -264,7 +264,7 @@ export default function WorkflowCanvas({ workflow, onNodeClick, onStageClick }: 
           style={{ 
             background: 'var(--bg-secondary)', 
             border: '1px solid var(--border-color)',
-            boxShadow: 'var(--shadow-md)',
+            boxShadow: 'var(--shadow-soft)',
             borderRadius: '8px',
             padding: '4px'
           }} 
@@ -275,7 +275,7 @@ export default function WorkflowCanvas({ workflow, onNodeClick, onStageClick }: 
             background: 'var(--bg-secondary)',
             border: '1px solid var(--border-color)',
             borderRadius: '8px',
-            boxShadow: 'var(--shadow-md)'
+            boxShadow: 'var(--shadow-soft)'
           }}
           maskColor="var(--bg-primary)"
           nodeColor={() => 'var(--border-color)'}

@@ -1,6 +1,6 @@
 import { Form, Input, AutoComplete, Button, message } from 'antd'
 import { useState } from 'react'
-import { ApiOutlined, CheckCircleOutlined } from '@ant-design/icons'
+import { ApiOutlined, CheckCircleOutlined } from '../icons/antdCompat'
 import { fetchModels } from '../utils/modelFetcher'
 
 /**

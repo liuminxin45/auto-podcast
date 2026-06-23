@@ -25,8 +25,8 @@ export interface PublishRecord {
 }
 
 export const DEFAULT_PLATFORMS: PlatformStatus[] = [
-  { id: 'apple', name: 'Apple Podcasts', icon: '🍎', status: 'unconfigured' },
-  { id: 'spotify', name: 'Spotify', icon: '💚', status: 'unconfigured' },
-  { id: 'xiaoyuzhou', name: '小宇宙', icon: '🪐', status: 'unconfigured' },
-  { id: 'ximalaya', name: '喜马拉雅', icon: '🏔️', status: 'unconfigured' },
+  { id: 'apple', name: 'Apple Podcasts', icon: '苹', status: 'unconfigured' },
+  { id: 'spotify', name: 'Spotify', icon: '绿', status: 'unconfigured' },
+  { id: 'xiaoyuzhou', name: '小宇宙', icon: '宇', status: 'unconfigured' },
+  { id: 'ximalaya', name: '喜马拉雅', icon: '山', status: 'unconfigured' },
 ]

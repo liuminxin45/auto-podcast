@@ -7,7 +7,7 @@ import {
   RocketOutlined,
   HeartOutlined,
   BulbOutlined,
-} from '@ant-design/icons'
+} from '../icons/antdCompat'
 
 // ============================================================
 // Collapsible Section (shared pattern)
@@ -358,14 +358,14 @@ export default function SettingsGrowth() {
       <div style={{
         padding: '14px 18px',
         borderRadius: 12,
-        background: 'linear-gradient(135deg, #eff6ff 0%, #ecfdf5 100%)',
+        background: 'var(--bg-secondary)',
         border: '1px solid #bfdbfe40',
         marginBottom: 20,
         display: 'flex',
         alignItems: 'center',
         gap: 12,
       }}>
-        <span style={{ fontSize: 28 }}>🌱</span>
+        <span style={{ fontSize: 28 }}>芽</span>
         <div>
           <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 }}>
             尚未接入真实创作历史
@@ -380,13 +380,13 @@ export default function SettingsGrowth() {
       <GrowthSection title="创作风格分析" icon={<EditOutlined />}>
         <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
           <StyleTagCard
-            icon="📊"
+            icon="数"
             label="当前主要风格"
             value="待分析"
             trend="等待真实历史"
           />
           <StyleTagCard
-            icon="🔄"
+            icon="循"
             label="风格变化"
             value="待分析"
             trend="暂无趋势"
@@ -425,7 +425,7 @@ export default function SettingsGrowth() {
                     width: '100%',
                     height: 2,
                     background: i === 3
-                      ? 'linear-gradient(90deg, var(--accent-primary), var(--success-color))'
+                      ? 'var(--bg-secondary)'
                       : 'var(--border-color)',
                     zIndex: 0,
                   }} />
@@ -537,25 +537,25 @@ export default function SettingsGrowth() {
         </div>
 
         <GrowthSuggestionCard
-          icon="🔄"
+          icon="循"
           title="尝试反向观点"
           text="你擅长正向论证，如果偶尔加入对立视角的探讨，会让内容更有张力和深度。可以从一个小的反面论点开始。"
           tone="gentle"
         />
         <GrowthSuggestionCard
-          icon="📖"
+          icon="文"
           title="增加故事型表达"
           text="你的分析能力很强，如果在开头或段落间穿插小故事，能让内容更有温度。数据分析类节目尤其适合「故事+观点」结构。"
           tone="encourage"
         />
         <GrowthSuggestionCard
-          icon="⏱️"
+          icon="⏱"
           title="探索短节目格式"
           text="你的节目时长稳定在 25-30 分钟，非常好。但偶尔尝试 8-10 分钟的精华版，可以覆盖更多碎片化听众。"
           tone="insight"
         />
         <GrowthSuggestionCard
-          icon="🎙️"
+          icon="录"
           title="语音节奏变化"
           text="适当增加语速变化和停顿，能让关键观点更有冲击力。尤其是在引出核心论点前的短暂停顿，效果显著。"
           tone="gentle"
@@ -566,11 +566,11 @@ export default function SettingsGrowth() {
           marginTop: 16,
           padding: '16px 20px',
           borderRadius: 12,
-          background: 'linear-gradient(135deg, #ecfdf5 0%, #eff6ff 100%)',
+          background: 'var(--bg-secondary)',
           border: '1px solid #10b98120',
           textAlign: 'center',
         }}>
-          <div style={{ fontSize: 24, marginBottom: 8 }}>🎯</div>
+          <div style={{ fontSize: 24, marginBottom: 8 }}>准</div>
           <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>
             保持你的创作节奏
           </div>

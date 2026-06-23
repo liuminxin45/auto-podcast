@@ -15,7 +15,7 @@ import {
   EyeInvisibleOutlined,
   EyeOutlined,
   ThunderboltOutlined,
-} from '@ant-design/icons'
+} from '../icons/antdCompat'
 import type {
   AppSettings,
   APIConnectionStatus,
@@ -53,12 +53,12 @@ const CAPABILITY_LABELS: Record<NodeCapabilityType, { label: string; icon: React
 }
 
 const STAGE_META: Record<StageId, { label: string; icon: string; desc: string; defaultCap: NodeCapabilityType }> = {
-  discover: { label: '发现层', icon: '🔍', desc: '搜索与信息获取', defaultCap: 'search' },
-  organize: { label: '整理层', icon: '📋', desc: '素材整理与分类', defaultCap: 'text' },
-  ideate: { label: '构思层', icon: '💡', desc: '选题与结构构思', defaultCap: 'reasoning' },
-  write: { label: '写作层', icon: '✍️', desc: '内容撰写与润色', defaultCap: 'text' },
-  produce: { label: '声音制作层', icon: '🎙️', desc: '智能语音生成', defaultCap: 'audio' },
-  publish: { label: '发布层', icon: '🚀', desc: '合规检查与发布', defaultCap: 'compliance' },
+  discover: { label: '发现层', icon: '查', desc: '搜索与信息获取', defaultCap: 'search' },
+  organize: { label: '整理层', icon: '表', desc: '素材整理与分类', defaultCap: 'text' },
+  ideate: { label: '构思层', icon: '想', desc: '选题与结构构思', defaultCap: 'reasoning' },
+  write: { label: '写作层', icon: '写', desc: '内容撰写与润色', defaultCap: 'text' },
+  produce: { label: '声音制作层', icon: '录', desc: '智能语音生成', defaultCap: 'audio' },
+  publish: { label: '发布层', icon: '发', desc: '合规检查与发布', defaultCap: 'compliance' },
 }
 
 const GLOBAL_CAPS: { key: 'text' | 'search' | 'audio'; label: string; icon: React.ReactNode; desc: string }[] = [

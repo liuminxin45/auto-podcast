@@ -1,5 +1,5 @@
 import { Modal, Typography, Divider, Space, Button } from 'antd'
-import { CheckOutlined, CloseOutlined, FileTextOutlined } from '@ant-design/icons'
+import { CheckOutlined, CloseOutlined, FileTextOutlined } from '../icons/antdCompat'
 import { useState } from 'react'
 
 const { Paragraph, Text } = Typography
@@ -183,7 +183,7 @@ export default function ApprovalModal({ visible, approvalData, onApprove, onReje
           background: 'var(--bg-secondary)',
           borderRadius: '8px',
           border: '1px solid var(--border-color)',
-          boxShadow: 'var(--shadow-lg)'
+          boxShadow: 'var(--shadow-soft)'
         }
       }}
     >

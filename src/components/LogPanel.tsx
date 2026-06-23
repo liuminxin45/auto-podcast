@@ -1,5 +1,5 @@
 import { Tabs, Badge, Empty, Button } from 'antd'
-import { FileTextOutlined, WarningOutlined, DownOutlined, UpOutlined } from '@ant-design/icons'
+import { FileTextOutlined, WarningOutlined, DownOutlined, UpOutlined } from '../icons/antdCompat'
 
 interface Props {
   workflow: any

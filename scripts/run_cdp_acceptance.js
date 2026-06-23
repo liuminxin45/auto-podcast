@@ -6,9 +6,9 @@ const path = require('path')
 const { spawn, spawnSync } = require('child_process')
 
 const projectRoot = path.resolve(__dirname, '..')
-const vitePort = String(process.env.VITE_PORT || '5173')
+const vitePort = String(process.env.VITE_PORT || '5174')
 const cdpPort = String(process.env.CDP_PORT || process.env.CDP_ACCEPTANCE_PORT || '9222')
-const viteUrl = `http://localhost:${vitePort}`
+const viteUrl = `http://127.0.0.1:${vitePort}`
 const reportPath = path.join(projectRoot, 'docs', 'acceptance', 'CDP_ACCEPTANCE_REPORT.md')
 const electronBin = path.join(
   projectRoot,
@@ -87,6 +87,7 @@ async function main() {
     env: {
       ...process.env,
       NODE_ENV: 'development',
+      VITE_DEV_SERVER_URL: viteUrl,
       CDP_ACCEPTANCE: '1',
       CDP_PORT: cdpPort,
       CDP_FAKE_MEDIA: process.env.CDP_FAKE_MEDIA || '1'

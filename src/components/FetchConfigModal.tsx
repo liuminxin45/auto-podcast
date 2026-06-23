@@ -17,7 +17,7 @@ import {
   AimOutlined,
   AppstoreOutlined,
   ExperimentOutlined,
-} from '@ant-design/icons'
+} from '../icons/antdCompat'
 
 // ============================================================
 // Types
@@ -257,11 +257,11 @@ const FRESHNESS_LABELS: Record<number, { text: string; desc: string }> = {
 // ============================================================
 
 const SOURCE_ICONS: Record<string, React.ReactNode> = {
-  newsnow: <span style={{ fontSize: 18 }}>🔥</span>,
-  hackernews: <span style={{ fontSize: 18 }}>🟠</span>,
-  techcrunch: <span style={{ fontSize: 18 }}>💚</span>,
-  ai_news_daily: <span style={{ fontSize: 18 }}>🤖</span>,
-  example_custom: <span style={{ fontSize: 18 }}>🔧</span>,
+  newsnow: <span style={{ fontSize: 18 }}>热</span>,
+  hackernews: <span style={{ fontSize: 18 }}>橙</span>,
+  techcrunch: <span style={{ fontSize: 18 }}>绿</span>,
+  ai_news_daily: <span style={{ fontSize: 18 }}>智</span>,
+  example_custom: <span style={{ fontSize: 18 }}>设</span>,
 }
 
 // ============================================================
@@ -1336,14 +1336,14 @@ export default function FetchConfigModal({
 
   const renderSummaryBar = () => {
     const items: string[] = []
-    items.push(`📡 ${BREADTH_LABELS[config.breadth].text}`)
-    items.push(`✨ ${QUALITY_LABELS[config.quality].text}`)
+    items.push(`源 ${BREADTH_LABELS[config.breadth].text}`)
+    items.push(`润 ${QUALITY_LABELS[config.quality].text}`)
     items.push(`⏱ ${FRESHNESS_LABELS[config.freshness].text}`)
     if (config.enabled_sources.length > 0) {
-      items.push(`📰 ${config.enabled_sources.length}个来源`)
+      items.push(`讯 ${config.enabled_sources.length}个来源`)
     }
     if (config.monitor_enabled) {
-      items.push(`🔁 每${config.monitor_interval_min}分钟`)
+      items.push(`循 每${config.monitor_interval_min}分钟`)
     }
 
     return (
@@ -1492,7 +1492,7 @@ export default function FetchConfigModal({
             width: 34,
             height: 34,
             borderRadius: 10,
-            background: 'linear-gradient(135deg, #2563eb 0%, #7c3aed 100%)',
+            background: 'var(--bg-secondary)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Button, Input } from 'antd'
-import { CheckOutlined, CloseOutlined, EditOutlined } from '@ant-design/icons'
+import { CheckOutlined, CloseOutlined, EditOutlined } from '../../icons/antdCompat'
 import type { AISuggestion, AgentConfig } from './types'
 import { AI_AGENTS } from './types'
 

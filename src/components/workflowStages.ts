@@ -99,7 +99,7 @@ export function getStatusColor(status: StageStatus, fallbackColor = 'var(--accen
 
 export function getStatusIcon(status: StageStatus): string {
   switch (status) {
-    case 'completed': return '✓'
+    case 'completed': return '完成'
     case 'running': return '…'
     case 'failed': return '!'
     case 'waiting_approval': return '?'

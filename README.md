@@ -187,7 +187,7 @@ npm run dev
 
 它会同时启动：
 
-- `npm run dev:react`：启动 Vite 前端，默认 `http://localhost:5173`。
+- `npm run dev:react`：启动 Vite 前端，默认 `http://127.0.0.1:5174`。
 - `npm run dev:electron`：等待 Vite 就绪后启动 Electron。
 
 ## 常用命令
@@ -236,7 +236,7 @@ CDP 相关环境变量：
 npm run acceptance:cdp
 ```
 
-该命令会启动或复用 `http://localhost:5173`，再启动真实 Electron 应用，由 `electron/acceptanceRunner.js` 通过 `webContents.debugger` 执行以下路径：
+该命令会启动或复用 `http://127.0.0.1:5174`，再启动真实 Electron 应用，由 `electron/acceptanceRunner.js` 通过 `webContents.debugger` 执行以下路径：
 
 1. 读取首页 DOM。
 2. 创建节目和 workflow state。
@@ -401,7 +401,7 @@ npm run dev:react
 浏览器打开：
 
 ```text
-http://localhost:5173
+http://127.0.0.1:5174
 ```
 
 如果前端正常，再单独启动 Electron：

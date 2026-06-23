@@ -88,11 +88,11 @@ export interface WritingLayerProps {
 // ============================================================
 
 export const GLOBAL_TONES: Array<{ key: GlobalTone; label: string; desc: string; icon: string }> = [
-  { key: 'analytical', label: '冷静分析', desc: '客观、理性，像纪录片旁白', icon: '🧊' },
-  { key: 'deep_dive', label: '深度拆解', desc: '层层深入，抽丝剥茧', icon: '🔬' },
-  { key: 'casual', label: '轻松聊天', desc: '朋友间对话，自然随意', icon: '☕' },
-  { key: 'direct', label: '直接表达', desc: '开门见山，不绕弯子', icon: '🎯' },
-  { key: 'narrative', label: '故事叙述', desc: '有画面感，娓娓道来', icon: '📖' },
+  { key: 'analytical', label: '冷静分析', desc: '客观、理性，像纪录片旁白', icon: '析' },
+  { key: 'deep_dive', label: '深度拆解', desc: '层层深入，抽丝剥茧', icon: '深' },
+  { key: 'casual', label: '轻松聊天', desc: '朋友间对话，自然随意', icon: '谈' },
+  { key: 'direct', label: '直接表达', desc: '开门见山，不绕弯子', icon: '直' },
+  { key: 'narrative', label: '故事叙述', desc: '有画面感，娓娓道来', icon: '叙' },
 ]
 
 export const SEGMENT_TONES: Array<{ key: SegmentTone; label: string }> = [
@@ -104,25 +104,25 @@ export const SEGMENT_TONES: Array<{ key: SegmentTone; label: string }> = [
 ]
 
 export const SEGMENT_TYPE_CONFIG: Record<SegmentType, { label: string; color: string; icon: string; defaultSeconds: number }> = {
-  opening: { label: '开场', color: '#f59e0b', icon: '🎬', defaultSeconds: 90 },
-  main_1: { label: '主线一', color: '#2563eb', icon: '📌', defaultSeconds: 180 },
-  main_2: { label: '主线二', color: '#8b5cf6', icon: '📌', defaultSeconds: 180 },
-  discussion: { label: '延伸讨论', color: '#06b6d4', icon: '💬', defaultSeconds: 150 },
-  closing: { label: '结尾', color: '#10b981', icon: '🎤', defaultSeconds: 60 },
+  opening: { label: '开场', color: '#956400', icon: '开', defaultSeconds: 90 },
+  main_1: { label: '主线一', color: '#1f6c9f', icon: '一', defaultSeconds: 180 },
+  main_2: { label: '主线二', color: '#62615d', icon: '二', defaultSeconds: 180 },
+  discussion: { label: '延伸讨论', color: '#346538', icon: '议', defaultSeconds: 150 },
+  closing: { label: '结尾', color: '#9f2f2d', icon: '收', defaultSeconds: 60 },
 }
 
 export const STATUS_CONFIG: Record<SegmentStatus, { label: string; color: string; bg: string }> = {
-  draft: { label: '初稿', color: '#9ca3af', bg: '#f3f4f6' },
-  editing: { label: '修改中', color: '#f59e0b', bg: '#fffbeb' },
-  polished: { label: '已打磨', color: '#10b981', bg: '#ecfdf5' },
+  draft: { label: '初稿', color: '#8d8a84', bg: '#f1f0ec' },
+  editing: { label: '修改中', color: '#956400', bg: '#fbf3db' },
+  polished: { label: '已打磨', color: '#346538', bg: '#edf3ec' },
 }
 
 export const AI_AGENTS: AgentConfig[] = [
   {
     role: 'clarity_editor',
     label: '表达润色官',
-    icon: '✨',
-    color: '#2563eb',
+    icon: '润',
+    color: '#1f6c9f',
     description: '提升表达清晰度，优化句式结构，消除冗余',
     capabilities: ['优化句式结构', '消除冗余表达', '提升清晰度', '避免口水话'],
     boundaries: ['不改变观点', '不添加新内容', '不自动覆盖'],
@@ -130,8 +130,8 @@ export const AI_AGENTS: AgentConfig[] = [
   {
     role: 'tone_stylist',
     label: '风格塑造师',
-    icon: '🎭',
-    color: '#8b5cf6',
+    icon: '风',
+    color: '#62615d',
     description: '调整语气风格，统一全文语调',
     capabilities: ['调整语气风格', '统一全文语调', '提供风格对比'],
     boundaries: ['不改变逻辑结构', '不扩展内容'],
@@ -139,8 +139,8 @@ export const AI_AGENTS: AgentConfig[] = [
   {
     role: 'argument_enhancer',
     label: '逻辑强化师',
-    icon: '🧠',
-    color: '#059669',
+    icon: '理',
+    color: '#346538',
     description: '强化论证表达，优化过渡，增强说服力',
     capabilities: ['强化论证表达', '优化过渡语句', '增强说服力'],
     boundaries: ['不添加新事实', '不生成新观点', '不改写结构'],
@@ -148,8 +148,8 @@ export const AI_AGENTS: AgentConfig[] = [
   {
     role: 'conciseness_coach',
     label: '精简裁剪师',
-    icon: '✂️',
-    color: '#ea580c',
+    icon: '剪',
+    color: '#956400',
     description: '压缩冗长段落，删除重复表达',
     capabilities: ['压缩冗长段落', '删除重复表达', '精简版本对比'],
     boundaries: ['不删除核心观点', '不自动覆盖'],
@@ -157,8 +157,8 @@ export const AI_AGENTS: AgentConfig[] = [
   {
     role: 'hook_designer',
     label: '开场结尾优化官',
-    icon: '🎯',
-    color: '#dc2626',
+    icon: '启',
+    color: '#9f2f2d',
     description: '优化开头吸引力与结尾收束感',
     capabilities: ['优化开头吸引力', '优化结尾收束感', '提供多个替代版本'],
     boundaries: ['不改变核心内容', '不强行替换'],
@@ -166,15 +166,15 @@ export const AI_AGENTS: AgentConfig[] = [
 ]
 
 export const AI_INTENSITY_CONFIG: Array<{ key: AIIntensity; label: string; desc: string; icon: string }> = [
-  { key: 'light', label: '轻润色', desc: '仅优化表达清晰度，最小改动', icon: '🌿' },
-  { key: 'standard', label: '标准优化', desc: '平衡优化表达与风格', icon: '⚡' },
-  { key: 'deep', label: '深度打磨', desc: '允许句式重构，但不改变核心观点', icon: '💎' },
+  { key: 'light', label: '轻润色', desc: '仅优化表达清晰度，最小改动', icon: '轻' },
+  { key: 'standard', label: '标准优化', desc: '平衡优化表达与风格', icon: '标' },
+  { key: 'deep', label: '深度打磨', desc: '允许句式重构，但不改变核心观点', icon: '深' },
 ]
 
 export const COLLABORATION_SCOPE_CONFIG: Array<{ key: CollaborationScope; label: string; desc: string; icon: string }> = [
-  { key: 'selection', label: '局部协作', desc: '仅作用于选中文本', icon: '📝' },
-  { key: 'paragraph', label: '段落级', desc: '对当前段落整体优化', icon: '📄' },
-  { key: 'full', label: '全文级', desc: '统一风格、语气、节奏', icon: '📚' },
+  { key: 'selection', label: '局部协作', desc: '仅作用于选中文本', icon: '选' },
+  { key: 'paragraph', label: '段落级', desc: '对当前段落整体优化', icon: '段' },
+  { key: 'full', label: '全文级', desc: '统一风格、语气、节奏', icon: '全' },
 ]
 
 // ── Tone Style Presets (for Tone Stylist) ──────────────────
