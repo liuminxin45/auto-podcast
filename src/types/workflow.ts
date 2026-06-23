@@ -24,6 +24,7 @@ export interface PodcastState {
   rss_path: string
   publish_status: Record<string, any>
   subtitle_path: string
+  trendradar_meta?: Record<string, any>
   discover_ui?: Record<string, any>
   organize_ui?: Record<string, any>
   episode_brief?: Record<string, any>
@@ -37,6 +38,15 @@ export interface ContentItem {
   published?: string
   source?: string
   type?: string
+  trendradar_id?: string
+  source_kind?: 'platform' | 'rss'
+  source_id?: string
+  source_name?: string
+  rank?: number
+  score?: number
+  first_seen?: string
+  last_seen?: string
+  report_path?: string
   /** Whether this item has been classified/tagged by LLM or keyword */
   _tagged?: boolean
   /** Classification result stored directly on the item */

@@ -13,6 +13,15 @@ import WorkflowSidebar from './components/WorkflowSidebar'
 import EpisodeManager from './components/EpisodeManager'
 import { STAGES } from './components/workflowStages'
 import type { Workflow, WorkflowCreateResult, WorkflowSummary, ContentItem } from './types/workflow'
+import type {
+  TrendRadarConfigView,
+  TrendRadarItem,
+  TrendRadarMeta,
+  TrendRadarRunResult,
+  TrendRadarSource,
+  TrendRadarStatus,
+  TrendRadarUpdateStatus,
+} from './types/trendradar'
 
 const { Header, Content } = Layout
 const { Title } = Typography
@@ -61,16 +70,6 @@ declare global {
       }>
       onWorkflowUpdate: (callback: (data: Workflow | null) => void) => void
       onNeedApproval: (callback: (data: any) => void) => void
-      onRadarUpdate: (callback: (data: {
-        enabled: boolean
-        intervalMin: number
-        keepLast: number
-        lastRunAt: string | null
-        lastError: string | null
-        running: boolean
-        lastRunContents?: ContentItem[]
-        contents: ContentItem[]
-      }) => void) => void
       getNodeSchema: (nodeName: string) => Promise<any>
       getAllNodeSchemas: () => Promise<Record<string, any>>
       saveNodeConfig: (nodeName: string, config: Record<string, any>) => Promise<{ success: boolean; error?: string }>
@@ -86,6 +85,7 @@ declare global {
         lastRunAt: string | null
         lastError: string | null
         running: boolean
+        lastRunContents?: ContentItem[]
         contents: ContentItem[]
       }>
       radarStart: (config?: Record<string, any>) => Promise<any>
@@ -93,9 +93,29 @@ declare global {
       radarRunOnce: (config?: Record<string, any>) => Promise<any>
       radarClearContents: () => Promise<any>
       radarUpdateContents: (contents: ContentItem[]) => Promise<any>
+      onRadarUpdate: (callback: (data: {
+        enabled: boolean
+        intervalMin: number
+        keepLast: number
+        lastRunAt: string | null
+        lastError: string | null
+        running: boolean
+        lastRunContents?: ContentItem[]
+        contents: ContentItem[]
+      }) => void) => void
       trendradarStart: (intervalMin?: number) => Promise<any>
       trendradarStop: () => Promise<any>
       trendradarStatus: () => Promise<any>
+      trendradarGetStatus: () => Promise<TrendRadarStatus>
+      trendradarGetConfig: () => Promise<{ success: boolean; config: TrendRadarConfigView; error?: string }>
+      trendradarSaveConfig: (config: Partial<TrendRadarConfigView>) => Promise<{ success: boolean; config: TrendRadarConfigView; error?: string }>
+      trendradarListSources: () => Promise<{ success: boolean; sources: TrendRadarSource[]; error?: string }>
+      trendradarRunOnce: (config?: Partial<TrendRadarConfigView>) => Promise<TrendRadarRunResult>
+      trendradarGetLatest: () => Promise<{ success: boolean; items: TrendRadarItem[]; fetch_contents: TrendRadarItem[]; meta: TrendRadarMeta; error?: string }>
+      trendradarGetTopics: () => Promise<{ success: boolean; topics: Array<{ name: string; count: number }>; error?: string }>
+      trendradarCheckUpdate: () => Promise<TrendRadarUpdateStatus>
+      trendradarUpdateDependency: (payload?: Record<string, any>) => Promise<Record<string, any>>
+      trendradarOpenReport: (reportPath: string) => Promise<{ success: boolean; error?: string }>
       onTrendradarLog: (callback: (data: string) => void) => void
       onTrendradarStatus: (callback: (data: any) => void) => void
     }
@@ -116,22 +136,14 @@ function App() {
   const [discoverCandidates, setDiscoverCandidates] = useState<ContentItem[]>([])
   const [organizeCandidates, setOrganizeCandidates] = useState<ContentItem[]>([])
   const [writingVisible, setWritingVisible] = useState(false)
-  const [fetchSources, setFetchSources] = useState<Array<{ id: string; name: string; description: string }>>([])
-  const [fetchConfig, setFetchConfig] = useState<Record<string, any>>({})
   const [soundStudioVisible, setSoundStudioVisible] = useState(false)
   const [publishVisible, setPublishVisible] = useState(false)
   const [settingsVisible, setSettingsVisible] = useState(false)
-  const [radarState, setRadarState] = useState<{
-    enabled: boolean
-    intervalMin: number
-    keepLast: number
-    lastRunAt: string | null
-    lastError: string | null
-    running: boolean
-    lastRunContents?: ContentItem[]
-    contents: ContentItem[]
+  const [settingsReturnTarget, setSettingsReturnTarget] = useState<{
+    homePage: 'blank' | 'episodes'
+    stageId: string | null
   } | null>(null)
-  const hasElectronBackend = Boolean(window.electronAPI?.getFetchSources)
+  const hasElectronBackend = Boolean(window.electronAPI?.listWorkflows)
 
   const showNotice = (type: UiNotice['type'], text: string) => {
     const prefix = type === 'error' ? '错误' : type === 'warning' ? '警告' : '提示'
@@ -216,6 +228,45 @@ function App() {
     }
   }
 
+  const getCurrentStageId = () => {
+    if (discoverVisible) return 'discover'
+    if (organizeVisible) return 'organize'
+    if (studioVisible) return 'ideate'
+    if (writingVisible) return 'write'
+    if (soundStudioVisible) return 'produce'
+    if (publishVisible) return 'publish'
+    return null
+  }
+
+  const openSettings = () => {
+    setSettingsReturnTarget({
+      homePage,
+      stageId: getCurrentStageId(),
+    })
+    closeAllPanels()
+    setHomePage('blank')
+    setSettingsVisible(true)
+  }
+
+  const closeSettings = () => {
+    const target = settingsReturnTarget
+    setSettingsVisible(false)
+    setSettingsReturnTarget(null)
+
+    if (target?.stageId && workflow) {
+      openStage(target.stageId)
+      return
+    }
+
+    if (target?.homePage === 'episodes') {
+      setHomePage('episodes')
+      void loadWorkflowSummaries()
+      return
+    }
+
+    setHomePage(workflow ? 'blank' : 'episodes')
+  }
+
   const openEpisodeManager = () => {
     closeAllPanels()
     setHomePage('episodes')
@@ -228,29 +279,8 @@ function App() {
     void loadWorkflowSummaries()
   }
 
-  // Load fetch sources and config
   useEffect(() => {
-    if (!window.electronAPI?.getFetchSources) {
-      return
-    }
     void loadWorkflowSummaries()
-    window.electronAPI.getFetchSources()
-      .then(sources => setFetchSources(sources))
-      .catch(e => console.error('Failed to load fetch sources:', e))
-    window.electronAPI.loadNodeConfig('fetch')
-      .then(config => { if (config) setFetchConfig(config) })
-      .catch(e => console.error('Failed to load fetch config:', e))
-  }, [])
-
-  useEffect(() => {
-    if (!window.electronAPI?.radarGetState) return
-    window.electronAPI.radarGetState()
-      .then((state) => setRadarState(state))
-      .catch((e: any) => console.error('Failed to load radar state:', e))
-    window.electronAPI.onRadarUpdate((state) => {
-      console.log(`[App] radarUpdate received: contents=${state?.contents?.length}, enabled=${state?.enabled}, error=${state?.lastError}`)
-      setRadarState(state)
-    })
   }, [])
 
   useEffect(() => {
@@ -519,13 +549,7 @@ function App() {
   }
 
   const activeStageId =
-    discoverVisible ? 'discover' :
-    organizeVisible ? 'organize' :
-    studioVisible ? 'ideate' :
-    writingVisible ? 'write' :
-    soundStudioVisible ? 'produce' :
-    publishVisible ? 'publish' :
-    null
+    settingsVisible ? null : getCurrentStageId()
   const showWorkflowSidebar = Boolean(workflow && activeStageId)
 
   return (
@@ -627,7 +651,7 @@ function App() {
             <Tooltip title="设置">
               <Button
                 icon={<SettingOutlined />}
-                onClick={() => { closeAllPanels(); setHomePage('blank'); setSettingsVisible(true) }}
+                onClick={openSettings}
                 aria-label="设置"
                 style={{
                   background: 'transparent',
@@ -696,65 +720,43 @@ function App() {
           key={`discover-${workflow?.id || 'none'}`}
           visible={discoverVisible}
           onClose={returnToEpisodeManager}
-          fetchContents={(workflow?.state?.fetch_contents || [])}
-          manualContents={workflow?.state?.manual_contents || []}
-          initialCandidateItems={(workflow?.state?.selected_materials || []) as any}
-          initialSavedToInbox={(workflow?.state?.discover_ui?.savedToInbox || []) as any}
-          initialInboxStatuses={(workflow?.state?.discover_ui?.inboxStatuses || []) as any}
-          fetchSources={fetchSources}
-          fetchConfig={fetchConfig}
-          radarState={radarState}
-          onStateChange={(state) => {
-            void updateWorkflowPatch({
-              discover_ui: {
-                candidateItems: state.candidateItems,
-                savedToInbox: state.savedToInbox,
-                inboxStatuses: state.inboxStatuses,
-              },
-              selected_materials: state.candidates,
-            })
+          items={(workflow?.state?.fetch_contents || []) as TrendRadarItem[]}
+          selectedItems={(workflow?.state?.selected_materials || []) as TrendRadarItem[]}
+          meta={(workflow?.state?.trendradar_meta || {}) as TrendRadarMeta}
+          onLoadConfig={async () => {
+            const result = await window.electronAPI.trendradarGetConfig()
+            if (!result.success) throw new Error(result.error || '读取 TrendRadar 配置失败')
+            return result.config
           }}
-          onRadarRunOnce={async (values) => {
-            const result = await window.electronAPI.radarRunOnce(values)
-            const currentRunContents = Array.isArray(result?.lastRunContents)
-              ? result.lastRunContents
-              : []
+          onSaveConfig={async (config) => {
+            const result = await window.electronAPI.trendradarSaveConfig(config)
+            if (!result.success) throw new Error(result.error || '保存 TrendRadar 配置失败')
+            return result.config
+          }}
+          onListSources={async () => {
+            const result = await window.electronAPI.trendradarListSources()
+            if (!result.success) throw new Error(result.error || '读取 TrendRadar 数据源失败')
+            return result.sources || []
+          }}
+          onGetStatus={() => window.electronAPI.trendradarGetStatus()}
+          onCheckUpdate={() => window.electronAPI.trendradarCheckUpdate()}
+          onUpdateDependency={() => window.electronAPI.trendradarUpdateDependency({ ref: 'latest', installDeps: true })}
+          onOpenReport={async (reportPath) => {
+            const result = await window.electronAPI.trendradarOpenReport(reportPath)
+            if (!result.success) throw new Error(result.error || '打开 TrendRadar 报告失败')
+          }}
+          onRunOnce={async (config) => {
+            const result = await window.electronAPI.trendradarRunOnce(config)
+            const contents = (result.fetch_contents || result.items || []) as TrendRadarItem[]
+            const meta = result.meta || {}
             await updateWorkflowPatch({
-              fetch_contents: currentRunContents,
-              discover_ui: {
-                candidateItems: [],
-                savedToInbox: [],
-                inboxStatuses: [],
-              },
-              selected_materials: [],
-            })
-            setDiscoverCandidates([])
-            setOrganizeCandidates([])
-            return result
-          }}
-          onFetchConfigSave={async (values) => {
-            const result = await window.electronAPI.saveNodeConfig('fetch', values)
-            if (result.success) {
-              setFetchConfig(values)
-              if (values.monitor_enabled) {
-                await window.electronAPI.radarStart(values)
-              } else {
-                await window.electronAPI.radarStop()
-              }
-            } else {
-              throw new Error(result.error)
-            }
-          }}
-          onClearContents={async () => {
-            await window.electronAPI.radarClearContents()
-            await updateWorkflowPatch({
-              fetch_contents: [],
+              fetch_contents: contents,
               raw_contents: [],
               selected_materials: [],
+              trendradar_meta: meta,
               discover_ui: {
-                candidateItems: [],
-                savedToInbox: [],
-                inboxStatuses: [],
+                selectedCount: 0,
+                lastRunAt: meta.generated_at || new Date().toISOString(),
               },
               organize_ui: {
                 candidates: [],
@@ -765,16 +767,22 @@ function App() {
             })
             setDiscoverCandidates([])
             setOrganizeCandidates([])
+            return { ...result, items: contents, fetch_contents: contents, meta }
           }}
-          onUpdateContents={async (contents) => {
-            await window.electronAPI.radarUpdateContents(contents)
-            await updateWorkflowPatch({ fetch_contents: contents })
-          }}
-          onProceedToOrganize={(candidates) => {
+          onProceedToOrganize={(candidates, meta) => {
             setDiscoverCandidates(candidates)
             void updateWorkflowPatch({
               selected_materials: candidates,
               raw_contents: candidates,
+              trendradar_meta: {
+                ...(workflow?.state?.trendradar_meta || {}),
+                ...meta,
+                selected_count: candidates.length,
+              },
+              discover_ui: {
+                selectedCount: candidates.length,
+                proceededAt: new Date().toISOString(),
+              },
             })
             closeAllPanels()
             setOrganizeVisible(true)
@@ -788,7 +796,7 @@ function App() {
           contents={discoverCandidates.length > 0
             ? discoverCandidates
             : (workflow?.state?.raw_contents || workflow?.state?.fetch_contents || [])}
-          userTopic={(fetchConfig?.topic as string) || ''}
+          userTopic={(workflow?.state?.selected_topic?.title as string) || ''}
           initialCandidates={(workflow?.state?.organize_ui?.candidates || workflow?.state?.cleaned_contents || []) as any}
           initialIgnoredIds={(workflow?.state?.organize_ui?.ignoredIds || []) as any}
           initialMode={(workflow?.state?.organize_ui?.mode || 'quick') as any}
@@ -911,7 +919,7 @@ function App() {
         <SettingsPage
           visible={settingsVisible}
           workflow={workflow}
-          onClose={() => setSettingsVisible(false)}
+          onClose={closeSettings}
         />
       </Layout>
     </ConfigProvider>

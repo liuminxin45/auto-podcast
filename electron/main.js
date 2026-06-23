@@ -8,6 +8,17 @@ const { validateNodeOutput } = require('./nodeValidator')
 // Python executable — use 'python' on Windows, 'python3' elsewhere.
 // shell:true is required on Windows so that .bat shims (e.g. pyenv-win) are resolved.
 const PYTHON_PATH = process.platform === 'win32' ? 'python' : 'python3'
+const PROJECT_ROOT = path.join(__dirname, '..')
+function resolveTrendRadarPythonPath() {
+  const explicit = process.env.TRENDRADAR_PYTHON_PATH || process.env.TREND_RADAR_PYTHON_PATH
+  if (explicit) return explicit
+  const managedPython = process.platform === 'win32'
+    ? path.join(PROJECT_ROOT, '.venv-trendradar', 'Scripts', 'python.exe')
+    : path.join(PROJECT_ROOT, '.venv-trendradar', 'bin', 'python')
+  if (fs.existsSync(managedPython)) return managedPython
+  return PYTHON_PATH
+}
+const TRENDRADAR_PYTHON_PATH = resolveTrendRadarPythonPath()
 const SPAWN_SHELL = process.platform === 'win32'
 const CDP_DEBUG_ENABLED = process.env.CDP_DEBUG === '1' || process.env.CDP_ACCEPTANCE === '1'
 const CDP_PORT = process.env.CDP_PORT || process.env.CDP_ACCEPTANCE_PORT || (CDP_DEBUG_ENABLED ? '9222' : '')
@@ -106,6 +117,7 @@ function createInitialState(episodeId, runtimeConfig) {
     rss_path: '',
     publish_status: {},
     subtitle_path: '',
+    trendradar_meta: {},
     discover_ui: {},
     organize_ui: {},
     episode_brief: {},
@@ -161,6 +173,7 @@ function normalizeWorkflow(workflow) {
   state.review_summary = state.review_summary || {}
   state.storage_info = state.storage_info || {}
   state.publish_status = state.publish_status || {}
+  state.trendradar_meta = state.trendradar_meta || {}
   state.discover_ui = state.discover_ui || {}
   state.organize_ui = state.organize_ui || {}
   state.episode_brief = state.episode_brief || {}
@@ -360,6 +373,67 @@ function runPythonNode(nodeName, state, timeoutMs = 600000) {  // 增加到10分
       clearTimeout(timeout)
       proc.kill()
       reject(new Error(`Failed to write input to ${nodeName}: ${err.message}`))
+    }
+  })
+}
+
+function runTrendRadarCli(action, payload = {}, timeoutMs = 300000) {
+  return new Promise((resolve, reject) => {
+    const userDataDir = app.getPath('userData')
+    const proc = spawn(TRENDRADAR_PYTHON_PATH, [
+      path.join(__dirname, '..', 'scripts', 'trendradar_cli.py'),
+      action,
+      '--user-data-dir',
+      userDataDir
+    ], {
+      cwd: path.join(__dirname, '..'),
+      env: { ...process.env, PYTHONIOENCODING: 'utf-8', AUTO_PODCAST_USER_DATA: userDataDir },
+      shell: SPAWN_SHELL
+    })
+
+    let stdout = ''
+    let stderr = ''
+    let killed = false
+    const timeout = setTimeout(() => {
+      killed = true
+      proc.kill('SIGTERM')
+      setTimeout(() => proc.kill('SIGKILL'), 5000)
+      reject(new Error(`TrendRadar ${action} timeout after ${timeoutMs / 1000}s`))
+    }, timeoutMs)
+
+    proc.stdout.on('data', (data) => { stdout += data.toString() })
+    proc.stderr.on('data', (data) => {
+      stderr += data.toString()
+      if (mainWindow && data.toString().trim()) {
+        mainWindow.webContents.send('trendradar:log', data.toString())
+      }
+    })
+    proc.on('error', (err) => {
+      clearTimeout(timeout)
+      if (!killed) reject(new Error(`Failed to run TrendRadar ${action}: ${err.message}`))
+    })
+    proc.on('close', (code) => {
+      clearTimeout(timeout)
+      if (killed) return
+      try {
+        const result = JSON.parse(stdout || '{}')
+        if (code !== 0 || result.success === false) {
+          reject(new Error(result.error || stderr || `TrendRadar ${action} exited with code ${code}`))
+          return
+        }
+        resolve(result)
+      } catch (e) {
+        reject(new Error(`Failed to parse TrendRadar ${action} JSON: ${e.message}\nOutput: ${stdout.slice(0, 200)}`))
+      }
+    })
+
+    try {
+      proc.stdin.write(JSON.stringify(payload || {}))
+      proc.stdin.end()
+    } catch (err) {
+      clearTimeout(timeout)
+      proc.kill()
+      reject(new Error(`Failed to write TrendRadar ${action} input: ${err.message}`))
     }
   })
 }
@@ -1002,7 +1076,7 @@ function startTrendRadarDaemon(intervalMin = 30) {
     return
   }
 
-  trendradarDaemon = spawn(PYTHON_PATH, [
+  trendradarDaemon = spawn(TRENDRADAR_PYTHON_PATH, [
     '-m', 'engine.daemon',
     '--interval', String(intervalMin)
   ], {
@@ -1081,6 +1155,73 @@ ipcMain.handle('trendradar:status', async () => {
     pid: trendradarDaemon?.pid || null,
     ...daemonStatus
   }
+})
+
+ipcMain.handle('trendradar:getStatus', async () => {
+  const status = await runTrendRadarCli('status')
+  return {
+    ...status,
+    processRunning: !!trendradarDaemon,
+    pid: trendradarDaemon?.pid || status.pid || null,
+  }
+})
+
+ipcMain.handle('trendradar:getConfig', async () => {
+  return runTrendRadarCli('get-config')
+})
+
+ipcMain.handle('trendradar:saveConfig', async (event, config) => {
+  return runTrendRadarCli('save-config', { config })
+})
+
+ipcMain.handle('trendradar:listSources', async () => {
+  return runTrendRadarCli('list-sources')
+})
+
+ipcMain.handle('trendradar:runOnce', async (event, config) => {
+  if (mainWindow) {
+    mainWindow.webContents.send('trendradar:status', { status: 'running' })
+  }
+  try {
+    const result = await runTrendRadarCli('run-once', { config }, 600000)
+    if (mainWindow) {
+      mainWindow.webContents.send('trendradar:status', { status: 'idle', itemCount: result.items?.length || 0 })
+    }
+    return result
+  } catch (error) {
+    if (mainWindow) {
+      mainWindow.webContents.send('trendradar:status', { status: 'error', error: error.message })
+    }
+    throw error
+  }
+})
+
+ipcMain.handle('trendradar:getLatest', async () => {
+  return runTrendRadarCli('get-latest')
+})
+
+ipcMain.handle('trendradar:getTopics', async () => {
+  return runTrendRadarCli('get-topics')
+})
+
+ipcMain.handle('trendradar:checkUpdate', async () => {
+  return runTrendRadarCli('check-update', {}, 60000)
+})
+
+ipcMain.handle('trendradar:updateDependency', async (event, options) => {
+  return runTrendRadarCli('update-dependency', options || {}, 600000)
+})
+
+ipcMain.handle('trendradar:openReport', async (event, reportPath) => {
+  if (!reportPath) {
+    return { success: false, error: '缺少报告路径' }
+  }
+  const targetPath = resolveProjectPath(reportPath)
+  if (!fs.existsSync(targetPath)) {
+    return { success: false, error: `文件不存在：${targetPath}` }
+  }
+  await shell.openPath(targetPath)
+  return { success: true }
 })
 
 // Fetch sources management

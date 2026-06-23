@@ -6,6 +6,7 @@ __pycache__/
 .Python
 *.egg-info/
 .venv/
+.venv-trendradar/
 venv/
 .pytest_cache/
 .mypy_cache/

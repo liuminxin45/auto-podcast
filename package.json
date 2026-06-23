@@ -6,7 +6,9 @@
   "license": "MIT",
   "main": "electron/main.js",
   "scripts": {
-    "postinstall": "python scripts/sync_trendradar.py && python -m pip install -e . -i https://pypi.tuna.tsinghua.edu.cn/simple",
+    "postinstall": "python scripts/sync_trendradar.py && python scripts/setup_trendradar_runtime.py && python -m pip install -e . -i https://pypi.tuna.tsinghua.edu.cn/simple",
+    "setup:trendradar": "python scripts/setup_trendradar_runtime.py",
+    "check:trendradar": "python scripts/setup_trendradar_runtime.py --check",
     "dev": "concurrently \"npm run dev:react\" \"npm run dev:electron\"",
     "dev:react": "vite --host 127.0.0.1 --port 5174 --strictPort",
     "dev:electron": "wait-on http://127.0.0.1:5174 && cross-env NODE_ENV=development VITE_DEV_SERVER_URL=http://127.0.0.1:5174 electron .",

@@ -53,6 +53,15 @@ function killProcessTree(child) {
   child.kill('SIGTERM')
 }
 
+function sanitizedEnv(extra = {}) {
+  const env = {}
+  for (const [key, value] of Object.entries(process.env)) {
+    if (!key || key.startsWith('=') || value === undefined) continue
+    env[key] = value
+  }
+  return { ...env, ...extra }
+}
+
 function reportPassed() {
   if (!fs.existsSync(reportPath)) return false
   const report = fs.readFileSync(reportPath, 'utf8')
@@ -70,8 +79,9 @@ async function main() {
     const npmBin = process.platform === 'win32' ? 'npm.cmd' : 'npm'
     viteProcess = spawn(npmBin, ['run', 'dev:react'], {
       cwd: projectRoot,
-      env: process.env,
-      stdio: 'inherit'
+      env: sanitizedEnv(),
+      stdio: 'inherit',
+      shell: process.platform === 'win32'
     })
 
     const ready = await waitForHttp(viteUrl, 60000)
@@ -84,14 +94,13 @@ async function main() {
   console.log(`[CDP Acceptance] Starting Electron with CDP at http://127.0.0.1:${cdpPort}`)
   const electronProcess = spawn(electronBin, ['.'], {
     cwd: projectRoot,
-    env: {
-      ...process.env,
+    env: sanitizedEnv({
       NODE_ENV: 'development',
       VITE_DEV_SERVER_URL: viteUrl,
       CDP_ACCEPTANCE: '1',
       CDP_PORT: cdpPort,
       CDP_FAKE_MEDIA: process.env.CDP_FAKE_MEDIA || '1'
-    },
+    }),
     stdio: 'inherit',
     shell: process.platform === 'win32'
   })

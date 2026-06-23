@@ -40,6 +40,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   trendradarStart: (intervalMin) => ipcRenderer.invoke('trendradar:start', intervalMin),
   trendradarStop: () => ipcRenderer.invoke('trendradar:stop'),
   trendradarStatus: () => ipcRenderer.invoke('trendradar:status'),
+  trendradarGetStatus: () => ipcRenderer.invoke('trendradar:getStatus'),
+  trendradarGetConfig: () => ipcRenderer.invoke('trendradar:getConfig'),
+  trendradarSaveConfig: (config) => ipcRenderer.invoke('trendradar:saveConfig', config),
+  trendradarListSources: () => ipcRenderer.invoke('trendradar:listSources'),
+  trendradarRunOnce: (config) => ipcRenderer.invoke('trendradar:runOnce', config),
+  trendradarGetLatest: () => ipcRenderer.invoke('trendradar:getLatest'),
+  trendradarGetTopics: () => ipcRenderer.invoke('trendradar:getTopics'),
+  trendradarCheckUpdate: () => ipcRenderer.invoke('trendradar:checkUpdate'),
+  trendradarUpdateDependency: (options) => ipcRenderer.invoke('trendradar:updateDependency', options),
+  trendradarOpenReport: (reportPath) => ipcRenderer.invoke('trendradar:openReport', reportPath),
   onTrendradarLog: (callback) => ipcRenderer.on('trendradar:log', (_, data) => callback(data)),
   onTrendradarStatus: (callback) => ipcRenderer.on('trendradar:status', (_, data) => callback(data))
 })

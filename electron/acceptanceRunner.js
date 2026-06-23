@@ -131,6 +131,54 @@ async function runCdpAcceptance({ app, mainWindow, projectRoot }) {
     assert('workflow:create 生成 episode_id', Boolean(workflowResult?.workflowId && workflowResult?.episodeId), JSON.stringify(workflowResult))
     recordStep('创建 episode', 'PASS', `workflowId=${workflowResult?.workflowId}, episodeId=${workflowResult?.episodeId}`)
 
+    const discoverWorkflow = await evaluate(`(async () => {
+      const id = window.__acceptanceWorkflowId
+      let result = await window.electronAPI.trendradarRunOnce({
+        platforms_enabled: true,
+        rss_enabled: false,
+        enabled_platforms: ['toutiao', 'baidu', 'weibo'],
+        enabled_rss_feeds: [],
+        max_items_per_source: 2,
+        filter_method: 'keyword'
+      })
+      let items = result.fetch_contents || result.items || []
+      if (!items.length) {
+        result = await window.electronAPI.trendradarRunOnce({
+          platforms_enabled: true,
+          rss_enabled: false,
+          enabled_platforms: ['bilibili-hot-search', 'zhihu', 'douyin'],
+          enabled_rss_feeds: [],
+          max_items_per_source: 2,
+          filter_method: 'keyword'
+        })
+        items = result.fetch_contents || result.items || []
+      }
+      await window.electronAPI.updateWorkflowState(id, {
+        fetch_contents: items,
+        selected_materials: items.slice(0, 1),
+        raw_contents: items.slice(0, 1),
+        trendradar_meta: result.meta || {},
+        discover_ui: {
+          selectedCount: Math.min(items.length, 1),
+          proceededAt: new Date().toISOString()
+        }
+      })
+      return await window.electronAPI.getWorkflow(id)
+    })()`)
+    const firstTrendItem = discoverWorkflow?.state?.fetch_contents?.[0]
+    assert('TrendRadar 采集写入当前 workflow', Boolean(firstTrendItem?.trendradar_id), JSON.stringify(firstTrendItem || {}))
+    assert(
+      'TrendRadar 标题编码正常',
+      Array.from(firstTrendItem?.title || '').some(char => {
+        const code = char.charCodeAt(0)
+        return code >= 0x4e00 && code <= 0x9fff
+      }),
+      String(firstTrendItem?.title || '')
+    )
+    assert('发现素材采用后写入 selected_materials', Boolean(discoverWorkflow?.state?.selected_materials?.[0]?.trendradar_id), JSON.stringify(discoverWorkflow?.state?.selected_materials || []))
+    recordStep('TrendRadar 发现采集与采用', 'PASS', `items=${discoverWorkflow?.state?.fetch_contents?.length || 0}`)
+    await screenshot('02-discover-trendradar-state')
+
     const scriptedWorkflow = await evaluate(`(async () => {
       const id = window.__acceptanceWorkflowId
       const patch = {
