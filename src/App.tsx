@@ -14,6 +14,7 @@ import EpisodeManager from './components/EpisodeManager'
 import { STAGES } from './components/workflowStages'
 import type { Workflow, WorkflowCreateResult, WorkflowSummary, ContentItem } from './types/workflow'
 import type {
+  NewsNowStatus,
   TrendRadarConfigView,
   TrendRadarItem,
   TrendRadarMeta,
@@ -120,6 +121,14 @@ declare global {
       trendradarOpenReport: (reportPath: string) => Promise<{ success: boolean; error?: string }>
       onTrendradarLog: (callback: (data: string) => void) => void
       onTrendradarStatus: (callback: (data: any) => void) => void
+      newsnowGetStatus: () => Promise<NewsNowStatus>
+      newsnowSync: (options?: Record<string, any>) => Promise<NewsNowStatus>
+      newsnowSetup: () => Promise<NewsNowStatus>
+      newsnowBuild: () => Promise<NewsNowStatus>
+      newsnowStart: (options?: Record<string, any>) => Promise<NewsNowStatus>
+      newsnowStop: () => Promise<NewsNowStatus>
+      onNewsnowLog: (callback: (data: string) => void) => void
+      onNewsnowStatus: (callback: (data: any) => void) => void
       produceGenerate: (payload: Record<string, any>) => Promise<any>
       onProduceProgress: (callback: (data: any) => void) => void
       removeProduceProgressListeners: () => void
@@ -843,6 +852,11 @@ function App() {
           onGetStatus={() => window.electronAPI.trendradarGetStatus()}
           onCheckUpdate={() => window.electronAPI.trendradarCheckUpdate()}
           onUpdateDependency={() => window.electronAPI.trendradarUpdateDependency({ ref: 'latest', installDeps: true })}
+          onGetNewsNowStatus={() => window.electronAPI.newsnowGetStatus()}
+          onSyncNewsNow={() => window.electronAPI.newsnowSync({ update: 'lock' })}
+          onSetupNewsNow={() => window.electronAPI.newsnowSetup()}
+          onStartNewsNow={() => window.electronAPI.newsnowStart()}
+          onStopNewsNow={() => window.electronAPI.newsnowStop()}
           onOpenReport={async (reportPath) => {
             const result = await window.electronAPI.trendradarOpenReport(reportPath)
             if (!result.success) throw new Error(result.error || '打开 TrendRadar 报告失败')

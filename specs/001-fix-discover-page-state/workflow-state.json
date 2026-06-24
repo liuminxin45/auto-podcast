@@ -4,7 +4,8 @@
   "risk_level": "medium",
   "delivery_profile": "standard-bugfix",
   "branch_local_only": true,
-  "current_stage": "specify",
+  "actual_commit_branch": "codex/fix-autotopic-llm-config",
+  "current_stage": "complete-branch-blocked",
   "affected_repositories": [
     {
       "repository": "auto-podcast",
@@ -16,5 +17,142 @@
     "npm run verify",
     "npm run build",
     "发现页 UI/CDP smoke"
-  ]
+  ],
+  "attempts": [
+    {
+      "stage": "implement",
+      "date": "2026-06-24",
+      "result": "passed",
+      "symptom": "自动选题全局 LLM 配置未传入弹窗，且执行完成后未进入定稿页",
+      "symptom_changed": true,
+      "fact_layer_after_failure": true,
+      "evidence": [
+        "specs/001-fix-discover-page-state/cdp-screenshots/autotopic-execution-smoke-before.png",
+        "specs/001-fix-discover-page-state/cdp-screenshots/autotopic-execution-smoke-after.png"
+      ]
+    }
+  ],
+  "validations": [
+    {
+      "date": "2026-06-24",
+      "commands": [
+        "npm run verify",
+        "npx tsc --noEmit --pretty false",
+        "npx vitest run src/hooks/__tests__/useAutoTopic.test.tsx --reporter=dot",
+        "npm run build",
+        "git diff --check",
+        "npm run acceptance:cdp",
+        "browser targeted smoke for automatic topic LLM config",
+        "browser targeted smoke for automatic topic execution review transition"
+      ],
+      "status": "partially_passed",
+      "accepted_gaps": [
+        "npm run acceptance:cdp failed on existing rank_threshold assertion outside the automatic topic path."
+      ]
+    }
+  ],
+  "fact_layer": {
+    "status": "completed",
+    "evidence": [
+      "specs/001-fix-discover-page-state/cdp-screenshots/screenshots-index.md",
+      "docs/acceptance/CDP_ACCEPTANCE_REPORT.md"
+    ],
+    "notes": "Runtime/browser facts were collected after user correction about Spec Kit and CDP validation."
+  },
+  "latest_validation": {
+    "date": "2026-06-24",
+    "scope": "自动选题 LLM 配置来源追加修复",
+    "commands": [
+      "npx tsc --noEmit --pretty false",
+      "npm run build",
+      "npm run acceptance:cdp",
+      "npx vitest run src/hooks/__tests__/useAutoTopic.test.tsx --reporter=dot",
+      "浏览器专项 smoke：自动选题 LLM 配置来源",
+      "浏览器执行级 smoke：自动选题 mock LLM 进入选题定稿"
+    ],
+    "status": "partially_passed",
+    "accepted_gaps": [
+      "npm run acceptance:cdp 真实 Electron CDP 已执行，但被既有 rank_threshold 断言阻断；自动选题 LLM 配置和 mock LLM 执行专项浏览器 smoke 已通过。"
+    ]
+  },
+  "ai_self_acceptance": {
+    "status": "PASS",
+    "artifact": "specs/001-fix-discover-page-state/validation.md",
+    "completed_at": "2026-06-24",
+    "next_stage": "speckit-acceptance"
+  },
+  "human_acceptance": {
+    "status": "accepted",
+    "acceptance_artifact": "specs/001-fix-discover-page-state/acceptance.md",
+    "checklist_artifact": "specs/001-fix-discover-page-state/acceptance-checklist.md",
+    "accepted_at": "2026-06-24",
+    "accepted_by": "user",
+    "acceptance_note": "用户回复：人工验收通过，继续往下执行。"
+  },
+  "acceptance": {
+    "status": "accepted",
+    "artifact": "specs/001-fix-discover-page-state/acceptance.md",
+    "checklist": "specs/001-fix-discover-page-state/acceptance-checklist.md",
+    "accepted_at": "2026-06-24",
+    "accepted_by": "user",
+    "accepted_gaps": [
+      "Full acceptance:cdp remains blocked by existing rank_threshold assertion; targeted automatic topic smoke passed."
+    ]
+  },
+  "simplify": {
+    "status": "completed",
+    "decision": "N/A",
+    "artifact": "specs/001-fix-discover-page-state/progress.md",
+    "completed_at": "2026-06-24"
+  },
+  "test_hardening": {
+    "status": "completed",
+    "decision": "N/A",
+    "artifact": "specs/001-fix-discover-page-state/progress.md",
+    "completed_at": "2026-06-24",
+    "validation": [
+      "npx tsc --noEmit --pretty false",
+      "npx vitest run src/hooks/__tests__/useAutoTopic.test.tsx --reporter=dot"
+    ]
+  },
+  "retrospective": {
+    "status": "completed",
+    "workflow_record": "workflow-record.md",
+    "improvement_candidates": "improvement-candidates.md",
+    "completed_at": "2026-06-24",
+    "next_stage": "speckit-commit"
+  },
+  "promotion": {
+    "status": "not_required",
+    "reason": "Improvement candidates are pending only; none are human-approved for promotion."
+  },
+  "commit": {
+    "status": "completed",
+    "branch": "codex/fix-autotopic-llm-config",
+    "hash": "a9de789",
+    "message_validation": "passed",
+    "pushed": false
+  },
+  "post_commit_self_check": {
+    "status": "passed",
+    "amend_required": false,
+    "completed_at": "2026-06-24"
+  },
+  "rubric": {
+    "status": "passed",
+    "artifact": "rubric-score.md",
+    "overall_weighted_score": 90.15,
+    "scores": {
+      "L1": 96,
+      "L2": 91,
+      "L3": 86,
+      "L4": 83,
+      "L5": 88
+    }
+  },
+  "complete_branch": {
+    "status": "blocked",
+    "preflight_only": true,
+    "reason": "Configured spec branch has upstream and working tree still has tracked/unclassified dirty files; no cherry-pick or push performed."
+  }
 }

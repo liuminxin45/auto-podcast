@@ -21,6 +21,7 @@ import AutoTopicModal from './AutoTopicModal'
 import type { ContentItem } from '../types/workflow'
 import { llmConfigResolver, type LLMConfig } from '../services/settings/llmConfigResolver'
 import type {
+  NewsNowStatus,
   TrendRadarConfigView,
   TrendRadarItem,
   TrendRadarMeta,
@@ -31,6 +32,7 @@ import type {
 } from '../types/trendradar'
 
 type Notice = { type: 'info' | 'success' | 'warning' | 'error'; text: string } | null
+type NewsNowAction = 'status' | 'sync' | 'setup' | 'start' | 'stop'
 
 interface Props {
   visible: boolean
@@ -46,6 +48,11 @@ interface Props {
   onGetStatus: () => Promise<TrendRadarStatus>
   onCheckUpdate: () => Promise<TrendRadarUpdateStatus>
   onUpdateDependency: () => Promise<Record<string, any>>
+  onGetNewsNowStatus: () => Promise<NewsNowStatus>
+  onSyncNewsNow: () => Promise<NewsNowStatus>
+  onSetupNewsNow: () => Promise<NewsNowStatus>
+  onStartNewsNow: () => Promise<NewsNowStatus>
+  onStopNewsNow: () => Promise<NewsNowStatus>
   onOpenReport: (reportPath: string) => Promise<void>
   onProceedToOrganize: (items: TrendRadarItem[], meta: TrendRadarMeta, config: TrendRadarConfigView) => void
 }
@@ -131,6 +138,26 @@ function aiProviderText(config: TrendRadarConfigView): string {
   return 'Settings 或 TrendRadar 环境配置'
 }
 
+function newsNowStatusText(status: NewsNowStatus | null): string {
+  if (!status) return '未检查'
+  if (status.processRunning && status.ready) return `运行中 · ${status.apiUrl || '本地 API'}`
+  if (status.processRunning) return `启动中 · ${status.apiUrl || '本地 API'}`
+  if (!status.available) return status.blocker || '未拉取仓库'
+  if (status.nodeCompatible === false) return status.blocker || `Node 不兼容 · ${status.nodeVersion || '未知版本'}`
+  if (status.pnpmAvailable === false) return '缺少 pnpm'
+  if (status.dependenciesInstalled === false) return '未安装依赖'
+  if (status.blocker) return status.blocker
+  return `已就绪 · ${status.packageVersion || status.lockedVersion || '未知版本'}`
+}
+
+function newsNowStatusTone(status: NewsNowStatus | null): 'success' | 'warning' | 'error' | 'info' {
+  if (!status) return 'info'
+  if (status.processRunning && status.ready) return 'success'
+  if (status.blocker || status.error || status.nodeCompatible === false) return 'error'
+  if (!status.available || status.dependenciesInstalled === false || status.pnpmAvailable === false) return 'warning'
+  return 'success'
+}
+
 function listToInput(value?: string[]): string {
   return (value || []).join(', ')
 }
@@ -185,6 +212,11 @@ export default function DiscoverPanel({
   onGetStatus,
   onCheckUpdate,
   onUpdateDependency,
+  onGetNewsNowStatus,
+  onSyncNewsNow,
+  onSetupNewsNow,
+  onStartNewsNow,
+  onStopNewsNow,
   onOpenReport,
   onProceedToOrganize,
 }: Props) {
@@ -201,6 +233,8 @@ export default function DiscoverPanel({
   const [saving, setSaving] = useState(false)
   const [checkingUpdate, setCheckingUpdate] = useState(false)
   const [updatingDependency, setUpdatingDependency] = useState(false)
+  const [newsNowStatus, setNewsNowStatus] = useState<NewsNowStatus | null>(null)
+  const [newsNowBusy, setNewsNowBusy] = useState<NewsNowAction | null>(null)
   const [notice, setNotice] = useState<Notice>(null)
   const [autoTopicModalVisible, setAutoTopicModalVisible] = useState(false)
   const [autoTopicLlmConfig, setAutoTopicLlmConfig] = useState<LLMConfig | null>(null)
@@ -221,12 +255,13 @@ export default function DiscoverPanel({
     if (hasLoadedConfigRef.current) return
     hasLoadedConfigRef.current = true
     let cancelled = false
-    Promise.all([onLoadConfig(), onListSources(), onGetStatus()])
-      .then(([loadedConfig, loadedSources, loadedStatus]) => {
+    Promise.all([onLoadConfig(), onListSources(), onGetStatus(), onGetNewsNowStatus()])
+      .then(([loadedConfig, loadedSources, loadedStatus, loadedNewsNowStatus]) => {
         if (cancelled) return
         setConfig(mergeConfig(buildEpisodeDefaultConfig(loadedConfig, loadedSources), initialConfig))
         setSources(loadedSources)
         setStatus(loadedStatus)
+        setNewsNowStatus(loadedNewsNowStatus)
       })
       .catch((error) => {
         if (!cancelled) setNotice({ type: 'error', text: `TrendRadar 初始化失败：${error.message}` })
@@ -271,6 +306,47 @@ export default function DiscoverPanel({
     refreshAutoTopicLlmConfig()
     setAutoTopicModalVisible(true)
   }, [refreshAutoTopicLlmConfig])
+
+  const handleUseLocalNewsNow = useCallback(() => {
+    const apiUrl = newsNowStatus?.apiUrl || 'http://127.0.0.1:5175/api/s'
+    updateConfig({ api_url: apiUrl })
+    setNotice({ type: 'success', text: `已切换到本地 NewsNow：${apiUrl}` })
+  }, [newsNowStatus, updateConfig])
+
+  const handleNewsNowAction = useCallback(async (action: NewsNowAction) => {
+    setNewsNowBusy(action)
+    setNotice(null)
+    try {
+      const nextStatus =
+        action === 'sync' ? await onSyncNewsNow()
+          : action === 'setup' ? await onSetupNewsNow()
+            : action === 'start' ? await onStartNewsNow()
+              : action === 'stop' ? await onStopNewsNow()
+                : await onGetNewsNowStatus()
+
+      setNewsNowStatus(nextStatus)
+      if (!nextStatus.success) {
+        setNotice({ type: 'error', text: nextStatus.error || nextStatus.blocker || 'NewsNow 操作失败' })
+        return
+      }
+
+      if (action === 'start') {
+        updateConfig({ api_url: nextStatus.apiUrl || 'http://127.0.0.1:5175/api/s' })
+      }
+
+      const message =
+        action === 'sync' ? 'NewsNow 仓库已同步到锁定版本'
+          : action === 'setup' ? 'NewsNow 依赖已安装'
+            : action === 'start' ? 'NewsNow 已启动，本地 API 已写入采集配置'
+              : action === 'stop' ? 'NewsNow 已停止'
+                : 'NewsNow 状态已刷新'
+      setNotice({ type: 'success', text: message })
+    } catch (error: any) {
+      setNotice({ type: 'error', text: error.message || 'NewsNow 操作失败' })
+    } finally {
+      setNewsNowBusy(null)
+    }
+  }, [onGetNewsNowStatus, onSetupNewsNow, onStartNewsNow, onStopNewsNow, onSyncNewsNow, updateConfig])
 
   const toggleSource = useCallback((source: TrendRadarSource, enabled: boolean) => {
     if (source.kind === 'platform') {
@@ -799,6 +875,46 @@ export default function DiscoverPanel({
                 onChange={event => updateConfig({ api_url: event.target.value })}
               />
             </label>
+            <div className="discover-newsnow-controls">
+              <div className="discover-newsnow-status">
+                <span>本地 NewsNow</span>
+                <strong className={`discover-newsnow-state ${newsNowStatusTone(newsNowStatus)}`}>
+                  {newsNowStatusText(newsNowStatus)}
+                </strong>
+              </div>
+              <div className="discover-newsnow-actions">
+                <Tooltip title="把采集 API 指向本地 NewsNow">
+                  <Button size="small" onClick={handleUseLocalNewsNow}>
+                    使用本地
+                  </Button>
+                </Tooltip>
+                <Tooltip title="刷新 NewsNow 状态">
+                  <Button
+                    size="small"
+                    icon={newsNowBusy === 'status' ? <LoadingOutlined spin /> : <ReloadOutlined />}
+                    loading={newsNowBusy === 'status'}
+                    onClick={() => handleNewsNowAction('status')}
+                  />
+                </Tooltip>
+                <Button size="small" loading={newsNowBusy === 'sync'} onClick={() => handleNewsNowAction('sync')}>
+                  同步
+                </Button>
+                <Button size="small" loading={newsNowBusy === 'setup'} onClick={() => handleNewsNowAction('setup')}>
+                  安装
+                </Button>
+                <Button
+                  size="small"
+                  type="primary"
+                  loading={newsNowBusy === 'start'}
+                  onClick={() => handleNewsNowAction('start')}
+                >
+                  启动
+                </Button>
+                <Button size="small" danger loading={newsNowBusy === 'stop'} onClick={() => handleNewsNowAction('stop')}>
+                  停止
+                </Button>
+              </div>
+            </div>
             <label className="discover-switch-row">
               <span>代理</span>
               <Switch checked={config.proxy_enabled} onChange={checked => updateConfig({ proxy_enabled: checked })} />

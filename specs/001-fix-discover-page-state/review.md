@@ -9,6 +9,12 @@
 - `spec.md`: `specs/001-fix-discover-page-state/spec.md`
 - `workflow-state.json`: `specs/001-fix-discover-page-state/workflow-state.json`
 - `checklists/requirements.md`: `specs/001-fix-discover-page-state/checklists/requirements.md`
+- `validation.md`: `specs/001-fix-discover-page-state/validation.md`
+- `acceptance.md`: `specs/001-fix-discover-page-state/acceptance.md`
+- `acceptance-checklist.md`: `specs/001-fix-discover-page-state/acceptance-checklist.md`
+- `progress.md`: `specs/001-fix-discover-page-state/progress.md`
+- `workflow-record.md`: `specs/001-fix-discover-page-state/workflow-record.md`
+- `improvement-candidates.md`: `specs/001-fix-discover-page-state/improvement-candidates.md`
 
 ## Workspace Repository Map
 
@@ -34,3 +40,12 @@
 - UI/CDP smoke：新增节目、打开发现页、立即采集、清空素材、切换智能标签、检查控制台。
 
 完整 AI 执行仍需读取 `spec.md`、后续 `plan.md` 和实际代码 diff；本文件只作为人工导航页。
+
+## 当前验收状态
+
+- AI Self-Acceptance: PASS，见 `validation.md`。
+- 用户验收: PASS，用户已回复“人工验收通过，继续往下执行”。
+- Simplify: N/A，无产品代码清理，见 `progress.md`。
+- Test hardening: N/A，不新增测试文件，见 `progress.md`。
+- Retrospective: completed，见 `workflow-record.md` 和 `improvement-candidates.md`。
+- 已知缺口: 全量 `npm run acceptance:cdp` 被既有 `rank_threshold` 断言阻断；自动选题专项浏览器验证已通过。

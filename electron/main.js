@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron')
 const path = require('path')
 const fs = require('fs')
+const http = require('http')
 const { spawn } = require('child_process')
 const ConfigManager = require('./configManager')
 const { fetchModels, callLLM } = require('./llmService')
@@ -143,6 +144,8 @@ const WORKFLOW_DIR = path.join(__dirname, '..', 'out', 'workflows')
 
 // TrendRadar daemon process
 let trendradarDaemon = null
+let newsnowProcess = null
+let newsnowPort = Number(process.env.NEWSNOW_PORT || 5175)
 
 const DEFAULT_RADAR_STATE = {
   enabled: false,
@@ -557,6 +560,217 @@ function runTrendRadarCli(action, payload = {}, timeoutMs = 300000) {
       reject(new Error(`Failed to write TrendRadar ${action} input: ${err.message}`))
     }
   })
+}
+
+function runNewsNowRuntime(action, timeoutMs = 180000) {
+  return new Promise((resolve, reject) => {
+    const proc = spawn('node', [
+      path.join(__dirname, '..', 'scripts', 'newsnow_runtime.js'),
+      action
+    ], {
+      cwd: path.join(__dirname, '..'),
+      env: { ...process.env },
+      shell: SPAWN_SHELL
+    })
+
+    let stdout = ''
+    let stderr = ''
+    let killed = false
+    const timeout = setTimeout(() => {
+      killed = true
+      proc.kill('SIGTERM')
+      setTimeout(() => proc.kill('SIGKILL'), 5000)
+      reject(new Error(`NewsNow ${action} timeout after ${timeoutMs / 1000}s`))
+    }, timeoutMs)
+
+    proc.stdout.on('data', (data) => { stdout += data.toString() })
+    proc.stderr.on('data', (data) => { stderr += data.toString() })
+    proc.on('error', (err) => {
+      clearTimeout(timeout)
+      if (!killed) reject(new Error(`Failed to run NewsNow ${action}: ${err.message}`))
+    })
+    proc.on('close', (code) => {
+      clearTimeout(timeout)
+      if (killed) return
+      try {
+        const result = JSON.parse(stdout || '{}')
+        if (code !== 0 && !Object.keys(result).length) {
+          reject(new Error(stderr || `NewsNow ${action} exited with code ${code}`))
+          return
+        }
+        resolve(result)
+      } catch (e) {
+        reject(new Error(`Failed to parse NewsNow ${action} JSON: ${e.message}\nOutput: ${stdout.slice(0, 200)}\n${stderr.slice(0, 300)}`))
+      }
+    })
+  })
+}
+
+function runNewsNowSync(options = {}, timeoutMs = 180000) {
+  return new Promise((resolve, reject) => {
+    const args = [path.join(__dirname, '..', 'scripts', 'sync_newsnow.py')]
+    if (options.check) args.push('--check')
+    if (options.update) args.push('--update', options.update)
+    if (options.ref) args.push('--ref', options.ref)
+    if (options.dryRun) args.push('--dry-run')
+    if (options.noProxy) args.push('--no-proxy')
+    const proc = spawn(PYTHON_PATH, args, {
+      cwd: path.join(__dirname, '..'),
+      env: { ...process.env },
+      shell: SPAWN_SHELL
+    })
+
+    let stdout = ''
+    let stderr = ''
+    let killed = false
+    const timeout = setTimeout(() => {
+      killed = true
+      proc.kill('SIGTERM')
+      setTimeout(() => proc.kill('SIGKILL'), 5000)
+      reject(new Error(`NewsNow sync timeout after ${timeoutMs / 1000}s`))
+    }, timeoutMs)
+
+    proc.stdout.on('data', (data) => { stdout += data.toString() })
+    proc.stderr.on('data', (data) => { stderr += data.toString() })
+    proc.on('error', (err) => {
+      clearTimeout(timeout)
+      if (!killed) reject(new Error(`Failed to sync NewsNow: ${err.message}`))
+    })
+    proc.on('close', (code) => {
+      clearTimeout(timeout)
+      if (killed) return
+      if (code !== 0) {
+        reject(new Error(stderr || stdout || `NewsNow sync exited with code ${code}`))
+        return
+      }
+      resolve({ success: true, stdout, stderr })
+    })
+  })
+}
+
+function getNewsNowApiUrl(port = newsnowPort) {
+  return `http://127.0.0.1:${port}/api/s`
+}
+
+function requestUrl(url, timeoutMs = 2500) {
+  return new Promise((resolve) => {
+    const req = http.get(url, { timeout: timeoutMs }, (res) => {
+      res.resume()
+      res.on('end', () => resolve({ ok: res.statusCode >= 200 && res.statusCode < 500, statusCode: res.statusCode }))
+    })
+    req.on('timeout', () => {
+      req.destroy()
+      resolve({ ok: false, error: 'timeout' })
+    })
+    req.on('error', (error) => resolve({ ok: false, error: error.message }))
+  })
+}
+
+async function waitForNewsNowReady(apiUrl, timeoutMs = 45000) {
+  const started = Date.now()
+  let last = null
+  while (Date.now() - started < timeoutMs) {
+    last = await requestUrl(`${apiUrl}?id=zhihu&latest=false`, 3000)
+    if (last.ok) return { ready: true, statusCode: last.statusCode }
+    await new Promise(resolve => setTimeout(resolve, 1000))
+  }
+  return { ready: false, error: last?.error || 'NewsNow API did not become ready in time' }
+}
+
+function killProcessTree(proc) {
+  if (!proc) return
+  if (process.platform === 'win32') {
+    spawn('taskkill', ['/PID', String(proc.pid), '/T', '/F'], { shell: false })
+    return
+  }
+  proc.kill('SIGTERM')
+}
+
+async function getNewsNowStatus() {
+  const status = await runNewsNowRuntime('status', 60000)
+  return {
+    ...status,
+    processRunning: !!newsnowProcess,
+    pid: newsnowProcess?.pid || null,
+    apiUrl: getNewsNowApiUrl(),
+  }
+}
+
+async function startNewsNowService(options = {}) {
+  if (newsnowProcess) {
+    return { ...(await getNewsNowStatus()), success: true, processRunning: true }
+  }
+
+  let status = await runNewsNowRuntime('status', 60000)
+  if (!status.available) {
+    await runNewsNowSync({}, 180000)
+    status = await runNewsNowRuntime('status', 60000)
+  }
+  if (!status.dependenciesInstalled) {
+    return {
+      ...status,
+      processRunning: false,
+      apiUrl: getNewsNowApiUrl(),
+      success: false,
+      error: 'NewsNow 依赖未安装，请先执行 setup。',
+    }
+  }
+
+  const port = Number(options.port || process.env.NEWSNOW_PORT || newsnowPort || 5175)
+  newsnowPort = port
+  const apiUrl = getNewsNowApiUrl(port)
+  const newsnowDir = path.join(__dirname, '..', 'engine', 'newsnow')
+  newsnowProcess = spawn('pnpm', [
+    'run',
+    'dev',
+    '--host',
+    '127.0.0.1',
+    '--port',
+    String(port),
+    '--strictPort'
+  ], {
+    cwd: newsnowDir,
+    env: getCleanSpawnEnv({ BROWSER: 'none', NEWSNOW_PORT: String(port) }),
+    shell: SPAWN_SHELL
+  })
+
+  newsnowProcess.stdout.on('data', (data) => {
+    const text = data.toString()
+    if (mainWindow && text.trim()) mainWindow.webContents.send('newsnow:log', text)
+  })
+  newsnowProcess.stderr.on('data', (data) => {
+    const text = data.toString()
+    if (mainWindow && text.trim()) mainWindow.webContents.send('newsnow:log', text)
+  })
+  newsnowProcess.on('close', (code) => {
+    if (mainWindow) mainWindow.webContents.send('newsnow:status', { status: 'stopped', code })
+    newsnowProcess = null
+  })
+  newsnowProcess.on('error', (error) => {
+    if (mainWindow) mainWindow.webContents.send('newsnow:status', { status: 'error', error: error.message })
+    newsnowProcess = null
+  })
+
+  const ready = await waitForNewsNowReady(apiUrl)
+  return {
+    ...(await getNewsNowStatus()),
+    success: true,
+    processRunning: !!newsnowProcess,
+    pid: newsnowProcess?.pid || null,
+    apiUrl,
+    ready: ready.ready,
+    warning: ready.ready ? '' : ready.error,
+  }
+}
+
+function stopNewsNowService() {
+  if (!newsnowProcess) {
+    return { success: true, processRunning: false, apiUrl: getNewsNowApiUrl() }
+  }
+  const pid = newsnowProcess.pid
+  killProcessTree(newsnowProcess)
+  newsnowProcess = null
+  return { success: true, processRunning: false, stoppedPid: pid, apiUrl: getNewsNowApiUrl() }
 }
 
 function getRadarCachePath() {
@@ -1481,6 +1695,31 @@ ipcMain.handle('trendradar:openReport', async (event, reportPath) => {
   return { success: true }
 })
 
+ipcMain.handle('newsnow:getStatus', async () => {
+  return getNewsNowStatus()
+})
+
+ipcMain.handle('newsnow:sync', async (event, options) => {
+  await runNewsNowSync(options || {}, 180000)
+  return getNewsNowStatus()
+})
+
+ipcMain.handle('newsnow:setup', async () => {
+  return runNewsNowRuntime('setup', 600000)
+})
+
+ipcMain.handle('newsnow:build', async () => {
+  return runNewsNowRuntime('build', 600000)
+})
+
+ipcMain.handle('newsnow:start', async (event, options) => {
+  return startNewsNowService(options || {})
+})
+
+ipcMain.handle('newsnow:stop', async () => {
+  return stopNewsNowService()
+})
+
 // Fetch sources management
 ipcMain.handle('fetch:getSources', async (event) => {
   return new Promise((resolve, reject) => {
@@ -1709,7 +1948,7 @@ app.whenReady().then(() => {
 })
 
 app.on('before-quit', () => {
-  // cleanup if needed
+  stopNewsNowService()
 })
 
 app.on('window-all-closed', () => {

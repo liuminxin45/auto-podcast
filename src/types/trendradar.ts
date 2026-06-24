@@ -166,3 +166,32 @@ export interface TrendRadarUpdateStatus {
   blocker?: string
   error?: string
 }
+
+export interface NewsNowStatus {
+  success: boolean
+  available?: boolean
+  path?: string
+  repo?: string
+  lockedCommit?: string
+  localCommit?: string
+  lockedVersion?: string
+  packageVersion?: string
+  nodeRequirement?: string
+  nodeVersion?: string
+  nodeCompatible?: boolean
+  packageManager?: string
+  pnpmAvailable?: boolean
+  pnpmVersion?: string
+  dependenciesInstalled?: boolean
+  built?: boolean
+  host?: string
+  port?: number
+  apiPath?: string
+  apiUrl?: string
+  blocker?: string
+  processRunning?: boolean
+  pid?: number | null
+  ready?: boolean
+  warning?: string
+  error?: string
+}

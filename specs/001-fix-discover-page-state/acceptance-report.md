@@ -53,3 +53,51 @@ CDP 说明：本机 `127.0.0.1:9222` 存在异常监听，`/json/version` 和 `/
 - 浏览器 smoke：mock 中 `radarRunOnce` 设置为抛错，进入新节目 2.5 秒内未被调用。
 - 浏览器 smoke：`Maximum update depth exceeded` 计数为 0。
 - 浏览器 smoke：全局雷达旧缓存仍未显示在新节目发现页。
+
+## 追加回归：自动选题 LLM 配置来源
+
+用户复测发现全局 LLM 已配置，但自动选题助手仍提示“未配置大模型 API”，并要求使用 Spec Kit 流程修复。
+
+根因：
+
+- `DiscoverPanel` 打开 `AutoTopicModal` 时将 `llmConfig` 硬编码为 `null`，导致弹窗不读取全局 LLM 配置。
+- 自动选题配置校验只检查 `apiKey`，没有与项目现有 `llmConfigResolver` 的 `discover` 能力解析保持一致。
+
+追加修复：
+
+- `DiscoverPanel` 在打开自动选题弹窗前调用 `llmConfigResolver.getLLMConfig('discover')`，优先使用发现/搜索能力配置，并允许回退到全局文本能力配置。
+- `AutoTopicModal` 改为校验 `apiKey`、`apiBase`、`model` 三项完整可用后才允许开始自动选题。
+- `useAutoTopic` 使用同一套完整配置校验，并将错误引导文案改为 `Settings -> AI 能力接口`。
+- 静态扫描确认不再存在 `llmConfig={null}` 或“节点设置中配置”的旧提示。
+
+追加验证：
+
+- `npx tsc --noEmit --pretty false`：通过。
+- `npm run build`：通过。
+- `npm run acceptance:cdp`：执行过，真实 Electron CDP 启动成功并生成 `docs/acceptance/CDP_ACCEPTANCE_REPORT.md`；结果为 FAIL，失败点是既有 `rank_threshold` 断言，不是自动选题 LLM 配置路径。
+- 浏览器专项 smoke：通过。通过系统 Chrome 加载 `http://127.0.0.1:5174`，在页面启动前注入全局 search/text LLM 配置和 mock Electron API，新增节目后打开“自动选题”弹窗。
+  - `warningVisible=false`：不再显示“未配置大模型 API”。
+  - `startDisabledAfterTopic=false`：填写核心主题后“开始选题”按钮可用，未被 LLM 配置门禁禁用。
+  - `pageErrors=[]`。
+  - 截图：`specs/001-fix-discover-page-state/cdp-screenshots/autotopic-llm-config-enabled.png`。
+
+追加执行级修复：
+
+- 进一步执行浏览器 smoke 时发现：mock LLM 已调用并返回 1 条入选内容，但弹窗停留在“处理完成/关闭”，没有进入“选题定稿”。
+- 根因是 `AutoTopicModal.handleStart` 在 `await execute(config)` 后读取旧闭包里的 `autoTopicState`，无法观察到 hook 完成后的最新 `stage=done`。
+- 修复为用 `useEffect` 监听最新 `autoTopicState.stage`、`autoTopicState.error` 和 `isProcessing`，执行成功后自动切换到 `review`；同时在 `stage=done` 时同步 `selectedItems/rejectedItems`，覆盖 0 入选但有淘汰项的结果。
+
+追加执行级验证：
+
+- `npx vitest run src/hooks/__tests__/useAutoTopic.test.tsx --reporter=dot`：8/8 通过。
+- 浏览器执行级 smoke：通过。mock `window.electronAPI.llmCall` 返回 1 条 `keep` 结果，点击“开始选题”后：
+  - `llmCallCount=1`。
+  - `reviewVisible=true`：页面显示 `AI 推荐了 1 条内容`、`拟入选（1 条）`、`确认选题（1 条）`。
+  - `errorVisible=false`。
+  - `pageErrors=[]`。
+  - 截图：`specs/001-fix-discover-page-state/cdp-screenshots/autotopic-execution-smoke-after.png`。
+- `npm run build`：通过。
+
+已知未执行项：
+
+- 现有全量 Electron CDP 验收仍被 `rank_threshold` 既有断言阻断；自动选题专项路径已通过浏览器自动化验证。
