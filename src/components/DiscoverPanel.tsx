@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button, Empty, Input, InputNumber, Select, Switch, Tooltip } from 'antd'
 import {
   ArrowLeftOutlined,
@@ -151,26 +151,23 @@ function mergeConfig(...configs: Array<Partial<TrendRadarConfigView> | undefined
 }
 
 function buildEpisodeDefaultConfig(loadedConfig: TrendRadarConfigView, sources: TrendRadarSource[]): TrendRadarConfigView {
-  return mergeConfig({
+  const defaultPlatforms = sources
+      .filter(source => source.kind === 'platform' && source.enabled)
+      .map(source => source.id)
+  const defaultRssFeeds = sources
+      .filter(source => source.kind === 'rss' && source.enabled)
+      .map(source => source.id)
+
+  return mergeConfig(loadedConfig, {
     timezone: loadedConfig.timezone || DEFAULT_CONFIG.timezone,
     show_version_update: loadedConfig.show_version_update ?? DEFAULT_CONFIG.show_version_update,
-    enabled_platforms: sources
-      .filter(source => source.kind === 'platform' && source.enabled)
-      .map(source => source.id),
-    enabled_rss_feeds: sources
-      .filter(source => source.kind === 'rss' && source.enabled)
-      .map(source => source.id),
-    ai_available: loadedConfig.ai_available,
-    ai_api_key_set: loadedConfig.ai_api_key_set,
-    ai_provider_source: loadedConfig.ai_provider_source,
-    ai_model: loadedConfig.ai_model,
-    ai_api_base: loadedConfig.ai_api_base,
-    ai_timeout: loadedConfig.ai_timeout,
-    ai_temperature: loadedConfig.ai_temperature,
-    ai_max_tokens: loadedConfig.ai_max_tokens,
-    ai_num_retries: loadedConfig.ai_num_retries,
-    ai_fallback_models: loadedConfig.ai_fallback_models,
+    enabled_platforms: loadedConfig.enabled_platforms?.length ? loadedConfig.enabled_platforms : defaultPlatforms,
+    enabled_rss_feeds: loadedConfig.enabled_rss_feeds?.length ? loadedConfig.enabled_rss_feeds : defaultRssFeeds,
   })
+}
+
+function canUseAiFilter(config: TrendRadarConfigView): boolean {
+  return Boolean(config.ai_available && config.ai_api_key_set)
 }
 
 export default function DiscoverPanel({
@@ -205,6 +202,7 @@ export default function DiscoverPanel({
   const [updatingDependency, setUpdatingDependency] = useState(false)
   const [notice, setNotice] = useState<Notice>(null)
   const [autoTopicModalVisible, setAutoTopicModalVisible] = useState(false)
+  const hasLoadedConfigRef = useRef(false)
 
   useEffect(() => {
     if (!visible) return
@@ -214,7 +212,12 @@ export default function DiscoverPanel({
   }, [visible, items, selectedItems, meta])
 
   useEffect(() => {
-    if (!visible) return
+    if (!visible) {
+      hasLoadedConfigRef.current = false
+      return
+    }
+    if (hasLoadedConfigRef.current) return
+    hasLoadedConfigRef.current = true
     let cancelled = false
     Promise.all([onLoadConfig(), onListSources(), onGetStatus()])
       .then(([loadedConfig, loadedSources, loadedStatus]) => {
@@ -227,7 +230,7 @@ export default function DiscoverPanel({
         if (!cancelled) setNotice({ type: 'error', text: `TrendRadar 初始化失败：${error.message}` })
       })
     return () => { cancelled = true }
-  }, [visible, onLoadConfig, onListSources, onGetStatus])
+  }, [visible])
 
   const selectedItemsForProceed = useMemo(() => {
     return currentItems.filter(item => selectedKeys.has(identity(item)))
@@ -282,6 +285,10 @@ export default function DiscoverPanel({
   }, [config, onConfigChange])
 
   const handleRunOnce = useCallback(async () => {
+    if (config.filter_method === 'ai' && !canUseAiFilter(config)) {
+      setNotice({ type: 'warning', text: 'AI 智能筛选需要先在设置中配置发现/搜索模型和 API Key。' })
+      return
+    }
     setRunning(true)
     setNotice(null)
     try {
@@ -300,6 +307,14 @@ export default function DiscoverPanel({
       setRunning(false)
     }
   }, [config, onConfigChange, onRunOnce, onGetStatus])
+
+  const handleFilterMethodChange = useCallback((value: TrendRadarConfigView['filter_method']) => {
+    if (value === 'ai' && !canUseAiFilter(config)) {
+      setNotice({ type: 'warning', text: 'AI 智能筛选需要先在设置中配置发现/搜索模型和 API Key。' })
+      return
+    }
+    updateConfig({ filter_method: value })
+  }, [config, updateConfig])
 
   const handleCheckUpdate = useCallback(async () => {
     setCheckingUpdate(true)
@@ -514,10 +529,10 @@ export default function DiscoverPanel({
               <span>筛选方式</span>
               <Select
                 value={config.filter_method}
-                onChange={value => updateConfig({ filter_method: value })}
+                onChange={handleFilterMethodChange}
                 options={[
                   { value: 'keyword', label: '关键词' },
-                  { value: 'ai', label: 'AI 智能筛选' },
+                  { value: 'ai', label: 'AI 智能筛选', disabled: !canUseAiFilter(config) },
                 ]}
               />
             </label>
@@ -526,7 +541,7 @@ export default function DiscoverPanel({
                 {config.ai_available ? <InfoCircleOutlined /> : <WarningOutlined />}
                 {config.ai_available
                   ? `AI 筛选将使用 ${aiProviderText(config)}，并按 TrendRadar 6.10 的 ai_filter 配置执行。`
-                  : 'AI 筛选已可选择；运行时会优先读取 Settings 的发现/搜索模型，其次读取 AI_MODEL / AI_API_KEY 环境变量。'}
+                  : 'AI 智能筛选需要先在设置中配置发现/搜索模型和 API Key。'}
               </div>
             )}
             {config.filter_method === 'ai' && (

@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 
 const http = require('http')
+const net = require('net')
 const fs = require('fs')
 const path = require('path')
 const { spawn, spawnSync } = require('child_process')
 
 const projectRoot = path.resolve(__dirname, '..')
 const vitePort = String(process.env.VITE_PORT || '5174')
-const cdpPort = String(process.env.CDP_PORT || process.env.CDP_ACCEPTANCE_PORT || '9222')
+const preferredCdpPort = String(process.env.CDP_PORT || process.env.CDP_ACCEPTANCE_PORT || '9222')
 const viteUrl = `http://127.0.0.1:${vitePort}`
 const reportPath = path.join(projectRoot, 'docs', 'acceptance', 'CDP_ACCEPTANCE_REPORT.md')
 const electronBin = path.join(
@@ -19,6 +20,88 @@ const electronBin = path.join(
 
 function wait(ms) {
   return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+function findListeningPids(port) {
+  const pids = new Set()
+  if (process.platform === 'win32') {
+    const result = spawnSync('netstat', ['-ano', '-p', 'tcp'], { encoding: 'utf8' })
+    const output = `${result.stdout || ''}\n${result.stderr || ''}`
+    for (const line of output.split(/\r?\n/)) {
+      const columns = line.trim().split(/\s+/)
+      if (columns.length < 5) continue
+      const localAddress = columns[1] || ''
+      const state = columns[3] || ''
+      const pid = columns[4] || ''
+      if (!localAddress.endsWith(`:${port}`)) continue
+      if (state.toUpperCase() !== 'LISTENING') continue
+      if (pid && pid !== String(process.pid)) pids.add(pid)
+    }
+    return Array.from(pids)
+  }
+
+  const result = spawnSync('sh', ['-lc', `lsof -tiTCP:${port} -sTCP:LISTEN 2>/dev/null || true`], { encoding: 'utf8' })
+  for (const pid of String(result.stdout || '').split(/\s+/).filter(Boolean)) {
+    if (pid !== String(process.pid)) pids.add(pid)
+  }
+  return Array.from(pids)
+}
+
+function killPidTree(pid) {
+  if (!pid) return
+  if (process.platform === 'win32') {
+    spawnSync('taskkill', ['/pid', String(pid), '/T', '/F'], { stdio: 'ignore' })
+    return
+  }
+  spawnSync('sh', ['-lc', `kill -TERM -${pid} 2>/dev/null || kill -TERM ${pid} 2>/dev/null || true`], { stdio: 'ignore' })
+}
+
+async function waitForPortFree(port, timeoutMs) {
+  const started = Date.now()
+  while (Date.now() - started < timeoutMs) {
+    if (findListeningPids(port).length === 0) return true
+    await wait(300)
+  }
+  return false
+}
+
+function isTcpPortFree(port) {
+  return new Promise(resolve => {
+    const server = net.createServer()
+    server.once('error', () => resolve(false))
+    server.once('listening', () => {
+      server.close(() => resolve(true))
+    })
+    server.listen(Number(port), '127.0.0.1')
+  })
+}
+
+async function findFreeCdpPort(startPort) {
+  const start = Number(startPort)
+  for (let port = start + 1; port < start + 100; port += 1) {
+    if (await isTcpPortFree(port)) return String(port)
+  }
+  throw new Error(`No free CDP port found after ${startPort}`)
+}
+
+async function prepareCdpPort(port) {
+  const pids = findListeningPids(port)
+  if (pids.length === 0) return port
+
+  console.log(`[CDP Acceptance] Port ${port} is occupied by PID(s): ${pids.join(', ')}. Killing before CDP run.`)
+  for (const pid of pids) {
+    killPidTree(pid)
+  }
+
+  const released = await waitForPortFree(port, 30000)
+  if (released) {
+    console.log(`[CDP Acceptance] Port ${port} released`)
+    return port
+  }
+
+  const fallbackPort = await findFreeCdpPort(port)
+  console.log(`[CDP Acceptance] Port ${port} is still occupied after kill attempt; using isolated CDP port ${fallbackPort}`)
+  return fallbackPort
 }
 
 function isHttpReady(url) {
@@ -62,14 +145,17 @@ function sanitizedEnv(extra = {}) {
   return { ...env, ...extra }
 }
 
-function reportPassed() {
+function reportPassed(startedAt = 0) {
   if (!fs.existsSync(reportPath)) return false
+  const stat = fs.statSync(reportPath)
+  if (stat.mtimeMs + 1000 < startedAt) return false
   const report = fs.readFileSync(reportPath, 'utf8')
   return /- Status:\s*PASS/.test(report)
 }
 
 async function main() {
   let viteProcess = null
+  const acceptanceStartedAt = Date.now()
   const viteAlreadyRunning = await isHttpReady(viteUrl)
 
   if (viteAlreadyRunning) {
@@ -90,6 +176,8 @@ async function main() {
       throw new Error(`Vite did not become ready at ${viteUrl}`)
     }
   }
+
+  const cdpPort = await prepareCdpPort(preferredCdpPort)
 
   console.log(`[CDP Acceptance] Starting Electron with CDP at http://127.0.0.1:${cdpPort}`)
   const electronProcess = spawn(electronBin, ['.'], {
@@ -117,7 +205,8 @@ async function main() {
     killProcessTree(viteProcess)
   }
 
-  process.exit(exitCode === 0 || reportPassed() ? 0 : exitCode)
+  const passed = reportPassed(acceptanceStartedAt)
+  process.exit(passed ? 0 : (exitCode || 1))
 }
 
 main().catch(error => {

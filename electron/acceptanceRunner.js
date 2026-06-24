@@ -179,6 +179,114 @@ async function runCdpAcceptance({ app, mainWindow, projectRoot }) {
     recordStep('TrendRadar 发现采集与采用', 'PASS', `items=${discoverWorkflow?.state?.fetch_contents?.length || 0}`)
     await screenshot('02-discover-trendradar-state')
 
+    const settingsProbe = await evaluate(`(async () => {
+      const configResult = await window.electronAPI.trendradarGetConfig()
+      const sourcesResult = await window.electronAPI.trendradarListSources()
+      if (!configResult.success) throw new Error(configResult.error || 'trendradarGetConfig failed')
+      if (!sourcesResult.success) throw new Error(sourcesResult.error || 'trendradarListSources failed')
+      const platformIds = (sourcesResult.sources || [])
+        .filter(source => source.kind === 'platform' && source.enabled)
+        .map(source => source.id)
+        .slice(0, 2)
+      const rssIds = (sourcesResult.sources || [])
+        .filter(source => source.kind === 'rss' && source.enabled)
+        .map(source => source.id)
+        .slice(0, 1)
+      const keywordConfig = {
+        timezone: 'UTC',
+        platforms_enabled: true,
+        rss_enabled: false,
+        enabled_platforms: platformIds,
+        enabled_rss_feeds: [],
+        max_items_per_source: 1,
+        crawler_request_interval: 0,
+        rss_request_interval: 0,
+        rss_timeout: 5,
+        rss_freshness_enabled: false,
+        filter_method: 'keyword',
+        report_display_mode: 'platform',
+        report_mode: 'current',
+        rank_threshold: 1,
+        max_news_per_keyword: 2,
+        sort_by_position_first: true,
+        proxy_enabled: false,
+        proxy_url: '',
+        api_url: '',
+        debug: false
+      }
+      const keywordResult = await window.electronAPI.trendradarRunOnce(keywordConfig)
+      const keywordItems = keywordResult.fetch_contents || keywordResult.items || []
+      const keywordMetaConfig = keywordResult.meta?.config || {}
+      const rssConfig = {
+        ...keywordConfig,
+        platforms_enabled: false,
+        rss_enabled: true,
+        enabled_platforms: [],
+        enabled_rss_feeds: rssIds,
+        rss_freshness_enabled: true,
+        freshness_days: 30,
+        rss_timeout: 8
+      }
+      const rssResult = await window.electronAPI.trendradarRunOnce(rssConfig)
+      const rssMetaConfig = rssResult.meta?.config || {}
+      let aiResult = null
+      if (configResult.config?.ai_available && configResult.config?.ai_api_key_set && platformIds.length) {
+        aiResult = await window.electronAPI.trendradarRunOnce({
+          ...keywordConfig,
+          enabled_platforms: platformIds.slice(0, 1),
+          max_items_per_source: 1,
+          filter_method: 'ai',
+          report_display_mode: 'keyword',
+          ai_filter_batch_size: 1,
+          ai_filter_batch_interval: 0,
+          ai_filter_min_score: 0,
+          ai_filter_reclassify_threshold: 0.5,
+          ai_timeout: 20
+        })
+      }
+      return {
+        config: configResult.config,
+        platformIds,
+        rssIds,
+        keyword: {
+          success: keywordResult.success,
+          count: keywordItems.length,
+          first: keywordItems[0] || null,
+          meta: keywordResult.meta || {},
+          config: keywordMetaConfig,
+          sourceIds: Array.from(new Set(keywordItems.map(item => item.source_id)))
+        },
+        rss: {
+          success: rssResult.success,
+          count: (rssResult.fetch_contents || rssResult.items || []).length,
+          meta: rssResult.meta || {},
+          config: rssMetaConfig
+        },
+        ai: aiResult ? {
+          success: aiResult.success,
+          count: (aiResult.fetch_contents || aiResult.items || []).length,
+          meta: aiResult.meta || {},
+          config: aiResult.meta?.config || {}
+        } : null
+      }
+    })()`)
+    assert('采集设置读取到平台来源', settingsProbe?.platformIds?.length > 0, JSON.stringify(settingsProbe?.platformIds || []))
+    assert('AI 配置已被 TrendRadar 配置视图识别', Boolean(settingsProbe?.config?.ai_available && settingsProbe?.config?.ai_api_key_set), JSON.stringify({
+      ai_available: settingsProbe?.config?.ai_available,
+      ai_api_key_set: settingsProbe?.config?.ai_api_key_set,
+      ai_provider_source: settingsProbe?.config?.ai_provider_source,
+      ai_model: settingsProbe?.config?.ai_model,
+    }))
+    assert('采集设置下发 max_items_per_source', settingsProbe?.keyword?.config?.max_items_per_source === 1, JSON.stringify(settingsProbe?.keyword?.config || {}))
+    assert('采集设置下发 enabled_platforms', JSON.stringify(settingsProbe?.keyword?.config?.enabled_platforms || []) === JSON.stringify(settingsProbe?.platformIds || []), JSON.stringify(settingsProbe?.keyword?.config || {}))
+    assert('采集设置下发 timezone 并影响时间戳', String(settingsProbe?.keyword?.meta?.generated_at || '').endsWith('+00:00'), settingsProbe?.keyword?.meta?.generated_at || '')
+    assert('采集设置下发 rank_threshold', Number(settingsProbe?.keyword?.meta?.rank_highlight_count || 0) >= 1, JSON.stringify(settingsProbe?.keyword?.meta || {}))
+    assert('采集设置下发 report_display_mode=platform', settingsProbe?.keyword?.config?.report_display_mode === 'platform', JSON.stringify(settingsProbe?.keyword?.config || {}))
+    assert('采集设置下发 RSS 参数', settingsProbe?.rss?.config?.rss_enabled === true && settingsProbe?.rss?.config?.platforms_enabled === false && settingsProbe?.rss?.config?.rss_timeout === 8 && settingsProbe?.rss?.config?.freshness_days === 30, JSON.stringify(settingsProbe?.rss?.config || {}))
+    assert('AI 筛选参数下发到 TrendRadar', Boolean(settingsProbe?.ai?.config?.filter_method === 'ai' && settingsProbe?.ai?.config?.ai_filter_batch_size === 1 && settingsProbe?.ai?.config?.ai_filter_min_score === 0), JSON.stringify(settingsProbe?.ai?.config || settingsProbe?.ai || {}))
+    recordStep('采集设置参数 live 验证', 'PASS', `platforms=${settingsProbe?.platformIds?.join(',') || ''}, rss=${settingsProbe?.rssIds?.join(',') || 'none'}, aiItems=${settingsProbe?.ai?.count ?? 'skipped'}`)
+    await screenshot('02-discover-settings-live')
+
     const scriptedWorkflow = await evaluate(`(async () => {
       const id = window.__acceptanceWorkflowId
       const patch = {

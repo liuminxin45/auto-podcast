@@ -21,6 +21,7 @@ import subprocess
 import sys
 import urllib.request
 import importlib.util
+from types import SimpleNamespace
 from pathlib import Path
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -328,11 +329,6 @@ def _parse_datetime(value: Any, config: Optional[Dict[str, Any]] = None) -> Opti
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=_get_timezone(config))
     return parsed.astimezone(_get_timezone(config))
-    if isinstance(value, list):
-        return [str(item).strip() for item in value if str(item).strip()]
-    if isinstance(value, str):
-        return [part.strip() for part in value.split(",") if part.strip()]
-    return [str(value).strip()] if str(value).strip() else []
 
 
 def _ai_provider_source(ai_key: str, ai_model: str, source_ai_cfg: Dict[str, Any]) -> str:
@@ -375,6 +371,64 @@ def _build_ai_filter_runtime_config(config: Dict[str, Any], source_cfg: Optional
         "RECLASSIFY_THRESHOLD": _coerce_float(config.get("ai_filter_reclassify_threshold"), ai_filter.get("reclassify_threshold", 0.6), minimum=0.0, maximum=1.0),
         "MIN_SCORE": _coerce_float(config.get("ai_filter_min_score"), ai_filter.get("min_score", 0), minimum=0.0, maximum=1.0),
     }
+
+
+def _strip_provider_prefix(model: str) -> str:
+    value = str(model or "").strip()
+    if "/" not in value:
+        return value
+    provider, model_name = value.split("/", 1)
+    if provider in {"openai", "deepseek"} and model_name:
+        return model_name
+    return value
+
+
+def _openai_compatible_completion(**params: Any) -> Any:
+    import requests
+
+    api_base = str(params.get("api_base") or "").rstrip("/")
+    api_key = str(params.get("api_key") or "")
+    if not api_base or not api_key:
+        raise ValueError("OpenAI-compatible AI call requires api_base and api_key")
+
+    payload = {
+        "model": _strip_provider_prefix(str(params.get("model") or "")),
+        "messages": params.get("messages") or [],
+        "temperature": params.get("temperature", 1.0),
+    }
+    max_tokens = params.get("max_tokens")
+    if max_tokens:
+        payload["max_tokens"] = max_tokens
+
+    response = requests.post(
+        f"{api_base}/chat/completions",
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        json=payload,
+        timeout=_coerce_int(params.get("timeout"), 60, minimum=1, maximum=600),
+    )
+    response.raise_for_status()
+    data = response.json()
+    content = (((data.get("choices") or [{}])[0].get("message") or {}).get("content") or "")
+    return SimpleNamespace(
+        choices=[
+            SimpleNamespace(
+                message=SimpleNamespace(content=content)
+            )
+        ]
+    )
+
+
+def _patch_trendradar_ai_client(ai_config: Dict[str, Any]) -> None:
+    if not ai_config.get("API_BASE") or not ai_config.get("API_KEY"):
+        return
+    try:
+        import trendradar.ai.client as ai_client
+        ai_client.completion = _openai_compatible_completion
+    except Exception as exc:
+        _log(f"[bridge] Failed to patch TrendRadar AI client: {exc}")
 
 
 def get_config_view(user_data_dir: Optional[str] = None) -> Dict[str, Any]:
@@ -682,6 +736,7 @@ def _apply_ai_filter(items: List[Dict[str, Any]], config: Dict[str, Any], user_d
     ai_config = _build_ai_runtime_config(config, source_cfg)
     if not ai_config.get("MODEL"):
         raise ValueError("AI 筛选需要模型配置：请在 Settings 的发现/搜索能力中配置模型，或设置 AI_MODEL。")
+    _patch_trendradar_ai_client(ai_config)
 
     filter_config = _build_ai_filter_runtime_config(config, source_cfg)
     interests_file = filter_config.get("INTERESTS_FILE") or "ai_interests.txt"
@@ -1064,13 +1119,21 @@ def run_once(config_override: Optional[Dict[str, Any]] = None, user_data_dir: Op
         "report_mode": report_mode_meta,
         "rank_highlight_count": len([item for item in items if item.get("rank_highlight")]),
         "config": {k: config.get(k) for k in [
-            "filter_method", "max_items_per_source", "freshness_days", "rss_freshness_enabled",
-            "enabled_platforms", "enabled_rss_feeds", "crawler_request_interval",
-            "rss_request_interval", "rss_timeout", "rss_proxy_enabled", "rss_proxy_url",
-            "platforms_enabled", "rss_enabled", "proxy_enabled", "proxy_url", "api_url",
-            "timezone", "rank_threshold", "sort_by_position_first", "ai_filter_min_score",
-            "ai_filter_batch_size", "ai_interests_file", "report_mode", "report_display_mode",
-            "max_news_per_keyword", "display_standalone_enabled", "standalone_platforms",
+            "timezone", "show_version_update", "platforms_enabled", "rss_enabled",
+            "enabled_platforms", "enabled_rss_feeds", "max_items_per_source",
+            "freshness_days", "rss_freshness_enabled", "rss_request_interval",
+            "rss_timeout", "rss_proxy_enabled", "rss_proxy_url",
+            "crawler_request_interval", "filter_method", "filter_priority_sort_enabled",
+            "ai_available", "ai_api_key_set", "ai_provider_source", "ai_model",
+            "ai_api_base", "ai_timeout", "ai_temperature", "ai_max_tokens",
+            "ai_num_retries", "ai_fallback_models", "ai_filter_batch_size",
+            "ai_filter_batch_interval", "ai_filter_min_score",
+            "ai_filter_reclassify_threshold", "ai_interests_file",
+            "ai_filter_prompt_file", "ai_filter_extract_prompt_file",
+            "ai_filter_update_tags_prompt_file", "api_url", "proxy_enabled",
+            "proxy_url", "schedule_preset", "report_mode", "report_display_mode",
+            "sort_by_position_first", "rank_threshold", "max_news_per_keyword",
+            "display_standalone_enabled", "standalone_platforms",
             "standalone_rss_feeds", "standalone_max_items", "debug",
         ]},
     }

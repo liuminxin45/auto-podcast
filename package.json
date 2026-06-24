@@ -25,10 +25,11 @@
     "test:coverage": "vitest --coverage",
     "verify:nodes": "python scripts/verify_nodes.py",
     "verify:config": "python scripts/test_config.py",
+    "verify:trendradar-settings": "python scripts/verify_trendradar_settings.py",
     "verify:build": "python scripts/build_check.py",
     "test:nodes": "python scripts/test_all_nodes.py",
     "test:integration": "python scripts/integration_test.py",
-    "verify": "npm run verify:config && npm run verify:nodes"
+    "verify": "npm run verify:config && npm run verify:nodes && npm run verify:trendradar-settings"
   },
   "dependencies": {
     "@ant-design/icons": "^5.2.6",

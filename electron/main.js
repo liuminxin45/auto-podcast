@@ -112,7 +112,12 @@ function resolveTrendRadarLLMConfig(payload = {}) {
   const stageConfig = resolveStageLLMConfig(appSettings, 'discover')
   const fallbackTextConfig = resolveStageLLMConfig(appSettings, 'write')
 
-  const sourceConfig = fetchConfig || stageConfig || fallbackTextConfig || {}
+  const candidates = [fetchConfig, stageConfig, fallbackTextConfig].filter(Boolean)
+  const sourceConfig = candidates.find(config => config.apiKey && config.apiBase)
+    || candidates.find(config => config.apiKey)
+    || candidates.find(config => config.apiBase && config.model)
+    || candidates.find(config => config.model)
+    || {}
   const apiKey = explicit.apiKey || sourceConfig.apiKey || ''
   const apiBase = explicit.apiBase || sourceConfig.apiBase || ''
   const model = normalizeLiteLLMModel(explicit.model || sourceConfig.model || '', apiBase)

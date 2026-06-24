@@ -15,6 +15,11 @@ def run(state: Dict[str, Any], config: TTSConfig = None) -> Dict[str, Any]:
 
     ctx.log_start("Starting TTS conversion")
     stages = state.get("stages", [])
+    if not stages:
+        state["audio_segments"] = []
+        ctx.log("无脚本段落，跳过 TTS 生成")
+        ctx.log_end("输出: audio_segments=0")
+        return ctx.finalize(state)
 
     try:
         Path(config.output_dir).mkdir(parents=True, exist_ok=True)
