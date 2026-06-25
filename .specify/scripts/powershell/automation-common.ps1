@@ -920,7 +920,7 @@ function Invoke-ValidateGeneratedContext {
     $checks += [ordered]@{
         path = ".specify/templates/checklist-template.md"
         source_path = "spec-kit/templates/checklist-template.md"
-        phrases = @("next_required_human_action", "CHK010N", "runtime replacement directory")
+        phrases = @("next_required_human_action", "CHK010N", "runtime 替换目录")
     }
 
     $details = @()
@@ -1402,12 +1402,12 @@ function Invoke-ValidateTestPlan {
     }
 
     $text = Get-Content -LiteralPath $planPath -Raw
-    $hasTestPlanSection = ($text -match "(?im)^##\s+Test\s+Plan\b|^##\s+Validation\s+Plan\b")
-    $hasApiPlan = ($text -match "(?i)\bAPI\b|interface|contract")
-    $hasE2ePlanOrNa = ($text -match "(?i)\bE2E\b|end-to-end|interface\s+flow|N/A|unsupported|not\s+supported")
-    $hasReviewStatus = ($text -match "(?i)approved-by-ai-obvious|needs-human-review|human-reviewed|review\s*status|reviewed|N/A")
+    $hasTestPlanSection = ($text -match "(?im)^##\s+测试用例计划\b")
+    $hasApiPlan = ($text -match "(?i)\bAPI\b|接口|interface|contract")
+    $hasE2ePlanOrNa = ($text -match "(?i)\bE2E\b|端到端|interface\s+flow|N/A|不适用|unsupported|未支持")
+    $hasReviewStatus = ($text -match "(?i)approved-by-ai-obvious|needs-human-review|human-reviewed|review\s*status|评审状态|reviewed|已确认|N/A")
 
-    if (-not $hasTestPlanSection) { Set-Blocked $result "plan.md missing ## Test Plan or ## Validation Plan section" }
+    if (-not $hasTestPlanSection) { Set-Blocked $result "plan.md missing ## 测试用例计划 section" }
     if (-not $hasApiPlan) { Set-Blocked $result "API/interface test plan row or explicit API validation plan is required" }
     if (-not $hasE2ePlanOrNa) { Set-Blocked $result "E2E/interface-flow plan or explicit N/A reason is required" }
     if (-not $hasReviewStatus) { Set-Blocked $result "test plan review status is required: approved-by-ai-obvious, needs-human-review, human-reviewed, or N/A with reason" }
@@ -1429,8 +1429,8 @@ function Invoke-ValidateAiSelfAcceptance {
     }
 
     $text = Get-Content -LiteralPath $validationPath -Raw
-    $hasSection = ($text -match "(?i)AI\s+Self-Acceptance|AI\s+Acceptance\s+Result")
-    $isPass = ($text -match "(?i)AI\s+(Self-)?Acceptance[^#\r\n]*(PASS)|AI\s+Self-Acceptance\s*:\s*PASS|AI\s+Acceptance\s+Result\s*:\s*PASS")
+    $hasSection = ($text -match "(?i)AI\s+Self-Acceptance|AI\s+Acceptance\s+Result|AI\s+自验|AI\s+验收")
+    $isPass = ($text -match "(?i)AI\s+(Self-)?Acceptance[^#\r\n]*(PASS)|AI\s+Self-Acceptance\s*[:：]\s*PASS|AI\s+Acceptance\s+Result\s*[:：]\s*PASS")
     if (-not $hasSection) {
         Set-Blocked $result "validation.md missing AI Self-Acceptance result"
     } elseif (-not $isPass) {
@@ -1601,13 +1601,13 @@ function Invoke-ValidateRubricScore {
         $scores[$key] = $score
         if ($null -eq $score) {
             Set-Blocked $result "rubric missing dimension score: $key"
-        } elseif ($score -lt 80 -and $text -notmatch "(?i)$key[\s\S]{0,240}(accepted gap|owner accepted|user accepted)") {
+        } elseif ($score -lt 80 -and $text -notmatch "(?i)$key[\s\S]{0,240}(accepted gap|owner accepted|user accepted|用户.*接受|owner.*接受)") {
             Set-Blocked $result "rubric dimension $key is below 80 without accepted-gap owner evidence"
         }
     }
 
     $overall = $null
-    $overallMatch = [regex]::Match($text, "(?im)(Overall\s+Weighted\s+Score|weighted_total|workflow_score)[^0-9\r\n]*(\d{1,3}(?:\.\d+)?)")
+    $overallMatch = [regex]::Match($text, "(?im)(Overall\s+Weighted\s+Score|总分|weighted_total|workflow_score)[^0-9\r\n]*(\d{1,3}(?:\.\d+)?)")
     if ($overallMatch.Success) {
         $overall = [double]$overallMatch.Groups[2].Value
     } elseif ($scores.Values -notcontains $null) {
@@ -1622,13 +1622,13 @@ function Invoke-ValidateRubricScore {
     }
 
     if ($null -eq $overall) {
-        Set-Blocked $result "rubric missing Overall Weighted Score"
+        Set-Blocked $result "rubric missing Overall Weighted Score / 总分"
     } elseif ($overall -lt 90) {
         Set-Blocked $result "rubric total score is below 90"
     }
 
-    $hardGateFailed = ($text -match "(?i)hard\s*gate[^#\r\n]*(fail|failed|blocked)")
-    $hardGatePassed = ($text -match "(?i)hard\s*gate[^#\r\n]*(pass|passed)")
+    $hardGateFailed = ($text -match "(?i)hard\s*gate[^#\r\n]*(fail|failed|blocked)|硬门禁[^#\r\n]*(失败|未通过|blocked|FAIL)")
+    $hardGatePassed = ($text -match "(?i)hard\s*gate[^#\r\n]*(pass|passed)|硬门禁[^#\r\n]*(通过|PASS)")
     if ($hardGateFailed) {
         Set-Blocked $result "rubric hard gate conclusion failed"
     }
@@ -1636,7 +1636,7 @@ function Invoke-ValidateRubricScore {
         Set-Blocked $result "rubric must include hard gate PASS conclusion"
     }
 
-    foreach ($phrase in @("evidence", "deduction", "complete-branch")) {
+    foreach ($phrase in @("evidence", "证据", "扣分", "complete-branch")) {
         if ($text -notmatch [regex]::Escape($phrase)) {
             Set-Blocked $result "rubric output missing required content: $phrase"
         }

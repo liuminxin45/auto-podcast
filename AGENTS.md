@@ -1,23 +1,19 @@
 # AGENTS.md
-
 This repository uses Spec Kit for AI coding. Keep the default context small:
 read stable facts first, then load only artifacts and policies the task needs.
 
 ## Default Context
-
 Read these at the start of every task:
 
 1. `.specify/workspace.yml`
 2. `.specify/memory/repository-map.md`
 3. `.specify/feature.json` when present, as current-feature state only
 4. `ai/workflows/task-routing.md`
-
 If the user asks about `spec-kit`, shared workflow infrastructure,
 repository governance, or another task that is clearly not the active feature,
 treat `.specify/feature.json` as a stale/current-feature hint. Do not load the
 active feature's `specs/<feature>/*` artifacts or apply its risk flags unless
 the user explicitly resumes that feature.
-
 Then read only the active feature files that match the selected path:
 
 - Lightweight fix: `specs/<feature>/progress.md` or `micro-fix.md` when present.
@@ -28,7 +24,6 @@ Then read only the active feature files that match the selected path:
   when symptoms are unclear, repeated, or UI/runtime behavior is being debugged.
 
 ## Do Not Load By Default
-
 Do not read these unless the current stage explicitly needs them:
 
 - `TEAM-README.md`

@@ -378,7 +378,7 @@ function Get-KnowledgePackEvaluationScenarios {
         return @()
     }
 
-    $payload = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
+    $payload = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json -NoEnumerate
     if ($payload -is [System.Array]) {
         return @($payload)
     }

@@ -7,5 +7,6 @@
   "here": true,
   "integration": "codex",
   "script": "ps",
+  "speckit_upgrade_lock": ".specify/spec-kit.lock.yml",
   "speckit_version": "0.8.11"
 }

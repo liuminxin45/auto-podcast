@@ -76,7 +76,7 @@
     ".specify/checklist-rules/new-feature.yml": "6070606a48037332f393d213a45edcdefc605f815dc2c82811d8e32a79b1c7a7",
     ".specify/checklist-rules/tooling.yml": "a556e883b681373aa1ee6af866950f3a9bbe7f5279d069758d6cf7fe68c0842c",
     ".specify/templates/acceptance-rubric-template.md": "a855bae8159e4d0692a8354060ab6840c0555211fc76a4966e344855be153a4d",
-    ".specify/templates/checklist-template.md": "f5d7dede88a0da981db50fc307c83c65765398940517bfe7134d21f1d7b6cfbd",
+    ".specify/templates/checklist-template.md": "a3e182099caffa6666cadc0bd986b0f605e507f98b8394a4e3c6b69dccbea8ce",
     ".specify/templates/fact-pack-template.md": "d5fb2089a18db86fdafa85d9e5d223b680dfb769bb59ec7eef3b71ccc086fe64",
     ".specify/templates/intake-template.md": "e1ad24da7e7e387d4d9c625d4b16bd090c6296bafc690069dd72ad1423140a38",
     ".specify/templates/layer-manifest.yml": "998a8298aa84ba2ca135f8b382a90ee1da12a7fc9c3d76a2e4fbe5748f16aad5",
@@ -125,6 +125,10 @@
     "ai/knowledge/workspace/cross-repo-routing.md": "111ca4573197c52a6de51b349f836dc3612a37d00d6d366e719288d9d356798b",
     "ai/knowledge/workspace/human-clarification-patterns.md": "9be836941d1157920a493e40727d8689a398d33f6856ff129b48eb4b0db61138",
     "ai/knowledge/workspace/overview.md": "f0b851b771a6d775df15d708895eb5c0af964b63957ceef68d0c3fdb1f1bf754",
-    "ai/knowledge/_schema/knowledge-guide.md": "b69c42d8916b403ec650026a63ce2c1ae5637d9830fc10042738758149b132f1"
+    "ai/knowledge/_schema/knowledge-guide.md": "b69c42d8916b403ec650026a63ce2c1ae5637d9830fc10042738758149b132f1",
+    ".specify/scripts/powershell/bump-spec-kit-version.ps1": "d0ced850cec9c8fd026e69f2a0a58bc01a2e05fc4109f3fd5ecc114038304fd1",
+    ".specify/scripts/powershell/get-spec-kit-version.ps1": "094b9a0994c9b4cc0780d9016fb742f97ca9ccec45dc1fcb0c21c3c4bfce8b02",
+    ".specify/scripts/powershell/validate-spec-kit-version.ps1": "33c3534b227ada0b4b6984188b3f3fde8c45df357c218ba3be39d340252e7044",
+    ".specify/workflows/speckit/workflow.yml": "88725d2b7067f824b145cc88565f8ef93c4e3e2dd349de75433ede3070cdd428"
   }
 }

@@ -1,0 +1,11 @@
+schema_version: '1.0'
+spec_kit:
+  package: specify-cli
+  version: 0.8.11
+  source: source-checkout
+  installed_at: '2026-06-25T03:39:41.203852+00:00'
+  updated_at: '2026-06-25T06:40:01.436064+00:00'
+  source_commit: a3ebb59d7e45bbead7f47ef8bf8b24a3cc854d6f
+managed_assets:
+  manifest: .specify/integrations/speckit.manifest.json
+  upgrade_command: specify upgrade

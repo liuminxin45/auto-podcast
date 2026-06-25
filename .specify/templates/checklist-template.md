@@ -144,7 +144,8 @@
   已覆盖大量条目、滚动条出现/消失、动态状态和 sibling/header/footer 不被压缩或重排。
 - [ ] CHK018C Host-embedded frontend plugin 源码改动已计划并验证固定链路：
   source edit -> frontend build -> direct runtime replacement -> real host CDP verification；
-  已记录 build 命令/结果、runtime 替换目录、removed stale count、plugin id 和真实 target 加载的资源。
+  已记录 build 命令/结果、runtime 替换目录（runtime replacement directory）、
+  removed stale count、plugin id 和真实 target 加载的资源。
 - [ ] CHK018D Native plugin 源码改动没有套用 frontend runtime 热替换；已要求 `.plugin`
   构建产物路径、安装/重启验收路径，或记录 native 无法热更新的原因。
 - [ ] CHK018E host CDP 验证已先列出 `/json/list` page targets，并记录

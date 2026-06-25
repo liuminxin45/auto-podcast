@@ -1,7 +1,7 @@
 {
   "integration": "codex",
   "version": "0.8.11",
-  "installed_at": "2026-06-18T08:16:30.816306+00:00",
+  "installed_at": "2026-06-25T05:55:15.238748+00:00",
   "files": {
     ".agents/spec-kit/skills/speckit-acceptance-rubric/SKILL.md": "aa0f5ded58626276595bca8136bc6fe05303d45c24767a976f8b6163c168ee12",
     ".agents/spec-kit/skills/speckit-acceptance/SKILL.md": "758ab90d830cbaa7cfe89d08d8b823f59a0f906ab272db1db937aacc3730fae4",
