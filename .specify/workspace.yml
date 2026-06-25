@@ -1,7 +1,7 @@
 workspace:
   root: "."
   primary_repo: "auto-podcast"
-  default_base_branch: "master"
+  default_base_branch: "main"
 
 branch_policy:
   local_only: false
