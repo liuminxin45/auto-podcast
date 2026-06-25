@@ -106,7 +106,7 @@ This avoids stale knowledge and keeps AI coding context bounded.
   `<system-temp>/SDKLog\SDK_*.log` and
   `<system-temp>/ServiceBridgeLog\ServiceBridge_*.log`.
 - Branch completion cherry-picks back to the configured base branch, keeps the
-  local spec branch by default, and does not push.
+  local spec branch by default, and pushes when `branch_policy.push_remote` is true.
 - Commit and complete-branch are automated after hard gates pass. After commit,
   run exactly one post-commit self-check, then output final Rubric scoring; do
   not run complete-branch unless `validate-rubric-score` passes.

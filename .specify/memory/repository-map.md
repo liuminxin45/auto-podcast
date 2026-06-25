@@ -8,9 +8,10 @@
 
 - **Workspace root**: `.`
 - **Primary repository**: `auto-podcast`
-- **Default base branch**: `main`
-- **Branch policy**: local-only Spec Kit work by default; do not push or
-  perform branch completion automatically unless the user explicitly asks.
+- **Default base branch**: `master`
+- **Branch policy**: completed Spec Kit work cherry-picks back to `master`
+  automatically, keeps the local spec branch by default, then pushes `master`
+  to its configured remote when `branch_policy.push_remote` is enabled.
 
 ## Repository / Path / Role / Capability
 

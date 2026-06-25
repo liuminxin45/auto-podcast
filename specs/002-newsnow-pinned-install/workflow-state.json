@@ -1,0 +1,140 @@
+{
+  "feature_directory": "specs/002-newsnow-pinned-install",
+  "spec_branch": "002-newsnow-pinned-install",
+  "branch_local_only": true,
+  "task_type": "new-feature",
+  "risk_level": "medium",
+  "delivery_profile": "standard-bugfix",
+  "capability_tags": ["tooling", "external-engine", "newsnow"],
+  "affected_repositories": ["auto-podcast"],
+  "current_stage": "speckit-rubric-score",
+  "next_stage": "speckit-complete-branch",
+  "attempts": [
+    {
+      "stage": "speckit-implement",
+      "status": "completed",
+      "summary": "Implemented pinned NewsNow sync, postinstall setup, overlay manifest application, custom Auto-Podcast source, and runtime status checks."
+    },
+    {
+      "stage": "speckit-acceptance",
+      "status": "completed",
+      "summary": "AI self-acceptance passed and user confirmed human acceptance."
+    },
+    {
+      "stage": "speckit-retrospective",
+      "status": "completed",
+      "summary": "Recorded workflow decisions, validation boundary, and improvement candidates."
+    },
+    {
+      "stage": "speckit-commit",
+      "status": "completed",
+      "summary": "Created commit 69e8e0f and validated commit message before and after commit."
+    },
+    {
+      "stage": "speckit-post-commit-self-check",
+      "status": "completed",
+      "summary": "Single post-commit self-check passed with amend_required=false."
+    },
+    {
+      "stage": "speckit-rubric-score",
+      "status": "completed",
+      "summary": "Final rubric score generated and validated."
+    }
+  ],
+  "validations": [
+    {
+      "command": "npm install",
+      "status": "PASS",
+      "evidence": "postinstall ran sync_newsnow.py and newsnow_runtime.js setup; overlayApplied=true."
+    },
+    {
+      "command": "npm run sync:newsnow",
+      "status": "PASS",
+      "evidence": "locked ref already present and overlay applied."
+    },
+    {
+      "command": "npm run check:newsnow",
+      "status": "PASS",
+      "evidence": "success=true, lockedCommit==localCommit, overlayErrors=[]."
+    },
+    {
+      "command": "npm run verify",
+      "status": "PASS",
+      "evidence": "config, node, and TrendRadar settings verification passed."
+    },
+    {
+      "command": "npm run build:newsnow",
+      "status": "PASS",
+      "evidence": "NewsNow build completed with success=true."
+    },
+    {
+      "command": "npm run build",
+      "status": "PASS",
+      "evidence": "TypeScript and Vite production build passed."
+    }
+  ],
+  "fact_layer": {
+    "status": "N/A",
+    "reason": "Command-level source facts are known; no runtime/UI fact layer needed."
+  },
+  "blockers": [],
+  "known_risks": [
+    "GitHub network availability can block npm install clone.",
+    "engine/newsnow local dirty changes must not be overwritten silently.",
+    "NewsNow upstream directory changes can break overlay targets."
+  ],
+  "validation_expectations": [
+    "npm run sync:newsnow",
+    "npm run check:newsnow",
+    "npm install postinstall smoke when practical",
+    "npm run verify",
+    "npm run build:newsnow",
+    "npm run build"
+  ],
+  "plan": {
+    "path": "specs/002-newsnow-pinned-install/plan.md",
+    "test_case_plan_review": "approved-by-ai-obvious",
+    "quality_vision": "N/A",
+    "acceptance_rubric": "specs/002-newsnow-pinned-install/acceptance-rubric.md",
+    "selected_gate_packs": [],
+    "semantic_gate_overrides": [
+      "native-bridge N/A",
+      "qt-parity N/A",
+      "real-device N/A",
+      "ui-baseline N/A"
+    ]
+  },
+  "analysis": {
+    "path": "specs/002-newsnow-pinned-install/analysis.md",
+    "blocking_findings": []
+  },
+  "acceptance": {
+    "status": "PASS",
+    "human_confirmation": "用户在 2026-06-25 明确反馈“人工验收通过”。",
+    "artifacts": [
+      "specs/002-newsnow-pinned-install/acceptance.md",
+      "specs/002-newsnow-pinned-install/acceptance-checklist.md"
+    ]
+  },
+  "retrospective": {
+    "status": "completed",
+    "workflow_record": "specs/002-newsnow-pinned-install/workflow-record.md",
+    "improvement_candidates": "specs/002-newsnow-pinned-install/improvement-candidates.md"
+  },
+  "commit": {
+    "spec_artifacts": "include",
+    "reason": "Spec Kit acceptance and retrospective evidence are part of this workflow delivery.",
+    "message_validation": "PASS"
+  },
+  "post_commit_self_check": {
+    "status": "PASS",
+    "single_pass": true,
+    "amend_required": false
+  },
+  "rubric_score": {
+    "status": "PASS",
+    "path": "specs/002-newsnow-pinned-install/rubric-score.md",
+    "overall_weighted_score": 97.7,
+    "complete_branch_allowed": true
+  }
+}

@@ -6,7 +6,7 @@
   "license": "MIT",
   "main": "electron/main.js",
   "scripts": {
-    "postinstall": "node scripts/without_proxy.js python scripts/sync_trendradar.py && node scripts/without_proxy.js python scripts/sync_newsnow.py && node scripts/without_proxy.js python scripts/setup_trendradar_runtime.py && node scripts/without_proxy.js python -m pip install -e . -i https://pypi.tuna.tsinghua.edu.cn/simple",
+    "postinstall": "node scripts/without_proxy.js python scripts/sync_trendradar.py && node scripts/without_proxy.js python scripts/sync_newsnow.py && node scripts/newsnow_runtime.js setup && node scripts/without_proxy.js python scripts/setup_trendradar_runtime.py && node scripts/without_proxy.js python -m pip install -e . -i https://pypi.tuna.tsinghua.edu.cn/simple",
     "setup:trendradar": "node scripts/without_proxy.js python scripts/setup_trendradar_runtime.py",
     "check:trendradar": "node scripts/without_proxy.js python scripts/setup_trendradar_runtime.py --check",
     "sync:newsnow": "python scripts/sync_newsnow.py",

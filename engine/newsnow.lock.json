@@ -5,5 +5,16 @@
   "version": "0.0.40",
   "node": ">=20",
   "package_manager": "pnpm@10.30.3",
-  "api_path": "/api/s"
+  "api_path": "/api/s",
+  "generated_paths": [
+    "shared/pinyin.json",
+    "shared/sources.json"
+  ],
+  "overlays": [
+    {
+      "id": "auto-podcast-custom-sources",
+      "path": "engine/newsnow-overlays/auto-podcast",
+      "version": "1.0.0"
+    }
+  ]
 }

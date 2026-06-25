@@ -1,10 +1,31 @@
 {
-  "feature_directory": "specs/001-fix-discover-page-state",
-  "spec_branch": "001-fix-discover-page-state",
+  "feature_directory": "specs/002-newsnow-pinned-install",
+  "spec_branch": "002-newsnow-pinned-install",
   "branch_local_only": true,
-  "task_type": "bugfix",
+  "task_type": "new-feature",
   "risk_level": "medium",
   "delivery_profile": "standard-bugfix",
-  "affected_repositories": ["auto-podcast"],
-  "intake_summary": "修复发现页新节目状态污染、立即采集 loading、返回图标、LLM 依赖提示、console 刷屏和雷达设置图标。"
+  "affected_repositories": [
+    "auto-podcast"
+  ],
+  "intake_summary": "让 npm install 阶段自动拉取固定提交的本地 NewsNow，并在同步后应用本项目额外自定义的数据采集能力。",
+  "capability_tags": [
+    "tooling",
+    "external-engine",
+    "newsnow"
+  ],
+  "allow_dirty_used": true,
+  "dirty_risks": [],
+  "workspace_root": "E:\\Neo\\auto-podcast",
+  "default_base_branch": "main",
+  "repository_map": ".specify/memory/repository-map.md",
+  "workspace_repositories": [
+    {
+      "name": "auto-podcast",
+      "path": "E:\\Neo\\auto-podcast\\.",
+      "role": "electron-react-python-podcast-workbench",
+      "required": true,
+      "participates_in_spec_branches": true
+    }
+  ]
 }

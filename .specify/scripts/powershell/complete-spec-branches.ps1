@@ -32,6 +32,11 @@ function Get-WorkspaceConfig {
     $configPath = Join-Path $RepoRoot ".specify/workspace.yml"
     $workspaceRoot = $RepoRoot
     $baseBranch = "master"
+    $branchPolicy = @{
+        push_remote = $false
+        complete_by_cherry_picking_to_base = $true
+        keep_local_spec_branch_after_cherry_pick = $true
+    }
     $repos = @([PSCustomObject]@{ name = (Split-Path -Leaf $RepoRoot); path = "."; required = $true; participates_in_spec_branches = $true })
 
     if (Test-Path -LiteralPath $configPath -PathType Leaf) {
@@ -42,6 +47,20 @@ function Get-WorkspaceConfig {
         }
         $baseText = Select-String -Path $configPath -Pattern '^\s*default_base_branch:\s*"?([^"]+)"?\s*$' -ErrorAction SilentlyContinue | Select-Object -First 1
         if ($baseText) { $baseBranch = $baseText.Matches[0].Groups[1].Value.Trim("'`"") }
+
+        $inBranchPolicy = $false
+        foreach ($line in Get-Content -LiteralPath $configPath) {
+            if ($line -match '^\s*branch_policy:\s*$') {
+                $inBranchPolicy = $true
+                continue
+            }
+            if ($inBranchPolicy -and $line -match '^\S') {
+                $inBranchPolicy = $false
+            }
+            if ($inBranchPolicy -and $line -match '^\s*([A-Za-z0-9_]+):\s*(true|false)\s*$') {
+                $branchPolicy[$Matches[1]] = ($Matches[2] -eq "true")
+            }
+        }
 
         $parsedRepos = @()
         $current = $null
@@ -64,6 +83,7 @@ function Get-WorkspaceConfig {
     $workspaceRoot = (Resolve-Path -LiteralPath $workspaceRoot).Path
     [PSCustomObject]@{
         default_base_branch = $baseBranch
+        branch_policy = [PSCustomObject]$branchPolicy
         repositories = @($repos | ForEach-Object {
             $repoPath = if ([System.IO.Path]::IsPathRooted($_.path)) { $_.path } else { Join-Path $workspaceRoot $_.path }
             [PSCustomObject]@{ name = $_.name; path = $repoPath; required = [bool]$_.required; participates_in_spec_branches = [bool]$_.participates_in_spec_branches }
@@ -226,6 +246,29 @@ function Invoke-GitCherryPick {
     }
 }
 
+function Push-BaseBranch {
+    param([string]$Path, [string]$BaseBranchName)
+    $upstream = git -C $Path rev-parse --abbrev-ref "$BaseBranchName@{upstream}" 2>$null
+    if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($upstream)) {
+        git -C $Path push | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to push upstream '$upstream' for base branch '$BaseBranchName' in $Path."
+        }
+        return [PSCustomObject]@{ pushed = $true; target = [string]$upstream; mode = "upstream" }
+    }
+
+    $origin = git -C $Path remote get-url origin 2>$null
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($origin)) {
+        throw "branch_policy.push_remote is true but no upstream or origin remote exists for '$BaseBranchName' in $Path."
+    }
+
+    git -C $Path push origin $BaseBranchName | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to push 'origin $BaseBranchName' in $Path."
+    }
+    return [PSCustomObject]@{ pushed = $true; target = "origin/$BaseBranchName"; mode = "origin" }
+}
+
 function Resolve-FeatureDirectory {
     param([string]$RepoRoot, [string]$BranchName)
     $featureJson = Join-Path $RepoRoot ".specify/feature.json"
@@ -362,6 +405,7 @@ $preflightPayload = [PSCustomObject]@{
     branch = $Branch
     base_branch = $BaseBranch
     pushed = $false
+    push_remote = [bool]$workspace.branch_policy.push_remote
     confirmed = (-not [bool]$PreflightOnly)
     action = "preflight"
     completion_ready = ($errors.Count -eq 0)
@@ -447,6 +491,23 @@ foreach ($item in $preflight) {
     $results += [PSCustomObject]@{ repository = $item.repository; path = $item.path; status = $status; branch = $Branch; base = $item.base; participates_in_spec_branches = [bool]$item.participates_in_spec_branches }
 }
 
+$pushResults = @()
+if ([bool]$workspace.branch_policy.push_remote) {
+    foreach ($result in $results) {
+        if (-not [bool]$result.participates_in_spec_branches) { continue }
+        if ([string]::IsNullOrWhiteSpace([string]$result.base)) { continue }
+        $push = Push-BaseBranch -Path $result.path -BaseBranchName $result.base
+        $pushResults += [PSCustomObject]@{
+            repository = $result.repository
+            path = $result.path
+            base = $result.base
+            target = $push.target
+            mode = $push.mode
+            pushed = $push.pushed
+        }
+    }
+}
+
 $payload = [PSCustomObject]@{
     branch = $Branch
     base_branch = $BaseBranch
@@ -457,7 +518,9 @@ $payload = [PSCustomObject]@{
     merge_ready = $true
     cherry_pick_ready = $true
     keep_branch = $shouldKeepBranch
-    pushed = $false
+    pushed = ($pushResults.Count -gt 0)
+    push_remote = [bool]$workspace.branch_policy.push_remote
+    push_results = $pushResults
     retrospective_gate = $retrospectiveGate
     preflight = $preflight
     errors = @()
@@ -468,9 +531,12 @@ if ($Json) {
     $payload | ConvertTo-Json -Depth 8 -Compress
 } else {
     Write-Output "SPEC_BRANCH: $Branch"
-    Write-Output "PUSHED: false"
+    Write-Output "PUSHED: $($payload.pushed.ToString().ToLowerInvariant())"
     Write-Output "PREFLIGHT: passed"
     foreach ($result in $results) {
         Write-Output "$($result.repository): $($result.status)"
+    }
+    foreach ($push in $pushResults) {
+        Write-Output "$($push.repository): pushed $($push.base) to $($push.target)"
     }
 }
