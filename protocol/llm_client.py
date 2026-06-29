@@ -1,17 +1,23 @@
-"""Unified LLM client for Python nodes."""
-from typing import List, Dict, Any, Optional
-import requests
+"""Thin OpenAI SDK adapter used by Python workflow nodes."""
+
 import json
+import os
 import time
+from typing import Any, Dict, List, Optional, Tuple
+
+from openai import AzureOpenAI, OpenAI, OpenAIError
 
 DEFAULT_TIMEOUT = 60
 DEFAULT_TEMPERATURE = 0.3
 BATCH_SIZE = 10
 BATCH_DELAY = 0.5
+DEBUG_MAX_CHARS = 150
+DEBUG_MAX_TOKENS = 200
 
 
 class LLMError(Exception):
-    """LLM operation error."""
+    """Project-level LLM error with a stable code for callers."""
+
     def __init__(self, message: str, code: str = "UNKNOWN", details: Any = None):
         super().__init__(message)
         self.code = code
@@ -19,174 +25,166 @@ class LLMError(Exception):
 
 
 class LLMClient:
-    """Unified LLM API client with consistent error handling."""
-    
-    def __init__(self, api_base: str, api_key: str, model: str, temperature: float = DEFAULT_TEMPERATURE, debug_mode: bool = False):
+    """Small project adapter around the OpenAI SDK."""
+
+    def __init__(
+        self,
+        api_base: str,
+        api_key: str,
+        model: str,
+        temperature: float = DEFAULT_TEMPERATURE,
+        debug_mode: bool = False,
+    ):
         if not api_base or not api_key:
             raise LLMError("Missing API credentials", "AUTH")
-        
-        self.api_base = api_base.rstrip('/')
-        self.api_key = api_key
+
+        self.api_base = api_base.rstrip("/")
         self.model = model
         self.temperature = temperature
         self.debug_mode = debug_mode
-        self._session = requests.Session()
-    
-    def call(self, messages: List[Dict[str, str]], timeout: int = DEFAULT_TIMEOUT, max_tokens: Optional[int] = None, logs: Optional[List[str]] = None) -> Dict[str, Any]:
-        """Make a single LLM API call."""
-        if self.debug_mode:
-            original_len = sum(len(m.get('content', '')) for m in messages)
-            messages = self._minimal_truncate(messages)
-            truncated_len = sum(len(m.get('content', '')) for m in messages)
-            max_tokens = min(max_tokens or 200, 200)
-            if logs is not None:
-                logs.append(f"[LLMClient] ⚡ DEBUG CALL: prompt {original_len}字 → 截断至 {truncated_len}字, max_tokens=200, timeout={timeout}s")
-        
-        headers = self._build_headers()
-        payload = {
-            "model": self.model,
-            "messages": messages,
-            "temperature": self.temperature,
-        }
-        if max_tokens:
-            payload["max_tokens"] = max_tokens
-        
+        self._client = self._create_client(api_key)
+
+    def call(
+        self,
+        messages: List[Dict[str, str]],
+        timeout: int = DEFAULT_TIMEOUT,
+        max_tokens: Optional[int] = None,
+        logs: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """Run one chat completion and return a JSON-serializable dict."""
+        messages, max_tokens = self._prepare_request(messages, max_tokens, timeout, logs)
+
         try:
-            response = self._session.post(
-                f"{self.api_base}/chat/completions",
-                headers=headers,
-                json=payload,
-                timeout=timeout
+            response = self._client.with_options(timeout=timeout).chat.completions.create(
+                model=self.model,
+                messages=messages,
+                temperature=self.temperature,
+                **({"max_tokens": max_tokens} if max_tokens else {}),
             )
-            response.raise_for_status()
-            return response.json()
-        except requests.exceptions.Timeout:
-            raise LLMError("Request timeout", "TIMEOUT")
-        except requests.exceptions.RequestException as e:
-            raise LLMError(f"Network error: {str(e)}", "NETWORK", details=str(e))
-    
+            return response.model_dump(mode="json")
+        except OpenAIError as error:
+            raise self._to_llm_error(error) from error
+
     def extract_content(self, response: Dict[str, Any]) -> str:
-        """Extract message content from LLM response."""
+        """Extract assistant text from an OpenAI chat completion response."""
         try:
             return response["choices"][0]["message"]["content"]
-        except (KeyError, IndexError) as e:
-            raise LLMError("Invalid response format", "PARSE", details=str(e))
-    
+        except (KeyError, IndexError, TypeError) as error:
+            raise LLMError("Invalid response format", "PARSE", details=str(error)) from error
+
     def parse_json_response(self, content: str) -> Any:
-        """Parse JSON from LLM response, handling markdown code blocks."""
-        content = content.strip()
-        
-        if "```json" in content:
-            content = content.split("```json")[1].split("```")[0].strip()
-        elif "```" in content:
-            content = content.split("```")[1].split("```")[0].strip()
-        
+        """Parse JSON from a model response, including fenced code blocks."""
+        text = content.strip()
+        if "```json" in text:
+            text = text.split("```json", 1)[1].split("```", 1)[0].strip()
+        elif "```" in text:
+            text = text.split("```", 1)[1].split("```", 1)[0].strip()
+
         try:
-            return json.loads(content)
-        except json.JSONDecodeError as e:
-            raise LLMError(f"JSON parse error: {str(e)}", "PARSE", details=content[:200])
-    
+            return json.loads(text)
+        except json.JSONDecodeError as error:
+            raise LLMError(f"JSON parse error: {error}", "PARSE", details=text[:200]) from error
+
     def batch_analyze(
-        self, 
-        items: List[Any], 
-        prompt_fn, 
+        self,
+        items: List[Any],
+        prompt_fn,
         parse_fn,
-        logs: Optional[List[str]] = None
+        logs: Optional[List[str]] = None,
     ) -> List[Any]:
-        """Analyze items in batches with rate limiting."""
-        if self.debug_mode:
-            batch_size = 1
-            if logs:
-                logs.append(f"[LLMClient] ⚡ DEBUG MODE: batch_size=1, processing {len(items)} items individually")
-        else:
-            batch_size = BATCH_SIZE
-        
-        results = []
-        total_batches = (len(items) - 1) // batch_size + 1
-        
-        if logs:
-            logs.append(f"[LLMClient] batch_analyze: {len(items)} items, {total_batches} batches")
-        
-        for i in range(0, len(items), batch_size):
-            batch = items[i:i + batch_size]
-            batch_num = i // batch_size + 1
-            
-            if logs:
-                logs.append(f"[LLMClient] Processing batch {batch_num}/{total_batches} ({len(batch)} items)")
-            
+        """Analyze items in batches while preserving per-item fallback results."""
+        batch_size = 1 if self.debug_mode else BATCH_SIZE
+        total_batches = (len(items) - 1) // batch_size + 1 if items else 0
+        results: List[Any] = []
+
+        self._log(logs, f"batch_analyze: {len(items)} items, {total_batches} batches")
+
+        for batch_index, start in enumerate(range(0, len(items), batch_size), start=1):
+            batch = items[start:start + batch_size]
+            self._log(
+                logs,
+                f"Processing batch {batch_index}/{total_batches} ({len(batch)} items)",
+            )
+
             try:
-                start_time = time.time()
+                started_at = time.time()
                 prompt = prompt_fn(batch)
-                if logs:
-                    logs.append(f"[LLMClient] Prompt generated ({len(prompt)} chars), calling LLM API...")
-                
                 response = self.call([{"role": "user", "content": prompt}], logs=logs)
-                
-                api_time = time.time() - start_time
-                if logs:
-                    logs.append(f"[LLMClient] API call completed in {api_time:.2f}s")
-                
                 content = self.extract_content(response)
-                if logs:
-                    logs.append(f"[LLMClient] Response content extracted ({len(content)} chars)")
-                
                 parsed = self.parse_json_response(content)
-                if logs:
-                    parsed_count = len(parsed) if isinstance(parsed, list) else f"1 object ({len(parsed)} keys)"
-                    logs.append(f"[LLMClient] JSON parsed: {parsed_count} results")
-                
-                batch_results = parse_fn(batch, parsed)
-                results.extend(batch_results)
-                
-                if logs:
-                    logs.append(f"[LLMClient] Batch {batch_num} processed successfully")
-                
-                if batch_num < total_batches:
-                    if logs:
-                        logs.append(f"[LLMClient] Waiting {BATCH_DELAY}s before next batch...")
-                    time.sleep(BATCH_DELAY)
-            except LLMError as e:
-                if logs:
-                    logs.append(f"[LLMClient] ✗ Batch {batch_num} failed: {type(e).__name__}: {e}")
-                for item in batch:
-                    results.append(self._create_error_result(item, str(e)))
-            except Exception as e:
-                if logs:
-                    logs.append(f"[LLMClient] ✗ Batch {batch_num} unexpected error: {type(e).__name__}: {e}")
-                for item in batch:
-                    results.append(self._create_error_result(item, str(e)))
-        
-        if logs:
-            logs.append(f"[LLMClient] batch_analyze completed: {len(results)} results")
-        
+                results.extend(parse_fn(batch, parsed))
+                self._log(logs, f"Batch {batch_index} completed in {time.time() - started_at:.2f}s")
+            except Exception as error:
+                self._log(logs, f"Batch {batch_index} failed: {type(error).__name__}: {error}")
+                results.extend(self._error_results(batch, str(error)))
+
+            if batch_index < total_batches:
+                time.sleep(BATCH_DELAY)
+
+        self._log(logs, f"batch_analyze completed: {len(results)} results")
         return results
-    
-    def _minimal_truncate(self, messages: List[Dict[str, str]]) -> List[Dict[str, str]]:
-        """Debug mode: truncate each message to 150 characters."""
-        return [
-            {**msg, 'content': msg['content'][:150]}
-            for msg in messages
-        ]
-    
-    def _build_headers(self) -> Dict[str, str]:
-        """Build request headers based on API provider."""
-        headers = {"Content-Type": "application/json"}
-        
+
+    def _create_client(self, api_key: str):
         if "openai.azure.com" in self.api_base:
-            headers["api-key"] = self.api_key
+            return AzureOpenAI(
+                api_key=api_key,
+                azure_endpoint=self.api_base,
+                api_version=os.environ.get("OPENAI_API_VERSION", "2024-02-15-preview"),
+            )
+        return OpenAI(api_key=api_key, base_url=f"{self.api_base}/")
+
+    def _prepare_request(
+        self,
+        messages: List[Dict[str, str]],
+        max_tokens: Optional[int],
+        timeout: int,
+        logs: Optional[List[str]],
+    ) -> Tuple[List[Dict[str, str]], Optional[int]]:
+        if not self.debug_mode:
+            return messages, max_tokens
+
+        original_len = sum(len(message.get("content", "")) for message in messages)
+        truncated = [
+            {**message, "content": message.get("content", "")[:DEBUG_MAX_CHARS]}
+            for message in messages
+        ]
+        truncated_len = sum(len(message.get("content", "")) for message in truncated)
+        max_tokens = min(max_tokens or DEBUG_MAX_TOKENS, DEBUG_MAX_TOKENS)
+        self._log(
+            logs,
+            f"DEBUG CALL: prompt {original_len} chars -> {truncated_len} chars, "
+            f"max_tokens={max_tokens}, timeout={timeout}s",
+        )
+        return truncated, max_tokens
+
+    def _to_llm_error(self, error: OpenAIError) -> LLMError:
+        status_code = getattr(error, "status_code", None)
+        code = getattr(error, "code", None) or type(error).__name__
+
+        if status_code in {401, 403}:
+            category = "AUTH"
+        elif status_code == 429:
+            category = "RATE_LIMIT"
+        elif "timeout" in type(error).__name__.lower():
+            category = "TIMEOUT"
+        elif "connection" in type(error).__name__.lower():
+            category = "NETWORK"
         else:
-            headers["Authorization"] = f"Bearer {self.api_key}"
-        
-        return headers
-    
-    def _create_error_result(self, item: Any, error: str) -> Any:
-        """Create error result for failed batch item."""
-        if isinstance(item, dict):
-            return {**item, "_error": error}
-        return item
-    
+            category = "UNKNOWN"
+
+        message = f"{type(error).__name__}: {error}"
+        return LLMError(message, category, details={"status_code": status_code, "code": code})
+
+    def _error_results(self, batch: List[Any], error: str) -> List[Any]:
+        return [{**item, "_error": error} if isinstance(item, dict) else item for item in batch]
+
+    @staticmethod
+    def _log(logs: Optional[List[str]], message: str) -> None:
+        if logs is not None:
+            logs.append(f"[LLMClient] {message}")
+
     def __enter__(self):
         return self
-    
+
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self._session.close()
+        self._client.close()

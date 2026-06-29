@@ -32,23 +32,8 @@ function npmBin(name) {
   )
 }
 
-function sanitizedEnv(extra = {}) {
-  const env = { ...process.env }
-  for (const key of [
-    'HTTP_PROXY',
-    'HTTPS_PROXY',
-    'http_proxy',
-    'https_proxy',
-    'ALL_PROXY',
-    'all_proxy',
-    'npm_config_proxy',
-    'npm_config_https_proxy',
-  ]) {
-    delete env[key]
-  }
-  env.NO_PROXY = '*'
-  env.no_proxy = '*'
-  return { ...env, ...extra }
+function buildEnv(extra = {}) {
+  return { ...process.env, ...extra }
 }
 
 function findListeningPids(port) {
@@ -103,6 +88,21 @@ async function chooseVitePort(startPort) {
   throw new Error(`未找到可用 Vite 端口，已尝试 ${startPort}-${startPort + 49}`)
 }
 
+async function chooseCdpPort(startPort) {
+  const start = Number(startPort)
+  for (let port = start; port < start + 50; port += 1) {
+    if (await isTcpPortFree(port)) {
+      if (port !== start) {
+        const pids = findListeningPids(start)
+        const owner = pids.length > 0 ? `，占用 PID: ${pids.join(', ')}` : ''
+        console.log(`[dev] CDP 端口 ${start} 已被占用${owner}，改用 ${port}`)
+      }
+      return String(port)
+    }
+  }
+  throw new Error(`未找到可用 CDP 端口，已尝试 ${start}-${start + 49}`)
+}
+
 function isHttpReady(url) {
   return new Promise((resolve) => {
     const request = http.get(url, (response) => {
@@ -128,43 +128,13 @@ async function waitForHttp(url, timeoutMs) {
 
 function killProcessTree(child) {
   if (!child || !child.pid) return
-  killPidTree(child.pid)
-}
-
-function killPidTree(pid) {
-  if (!pid) return
   if (process.platform === 'win32') {
-    spawnSync('taskkill', ['/pid', String(pid), '/T', '/F'], { stdio: 'ignore' })
+    spawnSync('taskkill', ['/pid', String(child.pid), '/T'], { stdio: 'ignore' })
     return
   }
-  spawnSync('sh', ['-lc', `kill -TERM -${pid} 2>/dev/null || kill -TERM ${pid} 2>/dev/null || true`], {
+  spawnSync('sh', ['-lc', `kill -TERM -${child.pid} 2>/dev/null || kill -TERM ${child.pid} 2>/dev/null || true`], {
     stdio: 'ignore',
   })
-}
-
-async function waitForPortFree(port, timeoutMs) {
-  const startedAt = Date.now()
-  while (Date.now() - startedAt < timeoutMs) {
-    if (findListeningPids(port).length === 0) return true
-    await new Promise((resolve) => setTimeout(resolve, 300))
-  }
-  return false
-}
-
-async function prepareCdpPort(port) {
-  const pids = findListeningPids(port)
-  if (pids.length === 0) return String(port)
-
-  console.log(`[dev] CDP 端口 ${port} 已被占用，清理 PID: ${pids.join(', ')}`)
-  for (const pid of pids) {
-    killPidTree(pid)
-  }
-
-  const released = await waitForPortFree(port, 10000)
-  if (!released) {
-    throw new Error(`CDP 端口 ${port} 仍被占用，无法启动调试模式`)
-  }
-  return String(port)
 }
 
 function shutdown(code = 0) {
@@ -178,12 +148,12 @@ function shutdown(code = 0) {
 async function main() {
   const vitePort = await chooseVitePort(preferredPort)
   const viteUrl = `http://127.0.0.1:${vitePort}`
-  const resolvedCdpPort = withCdp ? await prepareCdpPort(cdpPort) : ''
+  const resolvedCdpPort = withCdp ? await chooseCdpPort(cdpPort) : ''
 
   console.log(`[dev] 启动 Vite: ${viteUrl}`)
   viteProcess = spawn(npmBin('vite'), ['--host', '127.0.0.1', '--port', String(vitePort), '--strictPort'], {
     cwd: projectRoot,
-    env: sanitizedEnv({ VITE_PORT: String(vitePort) }),
+    env: buildEnv({ VITE_PORT: String(vitePort) }),
     stdio: 'inherit',
     shell: process.platform === 'win32',
   })
@@ -204,7 +174,7 @@ async function main() {
   console.log(`[dev] 启动 Electron，页面地址: ${viteUrl}`)
   electronProcess = spawn(npmBin('electron'), ['.'], {
     cwd: projectRoot,
-    env: sanitizedEnv({
+    env: buildEnv({
       NODE_ENV: 'development',
       VITE_DEV_SERVER_URL: viteUrl,
       ...(withCdp

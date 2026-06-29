@@ -192,15 +192,20 @@ def run(state: Dict[str, Any], config: ScriptConfig = None) -> Dict[str, Any]:
         f"stages={len(stages)} segments"
     )
     if script:
-        detail += f" | content_type={script.get('content_type', 'N/A')}, dialogue={len(script.get('dialogue', []))}"
+        detail += (
+            f" | content_type={script.get('content_type', 'N/A')}, "
+            f"dialogue={len(script.get('dialogue', []))}"
+        )
     ctx.log_end(detail)
     return ctx.finalize(state)
 
 
-def _generate_script(topic: Dict, materials: list, config: ScriptConfig) -> Dict[str, Any]:
-    from langchain_openai import ChatOpenAI
-    from langchain_core.messages import SystemMessage, HumanMessage
-
+def _generate_script(
+    topic: Dict,
+    materials: list,
+    config: ScriptConfig,
+    ctx: NodeContext,
+) -> Dict[str, Any]:
     api_key = config.api_key or os.environ.get("OPENAI_API_KEY", "")
     api_base = config.api_base or os.environ.get("OPENAI_API_BASE", "")
 
@@ -237,7 +242,13 @@ def _generate_script(topic: Dict, materials: list, config: ScriptConfig) -> Dict
 
     effective_timeout = min(config.timeout, 30) if ctx.debug_mode else config.timeout
 
-    with LLMClient(api_base, api_key, config.llm_model, config.temperature, debug_mode=ctx.debug_mode) as client:
+    with LLMClient(
+        api_base,
+        api_key,
+        config.llm_model,
+        config.temperature,
+        debug_mode=ctx.debug_mode,
+    ) as client:
         ctx.log(f"LLM调用: model={config.llm_model}, timeout={effective_timeout}s")
         response = client.call(messages, timeout=effective_timeout, logs=ctx.logs)
         content = client.extract_content(response)

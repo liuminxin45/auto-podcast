@@ -25,20 +25,10 @@ if (ENABLE_FAKE_MEDIA) {
   app.commandLine.appendSwitch('use-fake-ui-for-media-stream')
 }
 
-function getCleanSpawnEnv(extra = {}) {
-  const env = { ...process.env }
-  const proxyKeys = [
-    'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY',
-    'http_proxy', 'https_proxy', 'all_proxy', 'no_proxy',
-  ]
-  for (const key of proxyKeys) {
-    delete env[key]
-  }
+function getPythonSpawnEnv(extra = {}) {
   return {
-    ...env,
+    ...process.env,
     PYTHONIOENCODING: 'utf-8',
-    NO_PROXY: '*',
-    no_proxy: '*',
     ...extra,
   }
 }
@@ -345,7 +335,7 @@ function runPythonNode(nodeName, state, timeoutMs = 600000) {
   return new Promise((resolve, reject) => {
     const proc = spawn(PYTHON_PATH, ['-m', `nodes.${nodeName}`], {
       cwd: path.join(__dirname, '..'),
-      env: getCleanSpawnEnv(),
+      env: getPythonSpawnEnv(),
       shell: SPAWN_SHELL
     })
 
@@ -1099,7 +1089,7 @@ ipcMain.handle('fetch:getSources', async (event) => {
       path.join(__dirname, '..', 'scripts', 'get_fetch_sources.py')
     ], {
       cwd: path.join(__dirname, '..'),
-      env: getCleanSpawnEnv(),
+      env: getPythonSpawnEnv(),
       shell: SPAWN_SHELL
     })
 

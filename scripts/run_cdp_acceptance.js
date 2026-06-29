@@ -47,24 +47,6 @@ function findListeningPids(port) {
   return Array.from(pids)
 }
 
-function killPidTree(pid) {
-  if (!pid) return
-  if (process.platform === 'win32') {
-    spawnSync('taskkill', ['/pid', String(pid), '/T', '/F'], { stdio: 'ignore' })
-    return
-  }
-  spawnSync('sh', ['-lc', `kill -TERM -${pid} 2>/dev/null || kill -TERM ${pid} 2>/dev/null || true`], { stdio: 'ignore' })
-}
-
-async function waitForPortFree(port, timeoutMs) {
-  const started = Date.now()
-  while (Date.now() - started < timeoutMs) {
-    if (findListeningPids(port).length === 0) return true
-    await wait(300)
-  }
-  return false
-}
-
 function isTcpPortFree(port) {
   return new Promise(resolve => {
     const server = net.createServer()
@@ -88,19 +70,11 @@ async function prepareCdpPort(port) {
   const pids = findListeningPids(port)
   if (pids.length === 0) return port
 
-  console.log(`[CDP Acceptance] Port ${port} is occupied by PID(s): ${pids.join(', ')}. Killing before CDP run.`)
-  for (const pid of pids) {
-    killPidTree(pid)
-  }
-
-  const released = await waitForPortFree(port, 30000)
-  if (released) {
-    console.log(`[CDP Acceptance] Port ${port} released`)
-    return port
-  }
-
   const fallbackPort = await findFreeCdpPort(port)
-  console.log(`[CDP Acceptance] Port ${port} is still occupied after kill attempt; using isolated CDP port ${fallbackPort}`)
+  console.log(
+    `[CDP Acceptance] Port ${port} is occupied by PID(s): ${pids.join(', ')}; ` +
+      `using isolated CDP port ${fallbackPort}`
+  )
   return fallbackPort
 }
 
@@ -130,13 +104,13 @@ async function waitForHttp(url, timeoutMs) {
 function killProcessTree(child) {
   if (!child || !child.pid) return
   if (process.platform === 'win32') {
-    spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' })
+    spawnSync('taskkill', ['/pid', String(child.pid), '/T'], { stdio: 'ignore' })
     return
   }
   child.kill('SIGTERM')
 }
 
-function sanitizedEnv(extra = {}) {
+function buildEnv(extra = {}) {
   const env = {}
   for (const [key, value] of Object.entries(process.env)) {
     if (!key || key.startsWith('=') || value === undefined) continue
@@ -165,7 +139,7 @@ async function main() {
     const npmBin = process.platform === 'win32' ? 'npm.cmd' : 'npm'
     viteProcess = spawn(npmBin, ['run', 'dev:react'], {
       cwd: projectRoot,
-      env: sanitizedEnv(),
+      env: buildEnv(),
       stdio: 'inherit',
       shell: process.platform === 'win32'
     })
@@ -182,7 +156,7 @@ async function main() {
   console.log(`[CDP Acceptance] Starting Electron with CDP at http://127.0.0.1:${cdpPort}`)
   const electronProcess = spawn(electronBin, ['.'], {
     cwd: projectRoot,
-    env: sanitizedEnv({
+    env: buildEnv({
       NODE_ENV: 'development',
       VITE_DEV_SERVER_URL: viteUrl,
       CDP_ACCEPTANCE: '1',

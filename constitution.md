@@ -431,7 +431,7 @@ pip install -e .
 如需国内加速，放在 FAQ：
 
 ```bash
-pip install -e . -i https://pypi.tuna.tsinghua.edu.cn/simple
+pip install -e .
 ```
 
 ---
