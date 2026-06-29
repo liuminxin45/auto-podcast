@@ -29,8 +29,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   confirmAppClose: () => ipcRenderer.invoke('app:confirmClose'),
   onRadarUpdate: (callback) => ipcRenderer.on('radar:update', (_, data) => callback(data)),
-  getNodeSchema: (nodeName) => ipcRenderer.invoke('node:getSchema', nodeName),
-  getAllNodeSchemas: () => ipcRenderer.invoke('node:getAllSchemas'),
   saveNodeConfig: (nodeName, config) => ipcRenderer.invoke('config:save', nodeName, config),
   loadNodeConfig: (nodeName) => ipcRenderer.invoke('config:load', nodeName),
   loadAllConfigs: () => ipcRenderer.invoke('config:loadAll'),

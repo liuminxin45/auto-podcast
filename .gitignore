@@ -20,9 +20,6 @@ out/
 dist/
 dist-electron/
 build/
-engine/newsnow/
-engine/trendradar/
-engine/trendradar_data/
 
 # IDE
 .idea/

@@ -16,7 +16,6 @@ export default defineConfig({
         manualChunks: {
           react: ['react', 'react-dom'],
           antd: ['antd', '@ant-design/icons'],
-          reactflow: ['reactflow'],
         },
       },
     },

@@ -91,8 +91,6 @@ declare global {
     onWorkflowUpdate: (callback: (data: Workflow) => void) => void
     onNeedApproval: (callback: (data: any) => void) => void
     onRadarUpdate: (callback: (data: RadarState) => void) => void
-    getNodeSchema: (nodeName: string) => Promise<any>
-    getAllNodeSchemas: () => Promise<Record<string, any>>
     saveNodeConfig: (nodeName: string, config: Record<string, any>) => Promise<{ success: boolean; error?: string }>
     loadNodeConfig: (nodeName: string) => Promise<Record<string, any> | null>
     loadAllConfigs: () => Promise<Record<string, Record<string, any>>>

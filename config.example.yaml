@@ -59,8 +59,6 @@ tts:
 audio_postprocess:
   output_dir: "out/episodes"
   output_format: "mp3"
-  normalize_loudness: true
-  target_loudness: -16.0
   add_bgm: false
 
 assets:

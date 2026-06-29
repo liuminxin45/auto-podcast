@@ -63,8 +63,6 @@ declare global {
       onNeedApproval: (callback: (data: any) => void) => void
       onAppCloseRequest: (callback: () => void) => (() => void) | void
       confirmAppClose: () => Promise<{ success: boolean }>
-      getNodeSchema: (nodeName: string) => Promise<any>
-      getAllNodeSchemas: () => Promise<Record<string, any>>
       saveNodeConfig: (nodeName: string, config: Record<string, any>) => Promise<{ success: boolean; error?: string }>
       loadNodeConfig: (nodeName: string) => Promise<Record<string, any> | null>
       loadAllConfigs: () => Promise<Record<string, Record<string, any>>>
