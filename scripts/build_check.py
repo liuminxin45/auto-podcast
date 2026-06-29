@@ -7,6 +7,7 @@ Validates that the project structure is correct and all dependencies are properl
 
 import sys
 import subprocess
+import os
 from pathlib import Path
 from typing import List, Tuple
 
@@ -17,7 +18,7 @@ def check_python_package() -> Tuple[bool, str]:
     """Check if Python package is properly configured"""
     try:
         result = subprocess.run(
-            [sys.executable, '-m', 'pip', 'show', 'auto-podcast'],
+            [sys.executable, '-m', 'pip', 'show', 'podflow-studio'],
             capture_output=True,
             text=True,
             timeout=10
@@ -105,8 +106,9 @@ def check_node_structure() -> Tuple[bool, str]:
 def check_typescript_config() -> Tuple[bool, str]:
     """Check TypeScript configuration"""
     try:
+        npx_cmd = 'npx.cmd' if os.name == 'nt' else 'npx'
         result = subprocess.run(
-            ['npx', 'tsc', '--noEmit'],
+            [npx_cmd, 'tsc', '--noEmit'],
             cwd=PROJECT_ROOT,
             capture_output=True,
             text=True,
@@ -142,11 +144,11 @@ def main():
         try:
             passed, message = check_func()
             results.append((name, passed, message))
-            status = "✅" if passed else "❌"
+            status = "PASS" if passed else "FAIL"
             print(f"{status} {name}: {message}")
         except Exception as e:
             results.append((name, False, str(e)))
-            print(f"❌ {name}: Exception - {e}")
+            print(f"FAIL {name}: Exception - {e}")
     
     print()
     print("=" * 60)
@@ -157,10 +159,10 @@ def main():
     print(f"Results: {passed_count}/{total_count} checks passed")
     
     if passed_count == total_count:
-        print("✅ Build check PASSED - project is ready")
+        print("Build check PASSED - project is ready")
         sys.exit(0)
     else:
-        print("❌ Build check FAILED - fix issues above")
+        print("Build check FAILED - fix issues above")
         sys.exit(1)
 
 

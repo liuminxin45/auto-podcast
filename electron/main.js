@@ -748,7 +748,7 @@ ipcMain.handle('workflow:export', async (event, workflowId) => {
   const result = await dialog.showSaveDialog(mainWindow, {
     title: '导出节目',
     defaultPath: defaultName,
-    filters: [{ name: 'Auto-Podcast 节目', extensions: ['json'] }]
+    filters: [{ name: 'PodFlow Studio 节目', extensions: ['json'] }]
   })
   if (result.canceled || !result.filePath) {
     return { success: false, canceled: true }
@@ -761,7 +761,7 @@ ipcMain.handle('workflow:import', async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
     title: '导入节目',
     properties: ['openFile'],
-    filters: [{ name: 'Auto-Podcast 节目', extensions: ['json'] }]
+    filters: [{ name: 'PodFlow Studio 节目', extensions: ['json'] }]
   })
   if (result.canceled || !result.filePaths?.[0]) {
     return { success: false, canceled: true }

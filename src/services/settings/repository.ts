@@ -1,14 +1,19 @@
 import type { AppSettings } from '../../types/settings'
 import { DEFAULT_SETTINGS } from '../../types/settings'
 
-const SETTINGS_STORAGE_KEY = 'auto-podcast.settings.v1'
+const SETTINGS_STORAGE_KEY = 'podflow.settings.v1'
+const LEGACY_SETTINGS_STORAGE_KEY = 'auto-podcast.settings.v1'
 
 export class SettingsRepository {
   load(): AppSettings {
     try {
       if (typeof window === 'undefined') return structuredClone(DEFAULT_SETTINGS)
       const stored = window.localStorage.getItem(SETTINGS_STORAGE_KEY)
+        || window.localStorage.getItem(LEGACY_SETTINGS_STORAGE_KEY)
       if (!stored) return structuredClone(DEFAULT_SETTINGS)
+      if (!window.localStorage.getItem(SETTINGS_STORAGE_KEY)) {
+        window.localStorage.setItem(SETTINGS_STORAGE_KEY, stored)
+      }
       const parsed = JSON.parse(stored)
       const defaults = structuredClone(DEFAULT_SETTINGS)
       return {
@@ -79,6 +84,7 @@ export class SettingsRepository {
     try {
       if (typeof window === 'undefined') return
       window.localStorage.removeItem(SETTINGS_STORAGE_KEY)
+      window.localStorage.removeItem(LEGACY_SETTINGS_STORAGE_KEY)
     } catch (error) {
       console.error('[SettingsRepository] Clear failed:', error)
     }

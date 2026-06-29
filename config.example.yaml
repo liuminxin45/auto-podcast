@@ -1,4 +1,4 @@
-# Auto-Podcast 配置示例
+# PodFlow Studio 配置示例
 # 复制此文件为 config.yaml 并根据需要修改
 
 fetch:
@@ -77,7 +77,7 @@ publish:
   rss_output_dir: "out/rss"
   podcast_title: "AI 科技播客"
   podcast_description: "AI 自动生成的科技播客节目"
-  podcast_author: "Auto-Podcast"
+  podcast_author: "PodFlow Studio"
   podcast_language: "zh-CN"
   podcast_category: "Technology"
 

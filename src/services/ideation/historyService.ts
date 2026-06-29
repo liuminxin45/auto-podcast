@@ -25,14 +25,18 @@ export interface IdeationHistoryRecord {
   warnings?: string[]
 }
 
-const STORAGE_KEY = 'auto-podcast.ideation.history.v1'
+const STORAGE_KEY = 'podflow.ideation.history.v1'
+const LEGACY_STORAGE_KEY = 'auto-podcast.ideation.history.v1'
 const MAX_RECORDS = 50
 
 class IdeationHistoryService {
   private getRecords(): IdeationHistoryRecord[] {
     try {
-      const data = localStorage.getItem(STORAGE_KEY)
+      const data = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(LEGACY_STORAGE_KEY)
       if (!data) return []
+      if (!localStorage.getItem(STORAGE_KEY)) {
+        localStorage.setItem(STORAGE_KEY, data)
+      }
       return JSON.parse(data)
     } catch (error) {
       console.error('[IdeationHistory] Failed to load records:', error)
@@ -113,6 +117,7 @@ class IdeationHistoryService {
 
   clear(): void {
     localStorage.removeItem(STORAGE_KEY)
+    localStorage.removeItem(LEGACY_STORAGE_KEY)
   }
 
   getStats(): { total: number; successful: number; failed: number } {

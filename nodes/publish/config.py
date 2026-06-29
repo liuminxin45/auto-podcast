@@ -12,6 +12,6 @@ class PublishConfig(NodeConfigBase):
     rss_output_dir: str = Field(default="out/rss", description="RSS输出目录")
     podcast_title: str = Field(default="AI Tech Podcast", description="播客标题")
     podcast_description: str = Field(default="AI-generated tech podcast", description="播客描述")
-    podcast_author: str = Field(default="Auto-Podcast", description="播客作者")
+    podcast_author: str = Field(default="PodFlow Studio", description="播客作者")
     podcast_language: str = Field(default="zh-CN", description="播客语言")
     podcast_category: str = Field(default="Technology", description="播客分类")

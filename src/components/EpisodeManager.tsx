@@ -354,7 +354,7 @@ export default function EpisodeManager({
             <Input
               value={editPreviewPath}
               onChange={event => setEditPreviewPath(event.target.value)}
-              placeholder="例如 E:\\Neo\\auto-podcast\\cover.png"
+              placeholder="例如 E:\\Neo\\PodFlow Studio\\cover.png"
               prefix={<DownloadOutlined />}
             />
           </div>

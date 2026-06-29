@@ -216,7 +216,7 @@ function App() {
         title: '关闭软件？',
         content: (
           <div>
-            <p>当前正在编辑一个节目。确认关闭 Auto-Podcast Studio？</p>
+            <p>当前正在编辑一个节目。确认关闭 PodFlow Studio？</p>
             <Space style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 20 }}>
               <Button onClick={() => finish(false)}>
                 取消
@@ -668,7 +668,7 @@ function App() {
               <AudioOutlined />
             </span>
             <Title level={5} style={{ color: 'var(--text-primary)', margin: 0, fontWeight: 600 }}>
-              Auto-Podcast Studio
+              PodFlow Studio
             </Title>
           </div>
           <Space size="small">

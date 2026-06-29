@@ -497,7 +497,8 @@ export default function OrganizePanel({
   useEffect(() => {
     if (!visible) return
     try {
-      const settingsStr = localStorage.getItem('auto-podcast.settings.v1')
+      const settingsStr = localStorage.getItem('podflow.settings.v1')
+        || localStorage.getItem('auto-podcast.settings.v1')
       if (!settingsStr) return
       
       const settings = JSON.parse(settingsStr)
@@ -931,27 +932,13 @@ export default function OrganizePanel({
   const suggestedMin = 3
 
   return (
-    <div style={{
-      position: 'fixed', top: 52, right: 0, bottom: 0, left: 148, zIndex: 1000,
-      background: 'var(--bg-primary)', display: 'flex', flexDirection: 'column',
-      animation: 'slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
-    }}>
+    <div className="stage-workbench organize-workbench">
 
       {/* ==================== TOP STATUS BAR ==================== */}
-      <div style={{
-        height: 52, borderBottom: '1px solid var(--border-color)',
-        background: 'var(--bg-secondary)',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '0 20px', flexShrink: 0,
-      }}>
+      <div className="stage-topbar organize-topbar">
         {/* Left: title + stats */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{
-            width: 30, height: 30, borderRadius: 8,
-            background: 'var(--bg-secondary)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: '#fff', fontSize: 15,
-          }}>
+        <div className="organize-topbar-title">
+          <div className="organize-title-icon">
             夹
           </div>
           <div>
@@ -971,13 +958,13 @@ export default function OrganizePanel({
         </div>
 
         {/* Right: AI organize + mode switch + close */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div className="organize-topbar-actions">
           {onBackToDiscover && (
             <Tooltip title="返回发现层">
               <Button
                 icon={<LeftOutlined />}
                 onClick={onBackToDiscover}
-                style={{ borderRadius: 8, height: 32, minWidth: 32 }}
+                className="organize-icon-button"
               />
             </Tooltip>
           )}
@@ -986,20 +973,12 @@ export default function OrganizePanel({
             type="primary"
             icon={<RobotOutlined />}
             onClick={handleAIOrganizeStart}
-            style={{
-              background: 'linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%)',
-              borderColor: 'transparent',
-              borderRadius: 8,
-              fontWeight: 600,
-              fontSize: 12,
-              height: 30,
-              boxShadow: '0 2px 8px rgba(139,92,246,0.25)',
-            }}
+            className="organize-ai-button"
           >
             AI 智能整理
           </Button>
           {/* Mode switcher */}
-          <div style={{ display: 'flex', background: 'var(--bg-tertiary)', borderRadius: 6, padding: 2 }}>
+          <div className="organize-mode-switch">
             {([
               { key: 'quick' as ViewMode, label: '快速', icon: <ThunderboltOutlined style={{ fontSize: 11 }} /> },
               { key: 'detailed' as ViewMode, label: '精细', icon: <UnorderedListOutlined style={{ fontSize: 11 }} /> },
@@ -1017,15 +996,7 @@ export default function OrganizePanel({
                       setCheckedIds(new Set())
                     }
                   }}
-                  style={{
-                    padding: '4px 12px', borderRadius: 5, fontSize: 12,
-                    fontWeight: isActive ? 600 : 400,
-                    color: isActive ? 'var(--accent-primary)' : 'var(--text-tertiary)',
-                    background: isActive ? 'var(--bg-secondary)' : 'transparent',
-                    boxShadow: isActive ? 'var(--shadow-sm)' : 'none',
-                    cursor: 'pointer', transition: 'all 0.2s ease',
-                    display: 'flex', alignItems: 'center', gap: 5,
-                  }}
+                  className={`organize-mode-option ${isActive ? 'is-active' : ''}`}
                 >
                   {m.icon} {m.label}
                 </div>
@@ -1038,11 +1009,7 @@ export default function OrganizePanel({
               type="primary"
               icon={<ArrowRightOutlined />}
               onClick={handleProceed}
-              style={{
-                background: 'var(--accent-primary)',
-                borderColor: 'var(--accent-primary)',
-                borderRadius: 8, height: 32, minWidth: 32,
-              }}
+              className="organize-icon-button"
             />
           </Tooltip>
           <Tooltip title="返回">
@@ -1052,23 +1019,13 @@ export default function OrganizePanel({
       </div>
 
       {/* ==================== BODY ==================== */}
-      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+      <div className="stage-body organize-body">
 
         {/* ===== LEFT: Signal Pool (45%) ===== */}
-        <div style={{
-          flex: '0 0 45%', maxWidth: '45%',
-          display: 'flex', flexDirection: 'column',
-          borderRight: '1px solid var(--border-color)',
-          background: 'var(--bg-primary)',
-        }}>
+        <div className="organize-pool-pane">
           {/* Detailed mode toolbar */}
           {mode === 'detailed' && (
-            <div style={{
-              padding: '8px 16px', borderBottom: '1px solid var(--border-light)',
-              background: 'var(--bg-secondary)',
-              display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0,
-              animation: 'organizeToolbarIn 0.2s ease-out',
-            }}>
+            <div className="organize-filter-toolbar">
               <Input
                 prefix={<SearchOutlined style={{ color: 'var(--text-tertiary)', fontSize: 12 }} />}
                 placeholder="搜索..."
@@ -1078,10 +1035,10 @@ export default function OrganizePanel({
                 style={{ width: 140, borderRadius: 6, fontSize: 12 }}
               />
 
-              <div style={{ width: 1, height: 16, background: 'var(--border-color)' }} />
+              <div className="organize-toolbar-separator" />
 
               {/* Category tags */}
-              <div style={{ display: 'flex', gap: 4, flex: 1, overflow: 'auto' }}>
+              <div className="organize-category-tags">
                 <Tag
                   bordered={false}
                   onClick={() => setActiveCategory(null)}
@@ -1112,7 +1069,7 @@ export default function OrganizePanel({
                 ))}
               </div>
 
-              <div style={{ width: 1, height: 16, background: 'var(--border-color)' }} />
+              <div className="organize-toolbar-separator" />
 
               {/* Batch toggle */}
               <Tooltip title="批量选择">
@@ -1130,12 +1087,7 @@ export default function OrganizePanel({
 
           {/* Batch actions bar */}
           {batchMode && checkedIds.size > 0 && (
-            <div style={{
-              padding: '6px 16px', borderBottom: '1px solid var(--border-light)',
-              background: 'var(--accent-light)',
-              display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0,
-              animation: 'fadeIn 0.15s ease',
-            }}>
+            <div className="organize-batch-bar">
               <span style={{ fontSize: 11, color: 'var(--accent-primary)', fontWeight: 600 }}>
                 已勾选 {checkedIds.size} 条
               </span>
@@ -1151,11 +1103,7 @@ export default function OrganizePanel({
           )}
 
           {/* 智能辅助开关 */}
-          <div style={{
-            padding: '5px 16px', borderBottom: '1px solid var(--border-light)',
-            display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0,
-            background: 'var(--bg-secondary)',
-          }}>
+          <div className="organize-assist-row">
             <ExperimentOutlined style={{ fontSize: 11, color: 'var(--text-tertiary)' }} />
             <span style={{ fontSize: 10, color: 'var(--text-tertiary)', marginRight: 2 }}>智能辅助</span>
             {([
@@ -1206,7 +1154,7 @@ export default function OrganizePanel({
           </div>
 
           {/* Pool list */}
-          <div style={{ flex: 1, overflow: 'auto', padding: '12px 16px' }}>
+          <div className="organize-pool-list">
             {poolItems.length === 0 && ignoredItems.length === 0 ? (
               <div style={{ padding: '60px 30px', textAlign: 'center' }}>
                 <div style={{
@@ -1381,16 +1329,9 @@ export default function OrganizePanel({
         </div>
 
         {/* ===== RIGHT: Candidate Area (55%) ===== */}
-        <div style={{
-          flex: '0 0 55%', maxWidth: '55%',
-          display: 'flex', flexDirection: 'column',
-          background: 'var(--bg-secondary)',
-        }}>
+        <div className="organize-candidate-pane">
           {/* Section header */}
-          <div style={{
-            padding: '10px 20px', borderBottom: '1px solid var(--border-light)',
-            display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0,
-          }}>
+          <div className="organize-section-header">
             <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>本期候选</span>
             {primaryCount > 0 && (
               <Tag bordered={false} style={{
@@ -1419,7 +1360,7 @@ export default function OrganizePanel({
           </div>
 
           {/* Candidate list */}
-          <div style={{ flex: 1, overflow: 'auto', padding: '12px 20px' }}>
+          <div className="organize-candidate-list">
             {sortedCandidates.length === 0 ? (
               <div style={{ padding: '80px 40px', textAlign: 'center' }}>
                 <div style={{
@@ -1456,12 +1397,7 @@ export default function OrganizePanel({
       </div>
 
       {/* ==================== BOTTOM ACTION BAR ==================== */}
-      <div style={{
-        height: 52, borderTop: '1px solid var(--border-color)',
-        background: 'var(--bg-secondary)',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '0 20px', flexShrink: 0,
-      }}>
+      <div className="organize-bottom-bar">
         {/* Left: stats */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           {primaryCount > 0 && (

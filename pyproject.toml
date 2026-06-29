@@ -1,4 +1,4 @@
-# Auto-Podcast Studio - Electron App
+# PodFlow Studio - Electron App
 # AI-powered podcast generation with visual workflow editor
 #
 # Usage:
@@ -8,7 +8,7 @@
 # Updated: 2026-02-08
 
 [project]
-name = "auto-podcast"
+name = "podflow-studio"
 version = "2.4.0"
 description = "Electron-based podcast generation with Python workflow nodes"
 requires-python = ">=3.8"

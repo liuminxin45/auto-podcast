@@ -552,40 +552,43 @@ export default function DiscoverPanel({
 
         <section className="discover-main">
           <div className="discover-toolbar">
-            <Input
-              allowClear
-              prefix={<FilterOutlined />}
-              value={query}
-              placeholder="搜索标题、内容或来源"
-              onChange={event => setQuery(event.target.value)}
-            />
-            <Select
-              value={sourceFilter}
-              onChange={setSourceFilter}
-              style={{ width: 160 }}
-              options={[
-                { value: 'all', label: '全部来源' },
-                ...sources.map(source => ({ value: source.id, label: source.name })),
-              ]}
-            />
-            <Button onClick={selectAllVisible}>全选当前</Button>
-            <Button onClick={() => setSelectedKeys(new Set())} icon={<CloseOutlined />}>清空选择</Button>
-            <Button
-              icon={<GlobalOutlined />}
-              loading={translating}
-              disabled={running || translating || translationTargets.length === 0}
-              onClick={handleTranslateEnglishItems}
-            >
-              翻译英文{translationTargets.length > 0 ? ` ${translationTargets.length}` : ''}
-            </Button>
-            <Button
-              danger
-              icon={<DeleteOutlined />}
-              disabled={running || translating || currentItems.length === 0}
-              onClick={handleClearCollection}
-            >
-              清空当前采集
-            </Button>
+            <div className="discover-toolbar-filters">
+              <Input
+                allowClear
+                prefix={<FilterOutlined />}
+                value={query}
+                placeholder="搜索标题、内容或来源"
+                onChange={event => setQuery(event.target.value)}
+              />
+              <Select
+                value={sourceFilter}
+                onChange={setSourceFilter}
+                options={[
+                  { value: 'all', label: '全部来源' },
+                  ...sources.map(source => ({ value: source.id, label: source.name })),
+                ]}
+              />
+            </div>
+            <div className="discover-toolbar-actions">
+              <Button onClick={selectAllVisible}>全选当前</Button>
+              <Button onClick={() => setSelectedKeys(new Set())} icon={<CloseOutlined />}>清空选择</Button>
+              <Button
+                icon={<GlobalOutlined />}
+                loading={translating}
+                disabled={running || translating || translationTargets.length === 0}
+                onClick={handleTranslateEnglishItems}
+              >
+                翻译英文{translationTargets.length > 0 ? ` ${translationTargets.length}` : ''}
+              </Button>
+              <Button
+                danger
+                icon={<DeleteOutlined />}
+                disabled={running || translating || currentItems.length === 0}
+                onClick={handleClearCollection}
+              >
+                清空当前采集
+              </Button>
+            </div>
           </div>
 
           {notice && (

@@ -20,6 +20,9 @@ out/
 dist/
 dist-electron/
 build/
+engine/newsnow/
+engine/trendradar/
+engine/trendradar_data/
 
 # IDE
 .idea/
@@ -39,6 +42,14 @@ Thumbs.db
 tests/debug/
 tmp/
 docs/acceptance/acceptance-run.*.log
+docs/acceptance/screenshots/
+docs/images/
+docs/**/*.gif
+docs/**/*.jpeg
+docs/**/*.jpg
+docs/**/*.png
+docs/**/*.svg
+docs/**/*.webp
 *.test.json
 script_schema*.json
 fetch_stderr.log

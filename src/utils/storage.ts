@@ -22,6 +22,11 @@ export interface DiscoverCandidateState {
 }
 
 const STORAGE_KEYS = {
+  DISCOVER_PREFS: 'podflow:discover-prefs',
+  DISCOVER_CANDIDATES: 'podflow:discover-candidates',
+} as const
+
+const LEGACY_STORAGE_KEYS = {
   DISCOVER_PREFS: 'auto-podcast:discover-prefs',
   DISCOVER_CANDIDATES: 'auto-podcast:discover-candidates',
 } as const
@@ -48,6 +53,7 @@ function safeSetItem(key: string, value: unknown): boolean {
 
 export function loadDiscoverPrefs(): DiscoverPreferences {
   const raw = localStorage.getItem(STORAGE_KEYS.DISCOVER_PREFS)
+    || localStorage.getItem(LEGACY_STORAGE_KEYS.DISCOVER_PREFS)
   return safeParseJSON(raw, {
     sensitivity: 3,
     freshness: 3,
@@ -64,6 +70,7 @@ export function saveDiscoverPrefs(prefs: Partial<DiscoverPreferences>): boolean 
 
 export function loadPersistedDiscoverCandidates(): DiscoverCandidateState {
   const raw = localStorage.getItem(STORAGE_KEYS.DISCOVER_CANDIDATES)
+    || localStorage.getItem(LEGACY_STORAGE_KEYS.DISCOVER_CANDIDATES)
   return safeParseJSON(raw, {
     candidateItems: [],
     savedToInbox: [],
@@ -79,6 +86,7 @@ export function savePersistedDiscoverCandidates(state: Partial<DiscoverCandidate
 export function clearDiscoverCandidates(): boolean {
   try {
     localStorage.removeItem(STORAGE_KEYS.DISCOVER_CANDIDATES)
+    localStorage.removeItem(LEGACY_STORAGE_KEYS.DISCOVER_CANDIDATES)
     return true
   } catch (error) {
     console.error('[Storage] Failed to clear candidates:', error)

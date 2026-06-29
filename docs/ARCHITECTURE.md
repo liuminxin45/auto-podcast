@@ -1,4 +1,4 @@
-# Auto-Podcast 架构规范
+# PodFlow Studio 架构规范
 
 ## 核心原则
 
@@ -148,7 +148,7 @@ def test_my_node():
 ### 8. 目录结构
 
 ```
-auto-podcast/
+PodFlow Studio/
 ├── protocol/              # 共享协议（state、config base）
 │   ├── state.py
 │   └── config_base.py
