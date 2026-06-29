@@ -288,26 +288,6 @@ copy config.example.yaml config.yaml
 
 该文件覆盖抓取、预处理、研究、选题、脚本、TTS、音频后处理、封面、存储和发布等配置示例。
 
-## 项目知识包
-
-仓库已挂载面向 AI 协作的项目知识包，用于让后续任务快速理解架构边界、工作流状态、Electron/CDP 调试路径和常见工程约束。
-
-| 路径 | 作用 |
-| --- | --- |
-| `AGENTS.md` | 仓库级 AI 协作入口，说明默认上下文和任务路由。 |
-| `ai/knowledge/` | 已挂载的项目知识库。 |
-| `ai/rules/` | AI 编码规则、架构约束和工程原则。 |
-| `ai/workflows/` | 任务路由和验收门禁配置。 |
-| `.specify/` | spec-kit 工作区配置、模板、脚本、生成记录和知识包。 |
-| `.agents/` | 当前仓库内可调用的 spec-kit 技能入口。 |
-
-知识包验证：
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .specify/scripts/powershell/validate-knowledge-index.ps1
-powershell -ExecutionPolicy Bypass -File .specify/scripts/powershell/validate-knowledge-pack.ps1 -PackRoot .specify/knowledge/packs/auto-podcast
-```
-
 ## 目录结构
 
 ```text
@@ -320,9 +300,6 @@ auto-podcast/
 ├── src/                   # React 前端
 ├── tests/                 # Python 测试
 ├── docs/                  # 文档、截图、验收报告
-├── ai/                    # 已挂载 AI 项目知识包
-├── .specify/              # spec-kit 工作区
-├── .agents/               # 仓库内技能入口
 ├── config.example.yaml    # 节点配置示例
 ├── package.json           # Node/Electron 脚本和依赖
 └── pyproject.toml         # Python 包和依赖
