@@ -1,4 +1,4 @@
-import type { LLMCallOptions, LLMResponse, ModelsResponse, PerformanceMetrics } from '../types/llm'
+import type { LLMCallOptions, LLMResponse, PerformanceMetrics } from '../types/llm'
 import { LLMError } from '../types/llm'
 import { LLM_DEFAULTS } from '../constants/llm'
 import { LRUCache } from './llm/cache'
@@ -7,7 +7,6 @@ import { MetricsCollector } from './llm/metrics'
 import {
   normalizeUrl,
   validateCredentials,
-  buildHeaders,
   extractModelIds,
   normalizeError,
   getCacheKey,
@@ -18,7 +17,6 @@ class LLMService {
   private cache: LRUCache
   private rateLimiter: TokenBucketRateLimiter
   private metricsCollector: MetricsCollector
-  private electronProxyDisabledForSession = false
   private debugMode = false
 
   private resolveRequestTimeout(timeout?: number, extraMs = 0): number {
@@ -31,13 +29,13 @@ class LLMService {
       LLM_DEFAULTS.CACHE_MAX_SIZE,
       LLM_DEFAULTS.CACHE_TTL
     )
-    
+
     this.rateLimiter = new TokenBucketRateLimiter({
       maxTokens: LLM_DEFAULTS.RATE_LIMIT_MAX_TOKENS,
       refillRate: LLM_DEFAULTS.RATE_LIMIT_REFILL_RATE,
       refillInterval: LLM_DEFAULTS.RATE_LIMIT_REFILL_INTERVAL,
     })
-    
+
     this.metricsCollector = new MetricsCollector()
   }
 
@@ -48,7 +46,7 @@ class LLMService {
 
   async call(options: LLMCallOptions): Promise<LLMResponse> {
     let adjustedOptions = { ...options }
-    
+
     if (this.debugMode) {
       adjustedOptions = this.applyMinimalMode(adjustedOptions)
     }
@@ -74,7 +72,7 @@ class LLMService {
     }
 
     const startTime = Date.now()
-    const useElectronProxy = this.shouldUseElectronLLMCall() && !this.electronProxyDisabledForSession
+    const useElectronProxy = this.shouldUseElectronLLMCall()
     console.info('[LLMService] call start', {
       model,
       useElectronProxy,
@@ -84,26 +82,19 @@ class LLMService {
     })
 
     try {
-      let response: LLMResponse
-      if (useElectronProxy) {
-        try {
-          response = await this.callViaElectron({ apiBase, apiKey, model, messages, temperature, maxTokens, timeout })
-        } catch (error: any) {
-          const errorMessage = String(error?.message || '')
-          const shouldFallbackToFetch =
-            /Electron IPC timeout|request timeout|timeout/i.test(errorMessage)
-            || error?.code === 'TIMEOUT'
-          if (!shouldFallbackToFetch) {
-            throw error
-          }
-
-          this.electronProxyDisabledForSession = true
-          console.warn('[LLMService] Electron IPC timed out, fallback to fetch', { model, timeout })
-          response = await this.callViaFetch({ apiBase, apiKey, model, messages, temperature, maxTokens, timeout })
-        }
-      } else {
-        response = await this.callViaFetch({ apiBase, apiKey, model, messages, temperature, maxTokens, timeout })
+      if (!useElectronProxy) {
+        throw new LLMError('LLM Gateway requires Electron IPC', 'CONFIG')
       }
+
+      const response = await this.callViaElectron({
+        apiBase,
+        apiKey,
+        model,
+        messages,
+        temperature,
+        maxTokens,
+        timeout,
+      })
 
       const duration = Date.now() - startTime
       this.metricsCollector.recordCall(duration, true)
@@ -129,22 +120,10 @@ class LLMService {
     validateCredentials(apiBase, apiKey)
 
     try {
-      if (this.shouldUseElectronModelFetch()) {
-        const data = await (window as any).electronAPI.llmFetchModels({ apiBase, apiKey })
-        return extractModelIds(data)
+      if (!this.shouldUseElectronModelFetch()) {
+        throw new LLMError('LLM Gateway requires Electron IPC', 'CONFIG')
       }
-
-      const baseUrl = normalizeUrl(apiBase)
-      const response = await fetch(`${baseUrl}/models`, {
-        method: 'GET',
-        headers: buildHeaders(apiBase, apiKey),
-      })
-
-      if (!response.ok) {
-        throw new LLMError(`HTTP ${response.status}`, 'NETWORK', { status: response.status })
-      }
-
-      const data: ModelsResponse = await response.json()
+      const data = await (window as any).electronAPI.llmFetchModels({ apiBase, apiKey })
       return extractModelIds(data)
     } catch (error: any) {
       throw normalizeError(error)
@@ -182,43 +161,49 @@ class LLMService {
     options: LLMCallOptions,
     onChunk: (chunk: string) => void
   ): Promise<void> {
-    const { apiBase, apiKey, model, messages, temperature = LLM_DEFAULTS.TEMPERATURE } = options
+    const {
+      apiBase,
+      apiKey,
+      model,
+      messages,
+      temperature = LLM_DEFAULTS.TEMPERATURE,
+      maxTokens,
+      timeout = LLM_DEFAULTS.STREAMING_TIMEOUT,
+    } = options
 
     validateCredentials(apiBase, apiKey)
     await this.rateLimiter.acquire()
 
-    const baseUrl = normalizeUrl(apiBase)
-    const headers = buildHeaders(apiBase, apiKey)
+    const api = typeof window !== 'undefined' ? (window as any).electronAPI : null
+    if (!api?.llmCall || !api?.onLLMStreamChunk || !api?.onLLMStreamDone || !api?.onLLMStreamError) {
+      throw new LLMError('LLM Gateway streaming requires Electron IPC', 'CONFIG')
+    }
 
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), LLM_DEFAULTS.STREAMING_TIMEOUT)
-
-    try {
-      const response = await fetch(`${baseUrl}/chat/completions`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          model,
-          messages,
-          temperature,
-          stream: true,
-        }),
-        signal: controller.signal,
+    await new Promise<void>((resolve, reject) => {
+      api.onLLMStreamChunk((chunk: string) => onChunk(chunk))
+      api.onLLMStreamDone(() => {
+        api.removeLLMStreamListeners?.()
+        resolve()
+      })
+      api.onLLMStreamError((error: string) => {
+        api.removeLLMStreamListeners?.()
+        reject(new LLMError(error || 'LLM stream failed', 'PROVIDER'))
       })
 
-      if (!response.ok) {
-        throw new LLMError(`HTTP ${response.status}`, 'NETWORK', { status: response.status })
-      }
-
-      const reader = response.body?.getReader()
-      if (!reader) {
-        throw new LLMError('No response body', 'NETWORK')
-      }
-
-      await this.processStreamResponse(reader, onChunk)
-    } finally {
-      clearTimeout(timeoutId)
-    }
+      api.llmCall({
+        apiBase: normalizeUrl(apiBase),
+        apiKey: apiKey.trim(),
+        model,
+        messages,
+        temperature,
+        maxTokens,
+        timeout,
+        stream: true,
+      }).catch((error: any) => {
+        api.removeLLMStreamListeners?.()
+        reject(normalizeError(error))
+      })
+    })
   }
 
   getMetrics(): PerformanceMetrics {
@@ -290,79 +275,6 @@ class LLMService {
     }
 
     return data
-  }
-
-  private async callViaFetch(options: LLMCallOptions): Promise<LLMResponse> {
-    const baseUrl = normalizeUrl(options.apiBase)
-    const controller = new AbortController()
-    const effectiveTimeout = this.resolveRequestTimeout(options.timeout)
-    const timeoutId = setTimeout(() => controller.abort(), effectiveTimeout)
-
-    console.info('[LLMService] fetch call start', {
-      model: options.model,
-      timeout: effectiveTimeout,
-      messageCount: options.messages.length,
-    })
-
-    try {
-      const response = await fetch(`${baseUrl}/chat/completions`, {
-        method: 'POST',
-        headers: buildHeaders(options.apiBase, options.apiKey),
-        body: JSON.stringify({
-          model: options.model,
-          messages: options.messages,
-          temperature: options.temperature,
-          max_tokens: options.maxTokens,
-        }),
-        signal: controller.signal,
-      })
-
-      if (!response.ok) {
-        throw new LLMError(`HTTP ${response.status}`, 'NETWORK', { status: response.status })
-      }
-
-      console.info('[LLMService] fetch call success', { model: options.model })
-      return await response.json()
-    } finally {
-      clearTimeout(timeoutId)
-    }
-  }
-
-  private async processStreamResponse(
-    reader: ReadableStreamDefaultReader<Uint8Array>,
-    onChunk: (chunk: string) => void
-  ): Promise<void> {
-    const decoder = new TextDecoder()
-    let buffer = ''
-
-    try {
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() || ''
-
-        for (const line of lines) {
-          const trimmed = line.trim()
-          if (!trimmed || trimmed === 'data: [DONE]') continue
-          if (!trimmed.startsWith('data: ')) continue
-
-          try {
-            const json = JSON.parse(trimmed.slice(6))
-            const content = json.choices?.[0]?.delta?.content
-            if (content) {
-              onChunk(content)
-            }
-          } catch (e) {
-            console.warn('[LLMService] Failed to parse SSE chunk:', e)
-          }
-        }
-      }
-    } finally {
-      reader.releaseLock()
-    }
   }
 }
 

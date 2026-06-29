@@ -12,6 +12,7 @@ describe('LLMService', () => {
   })
 
   afterEach(() => {
+    vi.useRealTimers()
     vi.restoreAllMocks()
   })
 
@@ -65,38 +66,24 @@ describe('LLMService', () => {
       expect(result.choices[0].message.content).toBe('Hello')
     })
 
-    it('should fallback to fetch when Electron IPC not available', async () => {
+    it('should require Electron IPC when gateway is unavailable', async () => {
       ;(global.window as any).electronAPI = null
-      ;(global.fetch as any).mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          id: 'test-id',
-          object: 'chat.completion',
-          created: Date.now(),
+
+      await expect(
+        llmService.call({
+          apiBase: 'https://api.openai.com/v1',
+          apiKey: 'test-key',
           model: 'gpt-4',
-          choices: [
-            {
-              index: 0,
-              message: { role: 'assistant', content: 'Hello from fetch' },
-              finish_reason: 'stop',
-            },
-          ],
-        }),
-      })
-
-      const result = await llmService.call({
-        apiBase: 'https://api.openai.com/v1',
-        apiKey: 'test-key',
-        model: 'gpt-4',
-        messages: [{ role: 'user', content: 'Hi' }],
-      })
-
-      expect(global.fetch).toHaveBeenCalled()
-      expect(result.choices[0].message.content).toBe('Hello from fetch')
+          messages: [{ role: 'user', content: 'Hi' }],
+        })
+      ).rejects.toThrow('LLM Gateway requires Electron IPC')
+      expect(global.fetch).not.toHaveBeenCalled()
     })
 
     it('should handle network errors gracefully', async () => {
-      ;(global.fetch as any).mockRejectedValue(new Error('Network error'))
+      ;(global.window as any).electronAPI = {
+        llmCall: vi.fn().mockRejectedValue(new Error('NETWORK: Network error')),
+      }
 
       await expect(
         llmService.call({
@@ -109,14 +96,12 @@ describe('LLMService', () => {
     })
 
     it('should handle timeout errors', async () => {
-      ;(global.fetch as any).mockImplementation(
-        () =>
-          new Promise((_, reject) => {
-            setTimeout(() => reject(new DOMException('Aborted', 'AbortError')), 100)
-          })
-      )
+      vi.useFakeTimers()
+      ;(global.window as any).electronAPI = {
+        llmCall: vi.fn(() => new Promise(() => {})),
+      }
 
-      await expect(
+      const assertion = expect(
         llmService.call({
           apiBase: 'https://api.openai.com/v1',
           apiKey: 'test-key',
@@ -124,16 +109,29 @@ describe('LLMService', () => {
           messages: [{ role: 'user', content: 'Hi' }],
           timeout: 50,
         })
-      ).rejects.toThrow('Request timeout')
+      ).rejects.toThrow('Electron IPC timeout')
+      await vi.advanceTimersByTimeAsync(10000)
+      await assertion
+      vi.useRealTimers()
     })
 
-    it('should use correct headers for Azure OpenAI', async () => {
-      ;(global.fetch as any).mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          choices: [{ index: 0, message: { role: 'assistant', content: 'test' }, finish_reason: 'stop' }],
+    it('should forward Azure configs through Electron IPC', async () => {
+      const mockElectronAPI = {
+        llmCall: vi.fn().mockResolvedValue({
+          id: 'test-id',
+          object: 'chat.completion',
+          created: Date.now(),
+          model: 'gpt-4',
+          choices: [
+            {
+              index: 0,
+              message: { role: 'assistant', content: 'test' },
+              finish_reason: 'stop',
+            },
+          ],
         }),
-      })
+      }
+      ;(global.window as any).electronAPI = mockElectronAPI
 
       await llmService.call({
         apiBase: 'https://test.openai.azure.com/v1',
@@ -142,8 +140,13 @@ describe('LLMService', () => {
         messages: [{ role: 'user', content: 'Hi' }],
       })
 
-      const fetchCall = (global.fetch as any).mock.calls[0]
-      expect(fetchCall[1].headers['api-key']).toBe('azure-key')
+      expect(mockElectronAPI.llmCall).toHaveBeenCalledWith(
+        expect.objectContaining({
+          apiBase: 'https://test.openai.azure.com/v1',
+          apiKey: 'azure-key',
+        })
+      )
+      expect(global.fetch).not.toHaveBeenCalled()
     })
   })
 

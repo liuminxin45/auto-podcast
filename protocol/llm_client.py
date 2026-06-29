@@ -3,9 +3,8 @@
 import json
 import os
 import time
-from typing import Any, Dict, List, Optional, Tuple
-
-from openai import AzureOpenAI, OpenAI, OpenAIError
+from collections.abc import Iterator
+from typing import Any
 
 DEFAULT_TIMEOUT = 60
 DEFAULT_TEMPERATURE = 0.3
@@ -46,11 +45,11 @@ class LLMClient:
 
     def call(
         self,
-        messages: List[Dict[str, str]],
+        messages: list[dict[str, str]],
         timeout: int = DEFAULT_TIMEOUT,
-        max_tokens: Optional[int] = None,
-        logs: Optional[List[str]] = None,
-    ) -> Dict[str, Any]:
+        max_tokens: int | None = None,
+        logs: list[str] | None = None,
+    ) -> dict[str, Any]:
         """Run one chat completion and return a JSON-serializable dict."""
         messages, max_tokens = self._prepare_request(messages, max_tokens, timeout, logs)
 
@@ -62,10 +61,41 @@ class LLMClient:
                 **({"max_tokens": max_tokens} if max_tokens else {}),
             )
             return response.model_dump(mode="json")
-        except OpenAIError as error:
+        except Exception as error:
             raise self._to_llm_error(error) from error
 
-    def extract_content(self, response: Dict[str, Any]) -> str:
+    def stream(
+        self,
+        messages: list[dict[str, str]],
+        timeout: int = DEFAULT_TIMEOUT,
+        max_tokens: int | None = None,
+        logs: list[str] | None = None,
+    ) -> Iterator[dict[str, Any]]:
+        """Run a streaming chat completion and yield JSON-serializable chunks."""
+        messages, max_tokens = self._prepare_request(messages, max_tokens, timeout, logs)
+
+        try:
+            stream = self._client.with_options(timeout=timeout).chat.completions.create(
+                model=self.model,
+                messages=messages,
+                temperature=self.temperature,
+                stream=True,
+                **({"max_tokens": max_tokens} if max_tokens else {}),
+            )
+            for chunk in stream:
+                yield chunk.model_dump(mode="json")
+        except Exception as error:
+            raise self._to_llm_error(error) from error
+
+    def fetch_models(self, timeout: int = DEFAULT_TIMEOUT) -> dict[str, Any]:
+        """Fetch provider model metadata through the configured SDK client."""
+        try:
+            response = self._client.with_options(timeout=timeout).models.list()
+            return response.model_dump(mode="json")
+        except Exception as error:
+            raise self._to_llm_error(error) from error
+
+    def extract_content(self, response: dict[str, Any]) -> str:
         """Extract assistant text from an OpenAI chat completion response."""
         try:
             return response["choices"][0]["message"]["content"]
@@ -87,20 +117,20 @@ class LLMClient:
 
     def batch_analyze(
         self,
-        items: List[Any],
+        items: list[Any],
         prompt_fn,
         parse_fn,
-        logs: Optional[List[str]] = None,
-    ) -> List[Any]:
+        logs: list[str] | None = None,
+    ) -> list[Any]:
         """Analyze items in batches while preserving per-item fallback results."""
         batch_size = 1 if self.debug_mode else BATCH_SIZE
         total_batches = (len(items) - 1) // batch_size + 1 if items else 0
-        results: List[Any] = []
+        results: list[Any] = []
 
         self._log(logs, f"batch_analyze: {len(items)} items, {total_batches} batches")
 
         for batch_index, start in enumerate(range(0, len(items), batch_size), start=1):
-            batch = items[start:start + batch_size]
+            batch = items[start : start + batch_size]
             self._log(
                 logs,
                 f"Processing batch {batch_index}/{total_batches} ({len(batch)} items)",
@@ -125,6 +155,11 @@ class LLMClient:
         return results
 
     def _create_client(self, api_key: str):
+        try:
+            from openai import AzureOpenAI, OpenAI
+        except ImportError as error:
+            raise LLMError("OpenAI SDK is not installed", "CONFIG") from error
+
         if "openai.azure.com" in self.api_base:
             return AzureOpenAI(
                 api_key=api_key,
@@ -135,11 +170,11 @@ class LLMClient:
 
     def _prepare_request(
         self,
-        messages: List[Dict[str, str]],
-        max_tokens: Optional[int],
+        messages: list[dict[str, str]],
+        max_tokens: int | None,
         timeout: int,
-        logs: Optional[List[str]],
-    ) -> Tuple[List[Dict[str, str]], Optional[int]]:
+        logs: list[str] | None,
+    ) -> tuple[list[dict[str, str]], int | None]:
         if not self.debug_mode:
             return messages, max_tokens
 
@@ -157,7 +192,10 @@ class LLMClient:
         )
         return truncated, max_tokens
 
-    def _to_llm_error(self, error: OpenAIError) -> LLMError:
+    def _to_llm_error(self, error: Exception) -> LLMError:
+        if isinstance(error, LLMError):
+            return error
+
         status_code = getattr(error, "status_code", None)
         code = getattr(error, "code", None) or type(error).__name__
 
@@ -175,11 +213,11 @@ class LLMClient:
         message = f"{type(error).__name__}: {error}"
         return LLMError(message, category, details={"status_code": status_code, "code": code})
 
-    def _error_results(self, batch: List[Any], error: str) -> List[Any]:
+    def _error_results(self, batch: list[Any], error: str) -> list[Any]:
         return [{**item, "_error": error} if isinstance(item, dict) else item for item in batch]
 
     @staticmethod
-    def _log(logs: Optional[List[str]], message: str) -> None:
+    def _log(logs: list[str] | None, message: str) -> None:
         if logs is not None:
             logs.append(f"[LLMClient] {message}")
 

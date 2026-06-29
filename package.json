@@ -7,7 +7,7 @@
   "main": "electron/main.js",
   "scripts": {
     "setup": "npm run setup:python",
-    "setup:python": "python -m pip install -e .",
+    "setup:python": "node scripts/python313.js --setup",
     "dev": "node scripts/dev.js",
     "dev:react": "vite --host 127.0.0.1 --port 5174 --strictPort",
     "dev:electron": "wait-on http://127.0.0.1:5174 && cross-env NODE_ENV=development VITE_DEV_SERVER_URL=http://127.0.0.1:5174 electron .",
@@ -22,11 +22,11 @@
     "test": "vitest",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest --coverage",
-    "verify:nodes": "python scripts/verify_nodes.py",
-    "verify:config": "python scripts/test_config.py",
-    "verify:build": "python scripts/build_check.py",
-    "test:nodes": "python scripts/test_all_nodes.py",
-    "test:integration": "python scripts/integration_test.py",
+    "verify:nodes": "node scripts/python313.js scripts/verify_nodes.py",
+    "verify:config": "node scripts/python313.js scripts/test_config.py",
+    "verify:build": "node scripts/python313.js scripts/build_check.py",
+    "test:nodes": "node scripts/python313.js scripts/test_all_nodes.py",
+    "test:integration": "node scripts/python313.js scripts/integration_test.py",
     "verify": "npm run verify:config && npm run verify:nodes"
   },
   "dependencies": {

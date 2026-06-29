@@ -66,7 +66,15 @@ export interface RateLimitConfig {
 export class LLMError extends Error {
   constructor(
     message: string,
-    public readonly code: 'NETWORK' | 'AUTH' | 'TIMEOUT' | 'PARSE' | 'UNKNOWN',
+    public readonly code:
+      | 'NETWORK'
+      | 'AUTH'
+      | 'RATE_LIMIT'
+      | 'TIMEOUT'
+      | 'PARSE'
+      | 'PROVIDER'
+      | 'CONFIG'
+      | 'UNKNOWN',
     public readonly details?: any
   ) {
     super(message)

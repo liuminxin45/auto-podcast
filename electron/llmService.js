@@ -1,26 +1,25 @@
 const { makeRequest, makeStreamingRequest } = require('./httpClient')
+const { ensureLLMGateway, stopLLMGateway } = require('./llmGatewayProcess')
 
 const DEFAULT_TIMEOUT = 30000
 const STREAMING_TIMEOUT = 180000
 
-function buildHeaders(apiBase, apiKey) {
-  const headers = { 'Content-Type': 'application/json' }
-  if (apiBase.includes('openai.azure.com')) {
-    headers['api-key'] = apiKey
-  } else {
-    headers['Authorization'] = `Bearer ${apiKey}`
-  }
-  return headers
-}
-
 async function fetchModels({ apiBase, apiKey }) {
-  const url = `${apiBase.replace(/\/$/, '')}/models`
-  const headers = apiBase.includes('openai.azure.com')
-    ? { 'api-key': apiKey }
-    : { 'Authorization': `Bearer ${apiKey}` }
+  const gateway = await ensureLLMGateway()
+  const url = `${gateway.baseUrl}/models`
 
   try {
-    const response = await makeRequest({ url, method: 'GET', headers, timeout: DEFAULT_TIMEOUT })
+    const response = await makeRequest({
+      url,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: {
+        api_base: apiBase,
+        api_key: apiKey,
+        timeout: Math.ceil(DEFAULT_TIMEOUT / 1000)
+      },
+      timeout: DEFAULT_TIMEOUT
+    })
     return response.body
   } catch (error) {
     throw new Error(`Failed to fetch models: ${error.message}`)
@@ -28,14 +27,22 @@ async function fetchModels({ apiBase, apiKey }) {
 }
 
 async function callLLM({ apiBase, apiKey, model, messages, temperature = 0.3, maxTokens, timeout, stream = false, eventSender = null }) {
-  const url = `${apiBase.replace(/\/$/, '')}/chat/completions`
-  const headers = buildHeaders(apiBase, apiKey)
-  const body = { model, messages, temperature, stream }
+  const gateway = await ensureLLMGateway()
+  const url = `${gateway.baseUrl}/chat/completions`
+  const headers = { 'Content-Type': 'application/json' }
+  const requestTimeout = typeof timeout === 'number' ? timeout : STREAMING_TIMEOUT
+  const body = {
+    api_base: apiBase,
+    api_key: apiKey,
+    model,
+    messages,
+    temperature,
+    timeout: Math.ceil(requestTimeout / 1000),
+    stream
+  }
   if (typeof maxTokens === 'number') {
     body.max_tokens = maxTokens
   }
-
-  const requestTimeout = typeof timeout === 'number' ? timeout : STREAMING_TIMEOUT
 
   if (stream) {
     if (!eventSender) {
@@ -64,5 +71,6 @@ async function callLLM({ apiBase, apiKey, model, messages, temperature = 0.3, ma
 
 module.exports = {
   fetchModels,
-  callLLM
+  callLLM,
+  stopLLMGateway
 }

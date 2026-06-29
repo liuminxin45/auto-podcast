@@ -2,7 +2,7 @@
 name = "podflow-studio"
 version = "2.4.0"
 description = "Electron-based podcast generation with Python workflow nodes"
-requires-python = ">=3.8"
+requires-python = ">=3.13"
 readme = "README.md"
 dependencies = [
   "feedparser>=6.0.11",
@@ -11,9 +11,15 @@ dependencies = [
   "pydantic>=2.7.0",
   "edge-tts>=7.2.7",
   "pydub>=0.25.1",
-  "audioop-lts>=0.2.1; python_version >= '3.13'",
+  "audioop-lts>=0.2.1",
   "Pillow>=10.0.0",
   "rich>=13.7.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pyupgrade>=3.21.2",
+  "ruff>=0.15.20",
 ]
 
 
@@ -27,8 +33,9 @@ include = ["protocol", "protocol.*", "nodes", "nodes.*"]
 
 [tool.ruff]
 line-length = 100
+target-version = "py313"
 
 [tool.pyright]
-pythonVersion = "3.8"
-venvPath = "env"
+pythonVersion = "3.13"
+venvPath = "."
 venv = ".venv"

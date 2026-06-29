@@ -3,12 +3,12 @@ const path = require('path')
 const fs = require('fs')
 const { spawn } = require('child_process')
 const ConfigManager = require('./configManager')
-const { fetchModels, callLLM } = require('./llmService')
+const { fetchModels, callLLM, stopLLMGateway } = require('./llmService')
 const { PROVIDER_TO_ENGINE, buildTTSConfig, validateProviderConfig, buildStages } = require('./services/providerConfigBuilder')
 const { validateNodeOutput } = require('./nodeValidator')
+const { resolvePythonCommand } = require('../scripts/python313')
 
-const PYTHON_PATH = process.platform === 'win32' ? 'python' : 'python3'
-const SPAWN_SHELL = process.platform === 'win32'
+const SPAWN_SHELL = false
 const CDP_DEBUG_ENABLED = process.env.CDP_DEBUG === '1' || process.env.CDP_ACCEPTANCE === '1'
 const CDP_PORT = process.env.CDP_PORT || process.env.CDP_ACCEPTANCE_PORT || (CDP_DEBUG_ENABLED ? '9222' : '')
 const CDP_HOST = process.env.CDP_HOST || '127.0.0.1'
@@ -31,6 +31,14 @@ function getPythonSpawnEnv(extra = {}) {
     PYTHONIOENCODING: 'utf-8',
     ...extra,
   }
+}
+
+let pythonCommand = null
+
+function spawnPython(args, options = {}) {
+  pythonCommand ??= resolvePythonCommand()
+  const [executable, ...prefixArgs] = pythonCommand
+  return spawn(executable, [...prefixArgs, ...args], options)
 }
 
 let mainWindow = null
@@ -333,7 +341,7 @@ function createWindow() {
 
 function runPythonNode(nodeName, state, timeoutMs = 600000) {
   return new Promise((resolve, reject) => {
-    const proc = spawn(PYTHON_PATH, ['-m', `nodes.${nodeName}`], {
+    const proc = spawnPython(['-m', `nodes.${nodeName}`], {
       cwd: path.join(__dirname, '..'),
       env: getPythonSpawnEnv(),
       shell: SPAWN_SHELL
@@ -1085,7 +1093,7 @@ ipcMain.handle('llm:call', async (event, { apiBase, apiKey, model, messages, tem
 // Fetch sources management
 ipcMain.handle('fetch:getSources', async (event) => {
   return new Promise((resolve, reject) => {
-    const proc = spawn(PYTHON_PATH, [
+    const proc = spawnPython([
       path.join(__dirname, '..', 'scripts', 'get_fetch_sources.py')
     ], {
       cwd: path.join(__dirname, '..'),
@@ -1313,6 +1321,10 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit()
   }
+})
+
+app.on('before-quit', () => {
+  stopLLMGateway()
 })
 
 app.on('activate', () => {
