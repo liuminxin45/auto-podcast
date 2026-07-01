@@ -17,6 +17,7 @@ const DEFAULT_RADAR_STATE = {
   lastFetchedCount: 0,
   running: false,
   runStartedAt: null,
+  lastRunContents: [],
   contents: []
 }
 
@@ -44,6 +45,8 @@ function create(ctx) {
           ...DEFAULT_RADAR_STATE,
           ...raw,
           running: false,
+          runStartedAt: null,
+          lastRunContents: Array.isArray(raw.lastRunContents) ? raw.lastRunContents : [],
           contents: Array.isArray(raw.contents) ? raw.contents : []
         }
       }
@@ -148,6 +151,7 @@ function create(ctx) {
         return !existingKeys.has(key)
       }).length
 
+      radarState.lastRunContents = incoming
       radarState.contents = mergeContents(radarState.contents || [], incoming, radarState.keepLast)
       radarState.lastNewCount = newCount
       radarState.lastFetchedCount = incoming.length
@@ -160,6 +164,7 @@ function create(ctx) {
       radarState.lastError = error.message
       radarState.lastNewCount = 0
       radarState.lastFetchedCount = 0
+      radarState.lastRunContents = []
     } finally {
       radarState.running = false
       saveCache()
@@ -168,18 +173,21 @@ function create(ctx) {
     return radarState
   }
 
-  function start(configOverride = null) {
+  function start(configOverride = null, options = {}) {
     const cm = ctx.getConfigManager()
     const fetchConfig = applyDefaults(
       configOverride || (cm ? cm.loadNodeConfig('fetch') : null) || {}
     )
+    const runImmediately = options.runImmediately !== false
     radarState.enabled = true
     radarState.intervalMin = fetchConfig.monitor_interval_min || 30
     radarState.keepLast = fetchConfig.monitor_keep_last || 100
     schedule()
     saveCache()
     broadcast()
-    runOnce(fetchConfig)
+    if (runImmediately) {
+      runOnce(fetchConfig)
+    }
   }
 
   function stop() {
@@ -202,6 +210,7 @@ function create(ctx) {
     stop,
     clearContents: () => {
       radarState.contents = []
+      radarState.lastRunContents = []
       radarState.lastNewCount = 0
       radarState.lastFetchedCount = 0
       saveCache()

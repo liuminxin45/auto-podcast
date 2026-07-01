@@ -238,7 +238,7 @@ export default function DiscoverPanel({
         if (!cancelled) setNotice({ type: 'error', text: `采集配置初始化失败：${error.message}` })
       })
     return () => { cancelled = true }
-  }, [visible])
+  }, [initialConfig, onListSources, onLoadConfig, visible])
 
   const selectedItemsForProceed = useMemo(() => {
     return currentItems.filter(item => selectedKeys.has(identity(item)))

@@ -75,6 +75,7 @@ function makeRequest({ url, method = 'GET', headers = {}, body = null, timeout =
 
 function makeStreamingRequest({ url, method = 'POST', headers = {}, body = null, timeout = 180000, onChunk, onEnd, onError }) {
   return new Promise((resolve, reject) => {
+    let streamFailed = false
     const urlObj = new URL(url)
     const isHttps = urlObj.protocol === 'https:'
     const client = isHttps ? https : http
@@ -96,7 +97,6 @@ function makeStreamingRequest({ url, method = 'POST', headers = {}, body = null,
     const req = client.request(options, (res) => {
       let buffer = ''
       let errorBody = ''
-      let streamFailed = false
       
       res.on('data', chunk => {
         if (res.statusCode < 200 || res.statusCode >= 300) {

@@ -69,6 +69,10 @@ function spawnChecked(command, args) {
   return result.status ?? 1
 }
 
+function pipIndexArgs() {
+  return ['--index-url', process.env.PODFLOW_PIP_INDEX_URL || 'https://pypi.org/simple']
+}
+
 function setupVenv() {
   const venvCommand = [localVenvPython()]
   if (!canRunPython(venvCommand)) {
@@ -80,7 +84,15 @@ function setupVenv() {
   const pipStatus = spawnChecked(venvCommand, ['-m', 'ensurepip', '--upgrade'])
   if (pipStatus !== 0) process.exit(pipStatus)
 
-  const installStatus = spawnChecked(venvCommand, ['-m', 'pip', 'install', '-e', '.'])
+  const installStatus = spawnChecked(venvCommand, [
+    '-m',
+    'pip',
+    'install',
+    '--no-build-isolation',
+    ...pipIndexArgs(),
+    '-e',
+    '.[dev]',
+  ])
   process.exit(installStatus)
 }
 

@@ -20,12 +20,12 @@ def check_python_package() -> tuple[bool, str]:
             [sys.executable, "-m", "pip", "show", "podflow-studio"],
             capture_output=True,
             text=True,
-            timeout=10,
+            timeout=30,
         )
         if result.returncode == 0:
             return True, "Python package installed"
         else:
-            return False, "Python package not installed (run: pip install -e .)"
+            return False, "Python package not installed (run: npm run setup:python)"
     except Exception as e:
         return False, f"Failed to check package: {e}"
 
@@ -117,7 +117,7 @@ def check_typescript_config() -> tuple[bool, str]:
             cwd=PROJECT_ROOT,
             capture_output=True,
             text=True,
-            timeout=30,
+            timeout=120,
         )
         if result.returncode == 0:
             return True, "TypeScript compilation check passed"

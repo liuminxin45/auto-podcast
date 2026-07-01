@@ -135,11 +135,11 @@ export default function CreationStudio({
   useEffect(() => {
     if (!visible) return
     if (initialBlocks?.length) {
-      setBlocks(initialBlocks)
+      setBlocks(cloneBlocks(initialBlocks))
     }
     setTopicTitle(selectedTopic?.title || '')
     setTopicDesc(selectedTopic?.description || '')
-  }, [visible])
+  }, [cloneBlocks, initialBlocks, selectedTopic?.description, selectedTopic?.title, visible])
 
   useEffect(() => {
     if (!visible) return
@@ -152,7 +152,7 @@ export default function CreationStudio({
     if (serialized === lastSyncedStateRef.current) return
     lastSyncedStateRef.current = serialized
     onStateChange?.(structure)
-  }, [visible, topicTitle, topicDesc, blocks])
+  }, [visible, topicTitle, topicDesc, blocks, onStateChange])
 
   // LLM Ideation state
   const [ideationPanelVisible, setIdeationPanelVisible] = useState(false)

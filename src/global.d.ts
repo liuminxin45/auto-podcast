@@ -1,4 +1,4 @@
-import type { Workflow, WorkflowCreateResult, ContentItem } from './types/workflow'
+import type { Workflow, WorkflowCreateResult, WorkflowSummary, ContentItem } from './types/workflow'
 
 declare global {
   interface LLMCallParams {
@@ -75,6 +75,7 @@ declare global {
     lastRunAt: string | null
     lastError: string | null
     running: boolean
+    lastRunContents?: ContentItem[]
     contents: ContentItem[]
   }
 
@@ -87,9 +88,47 @@ declare global {
   interface ElectronAPI {
     createWorkflow: (config: Record<string, any>) => Promise<WorkflowCreateResult>
     getWorkflow: (id: string) => Promise<Workflow | null>
+    listWorkflows: () => Promise<WorkflowSummary[]>
+    openWorkflow: (id: string) => Promise<Workflow>
+    saveWorkflow: (id: string) => Promise<Workflow>
+    closeWorkflow: (id: string) => Promise<{ success: boolean }>
+    updateWorkflowMeta: (
+      id: string,
+      meta: { title: string; description: string; previewPath: string }
+    ) => Promise<Workflow>
+    duplicateWorkflow: (id: string) => Promise<Workflow>
+    deleteWorkflow: (id: string) => Promise<{ success: boolean }>
+    exportWorkflow: (id: string) => Promise<{ success: boolean; canceled?: boolean; path?: string }>
+    importWorkflow: () => Promise<{
+      success: boolean
+      canceled?: boolean
+      workflow?: Workflow
+      summary?: WorkflowSummary
+    }>
     approveNode: (workflowId: string, nodeName: string, approved: boolean, modifiedOutput?: any) => Promise<{ status: string }>
-    onWorkflowUpdate: (callback: (data: Workflow) => void) => void
+    updateWorkflowState: (id: string, patch: Record<string, any>) => Promise<Workflow>
+    runWorkflowNodes: (id: string, nodeNames: string[]) => Promise<Workflow>
+    saveRecording: (payload: {
+      episodeId: string
+      segmentId: string
+      mimeType: string
+      durationSeconds: number
+      data: ArrayBuffer
+    }) => Promise<{ success: boolean; path: string; size: number; mimeType: string; durationSeconds: number }>
+    openPath: (targetPath: string) => Promise<{ success: boolean; error?: string }>
+    showItemInFolder: (targetPath: string) => Promise<{ success: boolean; error?: string }>
+    readImageAsDataUrl: (targetPath: string) => Promise<{
+      success: boolean
+      error?: string
+      path?: string
+      size?: number
+      mimeType?: string
+      dataUrl?: string
+    }>
+    onWorkflowUpdate: (callback: (data: Workflow | null) => void) => void
     onNeedApproval: (callback: (data: any) => void) => void
+    onAppCloseRequest: (callback: () => void) => (() => void) | void
+    confirmAppClose: () => Promise<{ success: boolean }>
     onRadarUpdate: (callback: (data: RadarState) => void) => void
     saveNodeConfig: (nodeName: string, config: Record<string, any>) => Promise<{ success: boolean; error?: string }>
     loadNodeConfig: (nodeName: string) => Promise<Record<string, any> | null>

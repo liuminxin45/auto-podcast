@@ -1,12 +1,14 @@
-const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const { spawn } = require('child_process')
 const ConfigManager = require('./configManager')
 const { fetchModels, callLLM, stopLLMGateway } = require('./llmService')
 const { PROVIDER_TO_ENGINE, buildTTSConfig, validateProviderConfig, buildStages } = require('./services/providerConfigBuilder')
-const { validateNodeOutput } = require('./nodeValidator')
 const { resolvePythonCommand } = require('../scripts/python313')
+const { create: createFileService } = require('./services/fileService')
+const { create: createRadarService } = require('./radarService')
+const { create: createWorkflowRunner } = require('./workflowRunner')
 
 const SPAWN_SHELL = false
 const CDP_DEBUG_ENABLED = process.env.CDP_DEBUG === '1' || process.env.CDP_ACCEPTANCE === '1'
@@ -46,38 +48,7 @@ let configManager = null
 let currentWorkflow = null
 let appCloseConfirmed = false
 const WORKFLOW_DIR = path.join(__dirname, '..', 'out', 'workflows')
-
-const DEFAULT_RADAR_STATE = {
-  enabled: false,
-  intervalMin: 30,
-  keepLast: 500,
-  lastRunAt: null,
-  lastError: null,
-  lastNewCount: 0,
-  lastFetchedCount: 0,
-  running: false,
-  runStartedAt: null,
-  lastRunContents: [],
-  contents: []
-}
-
-let radarState = { ...DEFAULT_RADAR_STATE }
-let radarTimer = null
-
-const NODE_STAGE_LABELS = {
-  fetch: '发现',
-  manual: '发现',
-  merge: '发现',
-  preprocess: '整理',
-  research: '构思',
-  topic_selection: '构思',
-  script: '写作',
-  tts: '制作',
-  audio_postprocess: '制作',
-  assets: '制作',
-  review: '发布',
-  publish: '发布'
-}
+const PROJECT_ROOT = path.join(__dirname, '..')
 
 function broadcastWorkflowUpdate() {
   if (mainWindow) {
@@ -147,22 +118,6 @@ function ensureWorkflowDir() {
 
 function workflowFilePath(workflowId) {
   return path.join(WORKFLOW_DIR, `${sanitizePathPart(workflowId)}.json`)
-}
-
-function resolveProjectPath(targetPath) {
-  if (!targetPath) return ''
-  return path.isAbsolute(targetPath)
-    ? targetPath
-    : path.join(__dirname, '..', targetPath)
-}
-
-function imageMimeType(filePath) {
-  const ext = path.extname(filePath).toLowerCase()
-  if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg'
-  if (ext === '.webp') return 'image/webp'
-  if (ext === '.gif') return 'image/gif'
-  if (ext === '.svg') return 'image/svg+xml'
-  return 'image/png'
 }
 
 function normalizeWorkflow(workflow) {
@@ -400,188 +355,21 @@ function runPythonNode(nodeName, state, timeoutMs = 600000) {
   })
 }
 
-function getRadarCachePath() {
-  return path.join(app.getPath('userData'), 'radar-cache.json')
-}
-
-function loadRadarCache() {
-  try {
-    const cachePath = getRadarCachePath()
-    if (!fs.existsSync(cachePath)) return { ...DEFAULT_RADAR_STATE }
-    const cached = JSON.parse(fs.readFileSync(cachePath, 'utf-8'))
-    return {
-      ...DEFAULT_RADAR_STATE,
-      ...(cached && typeof cached === 'object' ? cached : {}),
-      running: false,
-      runStartedAt: null
-    }
-  } catch (error) {
-    console.warn('Failed to load radar cache:', error)
-    return { ...DEFAULT_RADAR_STATE }
-  }
-}
-
-// ── Radar Service (extracted) ─────────────────────────────────────
 const sharedCtx = {
   getMainWindow: () => mainWindow,
   getConfigManager: () => configManager,
+  getCurrentWorkflow: () => currentWorkflow,
+  setCurrentWorkflow: (workflow) => {
+    currentWorkflow = workflow
+  },
   runPythonNode
 }
-const radar = require('./radarService').create(sharedCtx)
-
-function saveRadarCache() {
-  try {
-    const cachePath = getRadarCachePath()
-    fs.writeFileSync(cachePath, JSON.stringify({ ...radarState, running: false }, null, 2), 'utf-8')
-  } catch (error) {
-    console.warn('Failed to save radar cache:', error)
-  }
-}
-
-function broadcastRadarUpdate() {
-  if (mainWindow) {
-    mainWindow.webContents.send('radar:update', radarState)
-  }
-}
-
-function applyRadarDefaults(config = {}) {
-  return {
-    monitor_enabled: false,
-    monitor_interval_min: 30,
-    monitor_keep_last: 500,
-    ...config
-  }
-}
-
-function mergeRadarContents(existing, incoming, keepLast) {
-  const combined = [...incoming, ...existing]
-  const seen = new Set()
-  const merged = []
-  const limit = Math.max(10, keepLast || 100)
-  for (const item of combined) {
-    const key = `${item?.url || ''}|${item?.title || ''}|${item?.source || ''}`
-    if (seen.has(key)) continue
-    seen.add(key)
-    merged.push(item)
-    if (merged.length >= limit) break
-  }
-  return merged
-}
-
-function scheduleRadar() {
-  if (radarTimer) {
-    clearInterval(radarTimer)
-    radarTimer = null
-  }
-  if (!radarState.enabled) return
-  const intervalMs = Math.max(5, radarState.intervalMin || 30) * 60 * 1000
-  radarTimer = setInterval(() => runRadarOnce(), intervalMs)
-}
-
-async function runRadarOnce(configOverride = null) {
-  // Guard: reset stuck running state after 5 minutes
-  if (radarState.running && radarState.runStartedAt) {
-    const elapsed = Date.now() - radarState.runStartedAt
-    if (elapsed > 5 * 60 * 1000) {
-      console.warn('[Radar] Force-resetting stuck running state after', Math.round(elapsed / 1000), 's')
-      radarState.running = false
-    }
-  }
-  if (radarState.running) {
-    console.warn('[Radar] Already running, skipping')
-    return radarState
-  }
-  const fetchConfig = applyRadarDefaults(
-    configOverride || (configManager ? configManager.loadNodeConfig('fetch') : null) || {}
-  )
-
-  radarState.intervalMin = fetchConfig.monitor_interval_min || radarState.intervalMin
-  radarState.keepLast = fetchConfig.monitor_keep_last || radarState.keepLast
-  radarState.running = true
-  radarState.runStartedAt = Date.now()
-  broadcastRadarUpdate()
-
-  try {
-    console.log('[Radar] Running fetch with enabled_sources:', fetchConfig.enabled_sources || '(none, will auto-fill)')
-    const state = {
-      runtime_config: { fetch: fetchConfig },
-      logs: [],
-      errors: [],
-      fetch_contents: [],
-      manual_contents: [],
-      raw_contents: []
-    }
-    const result = await runPythonNode('fetch', state)
-    const incoming = Array.isArray(result?.fetch_contents) ? result.fetch_contents : []
-    // Log per-source counts
-    const sourceCounts = {}
-    for (const item of incoming) {
-      const src = item?.source || 'unknown'
-      sourceCounts[src] = (sourceCounts[src] || 0) + 1
-    }
-    console.log(`[Radar] Fetched ${incoming.length} items:`, sourceCounts)
-    if (result?.logs) {
-      for (const log of result.logs) console.log('[Radar:py]', log)
-    }
-    if (result?.errors?.length) {
-      console.warn('[Radar] Errors from fetch node:', result.errors)
-    }
-    // Count genuinely new items (not duplicates of what we already had)
-    const existingKeys = new Set((radarState.contents || []).map(item =>
-      `${item?.url || ''}|${item?.title || ''}|${item?.source || ''}`
-    ))
-    const newCount = incoming.filter(item => {
-      const key = `${item?.url || ''}|${item?.title || ''}|${item?.source || ''}`
-      return !existingKeys.has(key)
-    }).length
-    radarState.lastRunContents = incoming
-    radarState.contents = mergeRadarContents(radarState.contents || [], incoming, radarState.keepLast)
-    radarState.lastNewCount = newCount
-    radarState.lastFetchedCount = incoming.length
-    radarState.lastRunAt = new Date().toISOString()
-    radarState.lastError = null
-    console.log(`[Radar] New: ${radarState.lastNewCount}, Total fetched: ${incoming.length}, Total stored: ${radarState.contents.length}`)
-  } catch (error) {
-    console.error('[Radar] Fetch failed:', error.message)
-    console.error('[Radar] Stack:', error.stack)
-    radarState.lastError = error.message
-    radarState.lastNewCount = 0
-    radarState.lastFetchedCount = 0
-    radarState.lastRunContents = []
-  } finally {
-    radarState.running = false
-    saveRadarCache()
-    broadcastRadarUpdate()
-  }
-  return radarState
-}
-
-function startRadarService(configOverride = null, options = {}) {
-  const fetchConfig = applyRadarDefaults(
-    configOverride || (configManager ? configManager.loadNodeConfig('fetch') : null) || {}
-  )
-  const runImmediately = options.runImmediately !== false
-  radarState.enabled = true
-  radarState.intervalMin = fetchConfig.monitor_interval_min || 30
-  radarState.keepLast = fetchConfig.monitor_keep_last || 100
-  scheduleRadar()
-  saveRadarCache()
-  broadcastRadarUpdate()
-  if (runImmediately) {
-    runRadarOnce(fetchConfig)
-  }
-}
-
-function stopRadarService() {
-  if (radarTimer) {
-    clearInterval(radarTimer)
-    radarTimer = null
-  }
-  radarState.enabled = false
-  radarState.running = false
-  saveRadarCache()
-  broadcastRadarUpdate()
-}
+const radar = createRadarService(sharedCtx)
+const workflowRunner = createWorkflowRunner(sharedCtx)
+const fileService = createFileService({
+  projectRoot: PROJECT_ROOT,
+  getCurrentWorkflow: () => currentWorkflow
+})
 
 // IPC handlers
 ipcMain.handle('workflow:list', async () => {
@@ -611,7 +399,7 @@ ipcMain.handle('workflow:create', async (event, config) => {
   broadcastWorkflowUpdate()
 
   if (shouldAutoRun) {
-    setImmediate(() => runWorkflow(workflowId))
+    setImmediate(() => workflowRunner.run(workflowId))
   }
 
   return { workflowId, episodeId }
@@ -788,7 +576,7 @@ ipcMain.handle('workflow:approve', async (event, workflowId, nodeName, approved,
   currentWorkflow.approvals[nodeName] = approved ? 'approved' : 'rejected'
   
   if (approved) {
-    workflow.run(workflowId, nodeName)
+    setImmediate(() => workflowRunner.run(workflowId, nodeName))
   }
   
   return { status: 'ok' }
@@ -821,77 +609,24 @@ ipcMain.handle('workflow:runNodes', async (event, workflowId, nodeNames) => {
   currentWorkflow.status = 'running'
   currentWorkflow.currentNode = null
   broadcastWorkflowUpdate()
-  await runWorkflow(workflowId, null, requested)
+  await workflowRunner.run(workflowId, null, requested)
   return currentWorkflow
 })
 
 ipcMain.handle('recording:save', async (event, payload) => {
-  const episodeId = sanitizePathPart(payload?.episodeId || currentWorkflow?.state?.episode_id)
-  const segmentId = sanitizePathPart(payload?.segmentId || `segment_${Date.now()}`)
-  const mimeType = String(payload?.mimeType || 'audio/webm')
-  const extension = mimeType.includes('wav') ? 'wav' : mimeType.includes('mpeg') || mimeType.includes('mp3') ? 'mp3' : 'webm'
-  const rawData = payload?.data
-
-  if (!rawData) {
-    throw new Error('Missing recording data')
-  }
-
-  const buffer = Buffer.from(rawData instanceof ArrayBuffer ? new Uint8Array(rawData) : rawData)
-  if (buffer.length === 0) {
-    throw new Error('Recording data is empty')
-  }
-
-  const outDir = path.join(__dirname, '..', 'out', 'recordings', episodeId)
-  fs.mkdirSync(outDir, { recursive: true })
-  const filePath = path.join(outDir, `${segmentId}_${Date.now()}.${extension}`)
-  fs.writeFileSync(filePath, buffer)
-
-  return {
-    success: true,
-    path: filePath,
-    size: buffer.length,
-    mimeType,
-    durationSeconds: Number(payload?.durationSeconds || 0)
-  }
+  return fileService.saveRecording(payload)
 })
 
 ipcMain.handle('file:openPath', async (event, targetPath) => {
-  if (!targetPath || !fs.existsSync(targetPath)) {
-    return { success: false, error: 'Path does not exist' }
-  }
-  const error = await shell.openPath(targetPath)
-  return error ? { success: false, error } : { success: true }
+  return fileService.openPath(targetPath)
 })
 
 ipcMain.handle('file:showItemInFolder', async (event, targetPath) => {
-  if (!targetPath || !fs.existsSync(targetPath)) {
-    return { success: false, error: 'Path does not exist' }
-  }
-  shell.showItemInFolder(targetPath)
-  return { success: true }
+  return fileService.showItemInFolder(targetPath)
 })
 
 ipcMain.handle('file:readImageAsDataUrl', async (event, targetPath) => {
-  const filePath = resolveProjectPath(targetPath)
-  if (!filePath || !fs.existsSync(filePath)) {
-    return { success: false, error: 'Path does not exist' }
-  }
-  const stat = fs.statSync(filePath)
-  if (!stat.isFile()) {
-    return { success: false, error: 'Path is not a file' }
-  }
-  if (stat.size > 10 * 1024 * 1024) {
-    return { success: false, error: 'Image is larger than 10MB' }
-  }
-  const mimeType = imageMimeType(filePath)
-  const data = fs.readFileSync(filePath).toString('base64')
-  return {
-    success: true,
-    path: filePath,
-    size: stat.size,
-    mimeType,
-    dataUrl: `data:${mimeType};base64,${data}`
-  }
+  return fileService.readImageAsDataUrl(targetPath)
 })
 
 ipcMain.handle('config:save', async (event, nodeName, config) => {
@@ -930,39 +665,30 @@ ipcMain.handle('config:resetAll', async (event) => {
 })
 
 ipcMain.handle('radar:getState', async () => {
-  return radarState
+  return radar.getState()
 })
 
 ipcMain.handle('radar:start', async (event, config) => {
-  startRadarService(config)
-  return radarState
+  radar.start(config)
+  return radar.getState()
 })
 
 ipcMain.handle('radar:stop', async () => {
-  stopRadarService()
-  return radarState
+  radar.stop()
+  return radar.getState()
 })
 
 ipcMain.handle('radar:runOnce', async (event, config) => {
-  await runRadarOnce(config)
-  return radarState
+  await radar.runOnce(config)
+  return radar.getState()
 })
 
 ipcMain.handle('radar:clearContents', async () => {
-  radarState.contents = []
-  radarState.lastRunContents = []
-  radarState.lastNewCount = 0
-  radarState.lastFetchedCount = 0
-  saveRadarCache()
-  broadcastRadarUpdate()
-  return radarState
+  return radar.clearContents()
 })
 
 ipcMain.handle('radar:updateContents', async (event, contents) => {
-  radarState.contents = contents || []
-  saveRadarCache()
-  broadcastRadarUpdate()
-  return radarState
+  return radar.updateContents(contents)
 })
 
 ipcMain.handle('produce:generate', async (event, payload = {}) => {
@@ -1127,193 +853,17 @@ ipcMain.handle('fetch:getSources', async (event) => {
   })
 })
 
-async function runWorkflow(workflowId, resumeFrom = null, onlyNodes = null) {
-  const workflowStartTime = Date.now()
-  const episodeId = currentWorkflow?.state?.episode_id || workflowId
-
-  // 6-stage creator workflow: 发现 → 整理 → 构思 → 写作 → 制作 → 发布
-  // Each stage groups internal sub-nodes
-  const defaultNodes = [
-    'fetch', 'manual', 'merge',           // 发现 (discover)
-    'preprocess',                          // 整理 (organize)
-    'research', 'topic_selection',         // 构思 (ideate) — creation studio
-    'script',                              // 写作 (write)
-    'tts', 'audio_postprocess', 'assets',  // 制作 (produce)
-    'review',                              // 发布 (publish) — pre-publish check
-    'publish'                              // 发布 (publish) — store + distribute
-  ]
-
-  const nodes = Array.isArray(onlyNodes) && onlyNodes.length > 0 ? onlyNodes : defaultNodes
-  let startIndex = resumeFrom ? nodes.indexOf(resumeFrom) : 0
-  if (startIndex < 0) startIndex = 0
-
-  for (let i = startIndex; i < nodes.length; i++) {
-    const nodeName = nodes[i]
-    const stageLabel = NODE_STAGE_LABELS[nodeName] || nodeName
-    
-    console.log(`[Workflow] Starting node: ${nodeName} (${i+1}/${nodes.length})`)
-    
-    currentWorkflow.currentNode = nodeName
-    currentWorkflow.nodeExecutions[nodeName] = {
-      status: 'running',
-      startedAt: new Date().toISOString()
-    }
-
-    broadcastWorkflowUpdate()
-
-    try {
-      const nodeConfig = configManager ? configManager.loadNodeConfig(nodeName) : null
-      
-      if (nodeConfig) {
-        currentWorkflow.state.runtime_config = currentWorkflow.state.runtime_config || {}
-        currentWorkflow.state.runtime_config[nodeName] = nodeConfig
-      }
-      
-      // Preload script config for nodes that need LLM access (research, topic_selection)
-      if ((nodeName === 'research' || nodeName === 'topic_selection') && configManager) {
-        currentWorkflow.state.runtime_config = currentWorkflow.state.runtime_config || {}
-        if (!currentWorkflow.state.runtime_config.script) {
-          const scriptConfig = configManager.loadNodeConfig('script')
-          if (scriptConfig) {
-            currentWorkflow.state.runtime_config.script = scriptConfig
-            console.log(`[${nodeName}] Preloaded script config for LLM access (api_key: ${scriptConfig.api_key ? 'SET' : 'NOT SET'})`)
-          } else {
-            console.log(`[${nodeName}] ⚠ Failed to load script config, LLM analysis will be skipped`)
-          }
-        } else {
-          console.log(`[${nodeName}] Script config already loaded (api_key: ${currentWorkflow.state.runtime_config.script.api_key ? 'SET' : 'NOT SET'})`)
-        }
-      }
-      
-      const startTime = Date.now()
-      const result = await runPythonNode(nodeName, currentWorkflow.state)
-      const duration = (Date.now() - startTime) / 1000
-      console.log(`[${nodeName}] Completed in ${duration.toFixed(2)}s`)
-      
-      // Print Python logs to console
-      if (result.logs && result.logs.length > 0) {
-        console.log(`[${nodeName}:py] === Python logs (${result.logs.length} entries) ===`)
-        for (const log of result.logs) {
-          console.log(`[${nodeName}:py] ${log}`)
-        }
-      }
-
-      if (!result || typeof result !== 'object') {
-        throw new Error(`Invalid result from ${nodeName}: expected object, got ${typeof result}`)
-      }
-
-      validateNodeOutput(nodeName, result)
-      currentWorkflow.state = result
-      
-      currentWorkflow.nodeExecutions[nodeName] = {
-        status: 'completed',
-        startedAt: currentWorkflow.nodeExecutions[nodeName].startedAt,
-        completedAt: new Date().toISOString(),
-        duration
-      }
-
-      if (result.errors && result.errors.length > 0) {
-        console.warn(`Node ${nodeName} completed with errors:`, result.errors)
-      }
-
-      broadcastWorkflowUpdate()
-
-      if (nodeName === 'script' && !currentWorkflow.approvals?.script) {
-        const scriptConfig = configManager ? configManager.loadNodeConfig('script') : null
-        const isAutoExecute = currentWorkflow.state?.runtime_config?.auto_execute ?? false
-        const requireApproval = isAutoExecute ? false : (scriptConfig?.require_approval ?? false)
-        console.log('[Approval Check] require_approval:', requireApproval, '| auto_execute:', isAutoExecute)
-
-        if (requireApproval) {
-          console.log('[Approval] Pausing workflow for approval')
-          currentWorkflow.status = 'waiting_approval'
-          currentWorkflow.nodeExecutions[nodeName].status = 'waiting_approval'
-          
-          if (mainWindow) {
-            broadcastWorkflowUpdate()
-            // 发送审批请求事件
-            console.log('[Approval] Sending needApproval event to frontend')
-            mainWindow.webContents.send('workflow:needApproval', {
-              workflowId,
-              nodeName,
-              data: currentWorkflow.state
-            })
-          }
-          return
-        } else {
-          console.log('[Approval] Auto-approval mode, continuing workflow')
-        }
-      }
-    } catch (error) {
-      console.error(`Node ${nodeName} failed:`, error)
-      
-      currentWorkflow.nodeExecutions[nodeName] = {
-        status: 'failed',
-        startedAt: currentWorkflow.nodeExecutions[nodeName].startedAt,
-        completedAt: new Date().toISOString(),
-        error: error.message,
-        errorStack: error.stack
-      }
-      currentWorkflow.status = 'failed'
-      currentWorkflow.state.errors = currentWorkflow.state.errors || []
-      currentWorkflow.state.errors.push({
-        node: nodeName,
-        message: error.message,
-        timestamp: new Date().toISOString()
-      })
-      // Inject orchestration failure log into state.logs (visible in Execution Logs panel)
-      currentWorkflow.state.logs = currentWorkflow.state.logs || []
-      currentWorkflow.state.logs.push(`[Orchestrator] ✗ 节点失败: ${stageLabel}`)
-      currentWorkflow.state.logs.push(`[Orchestrator]   错误: ${error.message}`)
-      currentWorkflow.state.logs.push(`[Orchestrator]   时间: ${new Date().toISOString()}`)
-
-      if (mainWindow) {
-        broadcastWorkflowUpdate()
-      }
-      return
-    }
-  }
-
-  const workflowDuration = ((Date.now() - workflowStartTime) / 1000).toFixed(1)
-  const completedNodes = Object.entries(currentWorkflow.nodeExecutions)
-    .filter(([, v]) => v.status === 'completed').length
-  const failedNodes = Object.entries(currentWorkflow.nodeExecutions)
-    .filter(([, v]) => v.status === 'failed').length
-  currentWorkflow.state.logs = currentWorkflow.state.logs || []
-  currentWorkflow.state.logs.push(`[Workflow] ========================================`)
-  currentWorkflow.state.logs.push(`[Workflow] 工作流完成`)
-  currentWorkflow.state.logs.push(`[Workflow] episode_id: ${episodeId}`)
-  currentWorkflow.state.logs.push(`[Workflow] 完成时间: ${new Date().toISOString()}`)
-  currentWorkflow.state.logs.push(`[Workflow] 总耗时: ${workflowDuration}s`)
-  currentWorkflow.state.logs.push(`[Workflow] 节点统计: 完成=${completedNodes}, 失败=${failedNodes}, 共=${nodes.length}`)
-  currentWorkflow.state.logs.push(`[Workflow] ========================================`)
-  currentWorkflow.status = 'completed'
-  currentWorkflow.currentNode = null
-  broadcastWorkflowUpdate()
-}
-
 app.whenReady().then(() => {
   configManager = new ConfigManager()
   currentWorkflow = null
   createWindow()
 
-  radarState = loadRadarCache()
-  const fetchConfig = applyRadarDefaults(configManager.loadNodeConfig('fetch') || {})
-  radarState.intervalMin = fetchConfig.monitor_interval_min || radarState.intervalMin
-  radarState.keepLast = fetchConfig.monitor_keep_last || radarState.keepLast
-  
+  radar.loadCache()
+  const fetchConfig = radar.applyDefaults(configManager.loadNodeConfig('fetch') || {})
   if (fetchConfig.monitor_enabled) {
-    startRadarService(fetchConfig, { runImmediately: false })
+    radar.start(fetchConfig, { runImmediately: false })
   } else {
-    radarState.enabled = false
-    saveRadarCache()
-    broadcastRadarUpdate()
-  }
-
-  if (fetchConfig.monitor_enabled) {
-    radar.start(fetchConfig)
-  } else {
-    radar.broadcast()
+    radar.stop()
   }
 })
 

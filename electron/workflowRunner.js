@@ -61,16 +61,17 @@ function create(ctx) {
     if (win && wf) win.webContents.send('workflow:update', wf)
   }
 
-  async function run(workflowId, resumeFrom = null) {
+  async function run(workflowId, resumeFrom = null, onlyNodes = null) {
     const currentWorkflow = ctx.getCurrentWorkflow()
     if (!currentWorkflow) return
 
+    const nodes = Array.isArray(onlyNodes) && onlyNodes.length > 0 ? onlyNodes : PIPELINE_NODES
     let startIndex = 0
     if (resumeFrom === 'auto') {
       // Auto-detect resume point from pipeline manifest
       const manifest = currentWorkflow.state?._manifest?.nodes || {}
-      for (let i = 0; i < PIPELINE_NODES.length; i++) {
-        const entry = manifest[PIPELINE_NODES[i]]
+      for (let i = 0; i < nodes.length; i++) {
+        const entry = manifest[nodes[i]]
         if (entry && entry.status === 'ok') {
           startIndex = i + 1
         } else {
@@ -78,11 +79,12 @@ function create(ctx) {
         }
       }
       if (startIndex > 0) {
-        console.log(`[Workflow] Auto-resume: skipping ${startIndex} completed nodes, starting from ${PIPELINE_NODES[startIndex] || 'END'}`)
+        console.log(`[Workflow] Auto-resume: skipping ${startIndex} completed nodes, starting from ${nodes[startIndex] || 'END'}`)
       }
     } else if (resumeFrom) {
-      startIndex = PIPELINE_NODES.indexOf(resumeFrom)
+      startIndex = nodes.indexOf(resumeFrom)
     }
+    if (startIndex < 0) startIndex = 0
     const workflowStartTime = Date.now()
     const episodeId = currentWorkflow.state.episode_id || 'unknown'
 
@@ -94,7 +96,7 @@ function create(ctx) {
       currentWorkflow.state.logs.push(`[Workflow] 工作流启动`)
       currentWorkflow.state.logs.push(`[Workflow] episode_id: ${episodeId}`)
       currentWorkflow.state.logs.push(`[Workflow] 启动时间: ${new Date().toISOString()}`)
-      currentWorkflow.state.logs.push(`[Workflow] 共 ${PIPELINE_NODES.length} 个节点待执行`)
+      currentWorkflow.state.logs.push(`[Workflow] 共 ${nodes.length} 个节点待执行`)
       currentWorkflow.state.logs.push(`[Workflow] auto_execute=${autoExecute}`)
       if (debugMode) {
         currentWorkflow.state.logs.push(`[Workflow] ⚡ DEBUG MODE ACTIVE: LLM调用将使用精简Prompt/低 Token限制`)
@@ -107,11 +109,11 @@ function create(ctx) {
 
     const configManager = ctx.getConfigManager()
 
-    for (let i = startIndex; i < PIPELINE_NODES.length; i++) {
-      const nodeName = PIPELINE_NODES[i]
+    for (let i = startIndex; i < nodes.length; i++) {
+      const nodeName = nodes[i]
       const stageLabel = NODE_STAGE_LABELS[nodeName] || nodeName
 
-      console.log(`[Workflow] Starting node: ${nodeName} (${i+1}/${PIPELINE_NODES.length})`)
+      console.log(`[Workflow] Starting node: ${nodeName} (${i+1}/${nodes.length})`)
 
       currentWorkflow.currentNode = nodeName
       currentWorkflow.nodeExecutions[nodeName] = {
@@ -121,7 +123,7 @@ function create(ctx) {
 
       currentWorkflow.state.logs = currentWorkflow.state.logs || []
       currentWorkflow.state.logs.push(`[Orchestrator] ----------------------------------------`)
-      currentWorkflow.state.logs.push(`[Orchestrator] ▶ 开始节点 [${i+1}/${PIPELINE_NODES.length}]: ${stageLabel}`)
+      currentWorkflow.state.logs.push(`[Orchestrator] ▶ 开始节点 [${i+1}/${nodes.length}]: ${stageLabel}`)
       currentWorkflow.state.logs.push(`[Orchestrator] 节点名: ${nodeName} | 时间: ${new Date().toISOString()}`)
 
       broadcastUpdate()
@@ -291,9 +293,10 @@ function create(ctx) {
     currentWorkflow.state.logs.push(`[Workflow] episode_id: ${episodeId}`)
     currentWorkflow.state.logs.push(`[Workflow] 完成时间: ${new Date().toISOString()}`)
     currentWorkflow.state.logs.push(`[Workflow] 总耗时: ${workflowDuration}s`)
-    currentWorkflow.state.logs.push(`[Workflow] 节点统计: 完成=${completedNodes}, 失败=${failedNodes}, 共=${PIPELINE_NODES.length}`)
+    currentWorkflow.state.logs.push(`[Workflow] 节点统计: 完成=${completedNodes}, 失败=${failedNodes}, 共=${nodes.length}`)
     currentWorkflow.state.logs.push(`[Workflow] ========================================`)
     currentWorkflow.status = 'completed'
+    currentWorkflow.currentNode = null
     broadcastUpdate()
   }
 

@@ -1,3 +1,5 @@
+import { getErrorMessage } from '../../../utils/errors'
+
 class SerializedTaskQueue {
   private queue: Promise<void> = Promise.resolve()
 
@@ -19,11 +21,6 @@ class SerializedTaskQueue {
 
 const RATE_LIMIT_PATTERN = /HTTP\s*429|insufficient_quota|负载已饱和/i
 const TIMEOUT_PATTERN = /request timeout|timeout|超时/i
-
-function getErrorMessage(error: unknown): string {
-  if (!error || typeof error !== 'object') return ''
-  return String((error as { message?: unknown }).message || '').trim()
-}
 
 export function isRateLimitedError(error: unknown): boolean {
   return RATE_LIMIT_PATTERN.test(getErrorMessage(error))

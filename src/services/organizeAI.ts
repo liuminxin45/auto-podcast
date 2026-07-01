@@ -188,6 +188,10 @@ export class OrganizeAIService {
       })
     }
 
+    if (clusters.length === 0) {
+      return [this.createFallbackCluster(items)]
+    }
+
     if (Array.isArray(parsed.assignments)) {
       parsed.assignments.forEach((assignment: any, idx: number) => {
         const item = items[idx]
@@ -210,7 +214,26 @@ export class OrganizeAIService {
       })
     }
 
-    return clusters.filter(c => c.items.length > 0)
+    const populatedClusters = clusters.filter(c => c.items.length > 0)
+    return populatedClusters.length > 0 ? populatedClusters : [this.createFallbackCluster(items)]
+  }
+
+  private createFallbackCluster(items: ContentItem[]): ClusterInfo {
+    return {
+      id: 'cluster_0',
+      name: '待整理素材',
+      description: '未能从模型响应中提取聚类，已保留素材进入后续筛选',
+      items: items.map(item => ({
+        ...item,
+        _ai_organize: {
+          ...item._ai_organize,
+          cluster_id: 'cluster_0',
+          cluster_name: '待整理素材',
+          tags: item._ai_organize?.tags || [],
+        } as any,
+      })),
+      color: CLUSTER_COLORS[0].color,
+    }
   }
 
   private async step3_select(clusters: ClusterInfo[]): Promise<{ selected: ContentItem[]; rejected: ContentItem[] }> {

@@ -189,6 +189,9 @@ export default function WritingLayer({
 
   // Undo stack for suggestions
   const [undoStack, setUndoStack] = useState<Array<{ segmentId: string; previousContent: string }>>([])
+  const segmentContentSignature = useMemo(() => (
+    segments.map(segment => segment.content).join('|')
+  ), [segments])
 
   // Close tone selector on outside click
   useEffect(() => {
@@ -208,7 +211,7 @@ export default function WritingLayer({
       ...s,
       estimatedSeconds: s.content.length > 0 ? estimateReadingSeconds(s.content) : SEGMENT_TYPE_CONFIG[s.type].defaultSeconds,
     })))
-  }, [segments.map(s => s.content).join('|')])
+  }, [segmentContentSignature])
 
   // Auto-switch to selection scope when text is selected
   useEffect(() => {
@@ -259,12 +262,11 @@ export default function WritingLayer({
 
   useEffect(() => {
     if (!visible) return
-    const state = workflow?.state
-    const sourceStages = state?.stages?.length ? state.stages : []
-    const dialogue = state?.script?.dialogue || []
+    const sourceStages = workflow?.state?.stages?.length ? workflow.state.stages : []
+    const dialogue = workflow?.state?.script?.dialogue || []
 
-    if (state?.script?.title || episodeTitle) setTitle(state?.script?.title || episodeTitle)
-    if (state?.script?.description || episodeDesc) setDesc(state?.script?.description || episodeDesc)
+    if (workflow?.state?.script?.title || episodeTitle) setTitle(workflow?.state?.script?.title || episodeTitle)
+    if (workflow?.state?.script?.description || episodeDesc) setDesc(workflow?.state?.script?.description || episodeDesc)
 
     const source = sourceStages.length > 0
       ? sourceStages.map((stage: any, index: number) => ({
@@ -296,7 +298,16 @@ export default function WritingLayer({
       }))
       setActiveSegmentId(source[0].id)
     }
-  }, [visible, workflow?.state?.episode_id])
+  }, [
+    episodeDesc,
+    episodeTitle,
+    visible,
+    workflow?.state?.episode_id,
+    workflow?.state?.script?.description,
+    workflow?.state?.script?.dialogue,
+    workflow?.state?.script?.title,
+    workflow?.state?.stages,
+  ])
 
   // ── Segment Actions ───────────────────────────────────────
 

@@ -25,17 +25,10 @@ import { PRIORITY_CONFIG, prioritySortKey, type Priority } from '../constants/pr
 import { CATEGORY_RULES } from '../constants/categories'
 import { detectCategory, getQualitySignals } from '../utils'
 import { OrganizeAIService, type OrganizeConfig, type OrganizeResult, type OrganizeProgress } from '../services/organizeAI'
+import type { CandidateItem, OrganizeItem, ViewMode } from '../types/organize'
 
-type ViewMode = 'quick' | 'detailed'
-
-interface OrganizeItem extends ContentItem {
-  _source_channel?: 'auto' | 'manual'
-  _id: number
-}
-
-interface CandidateItem extends OrganizeItem {
-  _priority: Priority
-  _order: number
+function getSourceChannel(item: ContentItem): unknown {
+  return '_source_channel' in item ? item._source_channel : undefined
 }
 
 interface Props {
@@ -441,7 +434,7 @@ export default function OrganizePanel({
   onStateChange,
 }: Props) {
   const mapToOrganizeItem = useCallback((item: ContentItem, index: number): OrganizeItem => {
-    const inferredSource = (item as any)._source_channel === 'manual'
+    const inferredSource = getSourceChannel(item) === 'manual'
       || item.source === 'manual_input'
       || item.type === 'manual'
       ? 'manual'
@@ -709,7 +702,7 @@ export default function OrganizePanel({
       ignoredIds: Array.from(ignoredIds),
       mode,
     })
-  }, [visible, sortedCandidates, ignoredIds, mode])
+  }, [visible, sortedCandidates, ignoredIds, mode, onStateChange])
 
   // Stats
   const primaryCount = candidates.filter(c => c._priority === 'primary').length

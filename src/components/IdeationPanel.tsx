@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Button, Alert, Spin, Progress, Tag, Tooltip, message } from 'antd'
 import {
   ThunderboltOutlined,
@@ -56,9 +56,17 @@ export default function IdeationPanel({
     }
   }, [contentType, materials.length, config.news_max_count])
 
-  const handleGenerate = async () => {
+  const handleGenerate = useCallback(async () => {
     await generateLLMVersion({ content_type: contentType, auto_detect_type: false })
-  }
+  }, [contentType, generateLLMVersion])
+
+  const handleApply = useCallback(() => {
+    if (!workingDraft) return
+
+    onApply(workingDraft.blocks, workingDraft.topic, (workingDraft.content_type || contentType) as ContentCreationType)
+    message.success('已应用LLM构思结果')
+    onClose()
+  }, [contentType, onApply, onClose, workingDraft])
 
   // Auto-trigger generation in auto-execute mode
   const [autoGenerateTriggered, setAutoGenerateTriggered] = useState(false)
@@ -71,8 +79,8 @@ export default function IdeationPanel({
 
     console.log('[IdeationPanel] Auto-execute mode: triggering AI ideation generation')
     setAutoGenerateTriggered(true)
-    handleGenerate()
-  }, [visible, isAutoExecute, autoGenerateTriggered, llmAvailable, materials.length])
+    void handleGenerate()
+  }, [visible, isAutoExecute, autoGenerateTriggered, llmAvailable, materials.length, handleGenerate])
 
   // Auto-apply result when generation completes in auto-execute mode
   useEffect(() => {
@@ -82,15 +90,7 @@ export default function IdeationPanel({
     setTimeout(() => {
       handleApply()
     }, 500)
-  }, [isAutoExecute, workingDraft, status])
-
-  const handleApply = () => {
-    if (!workingDraft) return
-    
-    onApply(workingDraft.blocks, workingDraft.topic, (workingDraft.content_type || contentType) as ContentCreationType)
-    message.success('已应用LLM构思结果')
-    onClose()
-  }
+  }, [handleApply, isAutoExecute, status, workingDraft])
 
   if (!visible) return null
 

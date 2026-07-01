@@ -152,6 +152,7 @@ const STOP_WORDS = new Set([
   'both', 'few', 'more', 'most', 'other', 'some', 'such', 'no', 'nor',
   'not', 'only', 'own', 'same', 'so', 'than', 'too', 'very', 'just',
   'and', 'but', 'or', 'if', 'this', 'that', 'it', 'its', 'new',
+  'content', 'topic', 'about', 'keywords', 'unique',
 ])
 
 function extractKeywords(text: string): string[] {
@@ -185,6 +186,20 @@ function jaccardSimilarity(a: Set<string>, b: Set<string>): number {
   return union === 0 ? 0 : intersection / union
 }
 
+function keywordSimilarity(a: Set<string>, b: Set<string>): number {
+  const jaccard = jaccardSimilarity(a, b)
+  const minSize = Math.min(a.size, b.size)
+  if (minSize === 0) return jaccard
+
+  let intersection = 0
+  for (const x of a) {
+    if (b.has(x)) intersection++
+  }
+
+  const overlap = intersection / minSize
+  return Math.max(jaccard, overlap * 0.6)
+}
+
 function getItemText(item: ContentItem): string {
   return `${item.title || ''} ${item.content || ''}`
 }
@@ -214,7 +229,7 @@ export function clusterByTopic(
           .slice(0, 20)
           .map(([k]) => k)
       )
-      const score = jaccardSimilarity(itemKw, clusterKw)
+      const score = keywordSimilarity(itemKw, clusterKw)
       if (score > bestScore && score >= SIMILARITY_THRESHOLD) {
         bestScore = score
         bestCluster = ci
@@ -346,7 +361,7 @@ export function analyzePriorityHints(
   for (const s of scores) {
     const ratio = s.score / maxScore
 
-    if (ratio >= 0.7 && s.score >= 30) {
+    if (ratio >= 0.7 && s.score >= 25) {
       result.set(s.id, {
         priorityHint: 'mainline',
         priorityReason: s.reasons[0] || '综合评分较高',
@@ -420,13 +435,13 @@ export function detectDuplicatesAndNoise(
     const content = item.content || ''
     const totalLen = title.length + content.length
 
-    if (totalLen < 20) {
-      noise.set(item._id, { reason: '信息密度较低' })
+    if (!content && title.length < 30) {
+      noise.set(item._id, { reason: '缺少正文内容' })
       continue
     }
 
-    if (!content && title.length < 30) {
-      noise.set(item._id, { reason: '缺少正文内容' })
+    if (totalLen < 20) {
+      noise.set(item._id, { reason: '信息密度较低' })
       continue
     }
 

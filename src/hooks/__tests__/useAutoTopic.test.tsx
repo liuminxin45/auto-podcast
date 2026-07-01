@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { renderHook, waitFor } from '@testing-library/react'
+import { act, renderHook, waitFor } from '@testing-library/react'
 import { useAutoTopic } from '../useAutoTopic'
 import { llmService } from '../../services/llmService'
 import type { ContentItem } from '../../types/workflow'
@@ -78,7 +78,9 @@ describe('useAutoTopic', () => {
       max_items: 10,
     }
 
-    result.current.execute(config)
+    await act(async () => {
+      await result.current.execute(config)
+    })
 
     await waitFor(() => {
       expect(result.current.state.stage).toBe('done')
@@ -97,7 +99,9 @@ describe('useAutoTopic', () => {
       max_items: 10,
     }
 
-    result.current.execute(config)
+    await act(async () => {
+      await result.current.execute(config)
+    })
 
     await waitFor(() => {
       expect(result.current.state.error).toBeDefined()
@@ -116,7 +120,9 @@ describe('useAutoTopic', () => {
       max_items: 10,
     }
 
-    result.current.execute(config)
+    await act(async () => {
+      await result.current.execute(config)
+    })
 
     await waitFor(() => {
       expect(result.current.isProcessing).toBe(false)
@@ -135,7 +141,9 @@ describe('useAutoTopic', () => {
       max_items: 10,
     }
 
-    result.current.execute(config)
+    await act(async () => {
+      await result.current.execute(config)
+    })
 
     await waitFor(() => {
       expect(mockOnRunFetch).toHaveBeenCalled()
@@ -154,7 +162,9 @@ describe('useAutoTopic', () => {
       max_items: 10,
     }
 
-    result.current.execute(config)
+    await act(async () => {
+      await result.current.execute(config)
+    })
 
     await waitFor(() => {
       expect(result.current.state.error).toBeDefined()
@@ -173,7 +183,9 @@ describe('useAutoTopic', () => {
       max_items: 10,
     }
 
-    result.current.execute(config)
+    await act(async () => {
+      await result.current.execute(config)
+    })
 
     await waitFor(() => {
       expect(result.current.state.logs.length).toBeGreaterThan(0)
@@ -202,7 +214,9 @@ describe('useAutoTopic', () => {
       max_items: 10,
     }
 
-    result.current.execute(config)
+    await act(async () => {
+      await result.current.execute(config)
+    })
 
     await waitFor(() => {
       expect(result.current.state.error).toBeDefined()

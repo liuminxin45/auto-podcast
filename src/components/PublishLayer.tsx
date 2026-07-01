@@ -254,7 +254,9 @@ export default function PublishLayer({
   const rssPath = workflow?.state?.rss_path || ''
   const publishDir = workflow?.state?.storage_info?.base_dir || ''
   const reviewSummary = workflow?.state?.review_summary || {}
-  const reviewChecks = Array.isArray(reviewSummary.checks) ? reviewSummary.checks : []
+  const reviewChecks = useMemo(() => (
+    Array.isArray(reviewSummary.checks) ? reviewSummary.checks : []
+  ), [reviewSummary.checks])
   const scriptTitle = workflow?.state?.script?.title || episodeTitle || '未命名节目'
   const scriptDesc = workflow?.state?.script?.description || episodeDesc || ''
   const stageCount = Array.isArray(workflow?.state?.stages) ? workflow.state.stages.length : 0

@@ -18,6 +18,7 @@
     "build:electron": "npm run build && electron-builder",
     "start": "npm run dev",
     "lint": "eslint .",
+    "lint:py": "node scripts/python313.js -m ruff check .",
     "preview": "vite preview",
     "test": "vitest",
     "test:ui": "vitest --ui",

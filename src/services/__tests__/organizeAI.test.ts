@@ -10,6 +10,15 @@ vi.mock('../llmService', () => ({
   },
 }))
 
+async function withMutedConsoleError<T>(task: () => Promise<T>): Promise<T> {
+  const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+  try {
+    return await task()
+  } finally {
+    spy.mockRestore()
+  }
+}
+
 describe('OrganizeAIService', () => {
   const mockConfig: OrganizeConfig = {
     apiBase: 'https://api.test.com',
@@ -275,7 +284,7 @@ describe('OrganizeAIService', () => {
       })
 
       const service = new OrganizeAIService(mockConfig)
-      const result = await service.runFullOrganize([mockItems[0]])
+      const result = await withMutedConsoleError(() => service.runFullOrganize([mockItems[0]]))
 
       expect(result.processed.length).toBeGreaterThanOrEqual(0)
     })

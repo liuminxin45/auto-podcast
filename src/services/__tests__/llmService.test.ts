@@ -3,9 +3,19 @@ import { llmService } from '../llmService'
 import { LLMError } from '../../types/llm'
 import { LLM_DEFAULTS } from '../../constants/llm'
 
+async function withMutedConsoleError<T>(task: () => Promise<T>): Promise<T> {
+  const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+  try {
+    return await task()
+  } finally {
+    spy.mockRestore()
+  }
+}
+
 describe('LLMService', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.spyOn(console, 'info').mockImplementation(() => undefined)
     llmService.clearCache()
     global.fetch = vi.fn()
     ;(global.window as any) = { electronAPI: null }
@@ -69,14 +79,16 @@ describe('LLMService', () => {
     it('should require Electron IPC when gateway is unavailable', async () => {
       ;(global.window as any).electronAPI = null
 
-      await expect(
-        llmService.call({
-          apiBase: 'https://api.openai.com/v1',
-          apiKey: 'test-key',
-          model: 'gpt-4',
-          messages: [{ role: 'user', content: 'Hi' }],
-        })
-      ).rejects.toThrow('LLM Gateway requires Electron IPC')
+      await withMutedConsoleError(async () => {
+        await expect(
+          llmService.call({
+            apiBase: 'https://api.openai.com/v1',
+            apiKey: 'test-key',
+            model: 'gpt-4',
+            messages: [{ role: 'user', content: 'Hi' }],
+          })
+        ).rejects.toThrow('LLM Gateway requires Electron IPC')
+      })
       expect(global.fetch).not.toHaveBeenCalled()
     })
 
@@ -85,14 +97,16 @@ describe('LLMService', () => {
         llmCall: vi.fn().mockRejectedValue(new Error('NETWORK: Network error')),
       }
 
-      await expect(
-        llmService.call({
-          apiBase: 'https://api.openai.com/v1',
-          apiKey: 'test-key',
-          model: 'gpt-4',
-          messages: [{ role: 'user', content: 'Hi' }],
-        })
-      ).rejects.toThrow(LLMError)
+      await withMutedConsoleError(async () => {
+        await expect(
+          llmService.call({
+            apiBase: 'https://api.openai.com/v1',
+            apiKey: 'test-key',
+            model: 'gpt-4',
+            messages: [{ role: 'user', content: 'Hi' }],
+          })
+        ).rejects.toThrow(LLMError)
+      })
     })
 
     it('should handle timeout errors', async () => {
@@ -101,15 +115,17 @@ describe('LLMService', () => {
         llmCall: vi.fn(() => new Promise(() => {})),
       }
 
-      const assertion = expect(
-        llmService.call({
-          apiBase: 'https://api.openai.com/v1',
-          apiKey: 'test-key',
-          model: 'gpt-4',
-          messages: [{ role: 'user', content: 'Hi' }],
-          timeout: 50,
-        })
-      ).rejects.toThrow('Electron IPC timeout')
+      const assertion = withMutedConsoleError(async () => {
+        await expect(
+          llmService.call({
+            apiBase: 'https://api.openai.com/v1',
+            apiKey: 'test-key',
+            model: 'gpt-4',
+            messages: [{ role: 'user', content: 'Hi' }],
+            timeout: 50,
+          })
+        ).rejects.toThrow('Electron IPC timeout')
+      })
       await vi.advanceTimersByTimeAsync(10000)
       await assertion
       vi.useRealTimers()
@@ -204,7 +220,7 @@ describe('LLMService', () => {
         return Promise.resolve(batch)
       })
 
-      const result = await llmService.batchAnalyze(items, batchFn)
+      const result = await withMutedConsoleError(() => llmService.batchAnalyze(items, batchFn))
 
       expect(result).toHaveLength(15)
       expect(batchFn).toHaveBeenCalledTimes(2)

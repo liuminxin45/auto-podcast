@@ -886,7 +886,7 @@ export default function SoundStudio({
       content: String(stage.text || ''),
       estimatedSeconds: Number(stage.estimated_duration || stage.duration || Math.max(10, Math.round(String(stage.text || '').length / 4))),
     }))
-  }, [workflow?.state?.episode_id, workflow?.state?.stages])
+  }, [workflow?.state?.stages])
 
   // Recording mode state
   const [recordings, setRecordings] = useState<Record<string, RecordingSegment>>({})

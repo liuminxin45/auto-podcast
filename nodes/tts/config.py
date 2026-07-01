@@ -6,8 +6,8 @@ from typing import Any
 class TTSConfig:
     engine: str = "edge-tts"
     api_key: str = ""
-    api_base: str = "https://api.openai.com/v1"
-    model: str = "tts-1"
+    api_base: str = ""
+    model: str = ""
     output_format: str = "mp3"
     timeout_seconds: int = 120
     voice_mapping: dict[str, str] = field(
@@ -32,8 +32,8 @@ class TTSConfig:
         defaults = {
             "engine": "edge-tts",
             "api_key": "",
-            "api_base": "https://api.openai.com/v1",
-            "model": "tts-1",
+            "api_base": "",
+            "model": "",
             "output_format": "mp3",
             "timeout_seconds": 120,
             "default_voice": "zh-CN-XiaoxiaoNeural",

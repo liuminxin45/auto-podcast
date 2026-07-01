@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { Layout, Button, Space, Typography, ConfigProvider, theme, Modal, Tooltip } from 'antd'
 import { AudioOutlined, CloseOutlined, FolderOpenOutlined, SaveOutlined, SettingOutlined } from './icons/antdCompat'
 import ApprovalModal from './components/ApprovalModal'
@@ -12,7 +12,8 @@ import SettingsPage from './components/SettingsPage'
 import WorkflowSidebar from './components/WorkflowSidebar'
 import EpisodeManager from './components/EpisodeManager'
 import { STAGES } from './components/workflowStages'
-import type { Workflow, WorkflowCreateResult, WorkflowSummary, ContentItem } from './types/workflow'
+import type { Workflow, WorkflowSummary, ContentItem } from './types/workflow'
+import { getErrorMessage, isViewMode, toCandidateItems, toNumberArray, toStructureBlocks } from './utils'
 
 const { Header, Content } = Layout
 const { Title } = Typography
@@ -20,85 +21,6 @@ const { Title } = Typography
 type UiNotice = {
   type: 'success' | 'warning' | 'error' | 'info'
   text: string
-}
-
-declare global {
-  interface Window {
-    electronAPI: {
-      createWorkflow: (config: Record<string, any>) => Promise<WorkflowCreateResult>
-      getWorkflow: (id: string) => Promise<Workflow | null>
-      listWorkflows: () => Promise<WorkflowSummary[]>
-      openWorkflow: (id: string) => Promise<Workflow>
-      saveWorkflow: (id: string) => Promise<Workflow>
-      closeWorkflow: (id: string) => Promise<{ success: boolean }>
-      updateWorkflowMeta: (
-        id: string,
-        meta: { title: string; description: string; previewPath: string }
-      ) => Promise<Workflow>
-      duplicateWorkflow: (id: string) => Promise<Workflow>
-      deleteWorkflow: (id: string) => Promise<{ success: boolean }>
-      exportWorkflow: (id: string) => Promise<{ success: boolean; canceled?: boolean; path?: string }>
-      importWorkflow: () => Promise<{ success: boolean; canceled?: boolean; workflow?: Workflow; summary?: WorkflowSummary }>
-      approveNode: (id: string, node: string, approved: boolean, output?: any) => Promise<{ status: string }>
-      updateWorkflowState: (id: string, patch: Record<string, any>) => Promise<Workflow>
-      runWorkflowNodes: (id: string, nodeNames: string[]) => Promise<Workflow>
-      saveRecording: (payload: {
-        episodeId: string
-        segmentId: string
-        mimeType: string
-        durationSeconds: number
-        data: ArrayBuffer
-      }) => Promise<{ success: boolean; path: string; size: number; mimeType: string; durationSeconds: number }>
-      openPath: (targetPath: string) => Promise<{ success: boolean; error?: string }>
-      showItemInFolder: (targetPath: string) => Promise<{ success: boolean; error?: string }>
-      readImageAsDataUrl: (targetPath: string) => Promise<{
-        success: boolean
-        error?: string
-        path?: string
-        size?: number
-        mimeType?: string
-        dataUrl?: string
-      }>
-      onWorkflowUpdate: (callback: (data: Workflow | null) => void) => void
-      onNeedApproval: (callback: (data: any) => void) => void
-      onAppCloseRequest: (callback: () => void) => (() => void) | void
-      confirmAppClose: () => Promise<{ success: boolean }>
-      saveNodeConfig: (nodeName: string, config: Record<string, any>) => Promise<{ success: boolean; error?: string }>
-      loadNodeConfig: (nodeName: string) => Promise<Record<string, any> | null>
-      loadAllConfigs: () => Promise<Record<string, Record<string, any>>>
-      deleteNodeConfig: (nodeName: string) => Promise<{ success: boolean; error?: string }>
-      resetAllConfigs: () => Promise<{ success: boolean; error?: string }>
-      getFetchSources: () => Promise<Array<{ id: string; name: string; description: string }>>
-      radarGetState: () => Promise<{
-        enabled: boolean
-        intervalMin: number
-        keepLast: number
-        lastRunAt: string | null
-        lastError: string | null
-        running: boolean
-        lastRunContents?: ContentItem[]
-        contents: ContentItem[]
-      }>
-      radarStart: (config?: Record<string, any>) => Promise<any>
-      radarStop: () => Promise<any>
-      radarRunOnce: (config?: Record<string, any>) => Promise<any>
-      radarClearContents: () => Promise<any>
-      radarUpdateContents: (contents: ContentItem[]) => Promise<any>
-      onRadarUpdate: (callback: (data: {
-        enabled: boolean
-        intervalMin: number
-        keepLast: number
-        lastRunAt: string | null
-        lastError: string | null
-        running: boolean
-        lastRunContents?: ContentItem[]
-        contents: ContentItem[]
-      }) => void) => void
-      produceGenerate: (payload: Record<string, any>) => Promise<any>
-      onProduceProgress: (callback: (data: any) => void) => void
-      removeProduceProgressListeners: () => void
-    }
-  }
 }
 
 function App() {
@@ -126,12 +48,22 @@ function App() {
   } | null>(null)
   const hasElectronBackend = Boolean(window.electronAPI?.listWorkflows)
 
-  const showNotice = (type: UiNotice['type'], text: string) => {
+  const showNotice = useCallback((type: UiNotice['type'], text: string) => {
     const prefix = type === 'error' ? '错误' : type === 'warning' ? '警告' : '提示'
     console[type === 'error' ? 'error' : type === 'warning' ? 'warn' : 'log'](`[${prefix}] ${text}`)
-  }
+  }, [])
 
-  const saveActiveWorkflow = async () => {
+  const loadWorkflowSummaries = useCallback(async () => {
+    if (!window.electronAPI?.listWorkflows) return
+    try {
+      const summaries = await window.electronAPI.listWorkflows()
+      setWorkflowSummaries(summaries)
+    } catch (error) {
+      console.error('Failed to load workflows:', error)
+    }
+  }, [])
+
+  const saveActiveWorkflow = useCallback(async () => {
     if (!workflow) return null
     if (!window.electronAPI?.saveWorkflow) {
       showNotice('warning', '当前浏览器预览没有 Electron 后端，无法保存节目')
@@ -143,9 +75,9 @@ function App() {
     await loadWorkflowSummaries()
     showNotice('success', '节目已保存')
     return saved
-  }
+  }, [loadWorkflowSummaries, showNotice, workflow])
 
-  const confirmSaveBeforeReplace = async () => {
+  const confirmSaveBeforeReplace = useCallback(async () => {
     if (!workflow || !hasUnsavedChanges) return true
     return new Promise<boolean>((resolve) => {
       let settled = false
@@ -175,8 +107,8 @@ function App() {
                   try {
                     await saveActiveWorkflow()
                     finish(true)
-                  } catch (error: any) {
-                    showNotice('error', `保存失败：${error.message}`)
+                  } catch (error) {
+                    showNotice('error', `保存失败：${getErrorMessage(error)}`)
                   }
                 }}
               >
@@ -194,9 +126,9 @@ function App() {
         },
       })
     })
-  }
+  }, [hasUnsavedChanges, saveActiveWorkflow, showNotice, workflow])
 
-  const confirmCloseActiveWorkflow = async () => {
+  const confirmCloseActiveWorkflow = useCallback(async () => {
     if (!workflow) return true
     if (hasUnsavedChanges) return confirmSaveBeforeReplace()
 
@@ -234,20 +166,10 @@ function App() {
         },
       })
     })
-  }
-
-  const loadWorkflowSummaries = async () => {
-    if (!window.electronAPI?.listWorkflows) return
-    try {
-      const summaries = await window.electronAPI.listWorkflows()
-      setWorkflowSummaries(summaries)
-    } catch (error) {
-      console.error('Failed to load workflows:', error)
-    }
-  }
+  }, [confirmSaveBeforeReplace, hasUnsavedChanges, workflow])
 
   // Close all full-screen panels (mutual exclusivity)
-  const closeAllPanels = () => {
+  const closeAllPanels = useCallback(() => {
     setDiscoverVisible(false)
     setOrganizeVisible(false)
     setStudioVisible(false)
@@ -255,9 +177,9 @@ function App() {
     setSoundStudioVisible(false)
     setPublishVisible(false)
     setSettingsVisible(false)
-  }
+  }, [])
 
-  const openStage = (stageId: string) => {
+  const openStage = useCallback((stageId: string) => {
     closeAllPanels()
     setHomePage('blank')
     if (stageId === 'ideate') {
@@ -273,9 +195,9 @@ function App() {
     } else if (stageId === 'publish') {
       setPublishVisible(true)
     }
-  }
+  }, [closeAllPanels])
 
-  const getCurrentStageId = () => {
+  const getCurrentStageId = useCallback(() => {
     if (discoverVisible) return 'discover'
     if (organizeVisible) return 'organize'
     if (studioVisible) return 'ideate'
@@ -283,7 +205,7 @@ function App() {
     if (soundStudioVisible) return 'produce'
     if (publishVisible) return 'publish'
     return null
-  }
+  }, [discoverVisible, organizeVisible, publishVisible, soundStudioVisible, studioVisible, writingVisible])
 
   const openSettings = () => {
     setSettingsReturnTarget({
@@ -328,7 +250,7 @@ function App() {
 
   useEffect(() => {
     void loadWorkflowSummaries()
-  }, [])
+  }, [loadWorkflowSummaries])
 
   useEffect(() => {
     if (!window.electronAPI?.onWorkflowUpdate) return
@@ -367,7 +289,7 @@ function App() {
       setApprovalData(data)
       setApprovalVisible(true)
     })
-  }, [])
+  }, [loadWorkflowSummaries, openStage])
 
   useEffect(() => {
     if (!window.electronAPI?.onAppCloseRequest || !window.electronAPI?.confirmAppClose) return
@@ -379,8 +301,8 @@ function App() {
         if (canClose) {
           await window.electronAPI.confirmAppClose()
         }
-      } catch (error: any) {
-        showNotice('error', `关闭失败：${error.message}`)
+      } catch (error) {
+        showNotice('error', `关闭失败：${getErrorMessage(error)}`)
       } finally {
         appCloseConfirmingRef.current = false
       }
@@ -388,13 +310,21 @@ function App() {
     return () => {
       if (typeof unsubscribe === 'function') unsubscribe()
     }
-  }, [workflow, hasUnsavedChanges])
+  }, [confirmCloseActiveWorkflow, showNotice])
 
   useEffect(() => {
     studioAutoOpened.current = false
+  }, [workflow?.id])
+
+  useEffect(() => {
     setDiscoverCandidates(workflow?.state?.selected_materials || workflow?.state?.raw_contents || [])
     setOrganizeCandidates(workflow?.state?.organize_ui?.candidates || workflow?.state?.cleaned_contents || [])
-  }, [workflow?.id])
+  }, [
+    workflow?.state?.cleaned_contents,
+    workflow?.state?.organize_ui?.candidates,
+    workflow?.state?.raw_contents,
+    workflow?.state?.selected_materials,
+  ])
 
   const handleStart = async () => {
     try {
@@ -411,8 +341,8 @@ function App() {
       await loadWorkflowSummaries()
       showNotice('success', `已创建节目：${result.episodeId}`)
       openStage('discover')
-    } catch (e: any) {
-      showNotice('error', `创建失败：${e.message}`)
+    } catch (error) {
+      showNotice('error', `创建失败：${getErrorMessage(error)}`)
     }
   }
 
@@ -474,8 +404,8 @@ function App() {
       await loadWorkflowSummaries()
       showNotice('success', '已打开节目')
       openStage('discover')
-    } catch (e: any) {
-      showNotice('error', `打开失败：${e.message}`)
+    } catch (error) {
+      showNotice('error', `打开失败：${getErrorMessage(error)}`)
     }
   }
 
@@ -512,8 +442,8 @@ function App() {
       }
       await loadWorkflowSummaries()
       showNotice('success', '节目已删除')
-    } catch (e: any) {
-      showNotice('error', `删除失败：${e.message}`)
+    } catch (error) {
+      showNotice('error', `删除失败：${getErrorMessage(error)}`)
     }
   }
 
@@ -535,8 +465,8 @@ function App() {
       await loadWorkflowSummaries()
       showNotice('success', '节目已导入')
       openStage('discover')
-    } catch (e: any) {
-      showNotice('error', `导入失败：${e.message}`)
+    } catch (error) {
+      showNotice('error', `导入失败：${getErrorMessage(error)}`)
     }
   }
 
@@ -549,8 +479,8 @@ function App() {
       const result = await window.electronAPI.exportWorkflow(workflowId)
       if (result.canceled) return
       showNotice('success', `节目已导出：${result.path}`)
-    } catch (e: any) {
-      showNotice('error', `导出失败：${e.message}`)
+    } catch (error) {
+      showNotice('error', `导出失败：${getErrorMessage(error)}`)
     }
   }
 
@@ -570,8 +500,8 @@ function App() {
       }
       await loadWorkflowSummaries()
       showNotice('success', workflow?.id === workflowId ? '节目信息已更新，记得保存节目' : '节目信息已保存')
-    } catch (e: any) {
-      showNotice('error', `保存失败：${e.message}`)
+    } catch (error) {
+      showNotice('error', `保存失败：${getErrorMessage(error)}`)
     }
   }
 
@@ -589,8 +519,8 @@ function App() {
       await loadWorkflowSummaries()
       showNotice('success', '节目已复制，当前副本尚未保存')
       openStage('discover')
-    } catch (e: any) {
-      showNotice('error', `复制失败：${e.message}`)
+    } catch (error) {
+      showNotice('error', `复制失败：${getErrorMessage(error)}`)
     }
   }
 
@@ -602,8 +532,8 @@ function App() {
       setApprovalData(null)
       setHasUnsavedChanges(true)
       showNotice('success', '已批准，工作流继续执行')
-    } catch (e: any) {
-      showNotice('error', `批准失败：${e.message}`)
+    } catch (error) {
+      showNotice('error', `批准失败：${getErrorMessage(error)}`)
     }
   }
 
@@ -615,14 +545,22 @@ function App() {
       setApprovalData(null)
       setHasUnsavedChanges(true)
       showNotice('warning', '已拒绝，工作流已停止')
-    } catch (e: any) {
-      showNotice('error', `拒绝失败：${e.message}`)
+    } catch (error) {
+      showNotice('error', `拒绝失败：${getErrorMessage(error)}`)
     }
   }
 
   const activeStageId =
     settingsVisible ? null : getCurrentStageId()
   const showWorkflowSidebar = Boolean(workflow && activeStageId)
+  const initialOrganizeMode = isViewMode(workflow?.state?.organize_ui?.mode)
+    ? workflow.state.organize_ui.mode
+    : 'quick'
+  const savedOrganizeCandidates = toCandidateItems(workflow?.state?.organize_ui?.candidates)
+  const fallbackOrganizeCandidates = toCandidateItems(workflow?.state?.cleaned_contents)
+  const initialOrganizeCandidates = savedOrganizeCandidates.length > 0
+    ? savedOrganizeCandidates
+    : fallbackOrganizeCandidates
 
   return (
     <ConfigProvider
@@ -875,9 +813,9 @@ function App() {
             ? discoverCandidates
             : (workflow?.state?.raw_contents || workflow?.state?.fetch_contents || [])}
           userTopic={(workflow?.state?.selected_topic?.title as string) || ''}
-          initialCandidates={(workflow?.state?.organize_ui?.candidates || workflow?.state?.cleaned_contents || []) as any}
-          initialIgnoredIds={(workflow?.state?.organize_ui?.ignoredIds || []) as any}
-          initialMode={(workflow?.state?.organize_ui?.mode || 'quick') as any}
+          initialCandidates={initialOrganizeCandidates}
+          initialIgnoredIds={toNumberArray(workflow?.state?.organize_ui?.ignoredIds)}
+          initialMode={initialOrganizeMode}
           isAutoExecute={isAutoExecute}
           onStateChange={(state) => {
             void updateWorkflowPatch({
@@ -904,7 +842,7 @@ function App() {
             ? organizeCandidates
             : (workflow?.state?.raw_contents || [])}
           selectedTopic={workflow?.state?.selected_topic}
-          initialBlocks={(workflow?.state?.episode_brief?.blocks || []) as any}
+          initialBlocks={toStructureBlocks(workflow?.state?.episode_brief?.blocks)}
           isAutoExecute={isAutoExecute}
           onStateChange={(structure) => {
             void updateWorkflowPatch({
