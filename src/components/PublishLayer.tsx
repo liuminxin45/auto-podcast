@@ -253,6 +253,18 @@ export default function PublishLayer({
   const finalAudioPath = workflow?.state?.final_audio_path || ''
   const rssPath = workflow?.state?.rss_path || ''
   const publishDir = workflow?.state?.storage_info?.base_dir || ''
+  const runReport = useMemo(() => workflow?.state?.run_report || {}, [workflow?.state?.run_report])
+  const publishOutputs = useMemo(() => workflow?.state?.publish_outputs || {}, [workflow?.state?.publish_outputs])
+  const rssValidation = useMemo(() => (
+    publishOutputs.rss_validation || runReport.rss_validation || {}
+  ), [publishOutputs.rss_validation, runReport.rss_validation])
+  const artifactRows = useMemo(() => ([
+    ['音频', publishOutputs.audio_path || finalAudioPath],
+    ['RSS', publishOutputs.feed_xml || rssPath],
+    ['Episode JSON', publishOutputs.episode_json],
+    ['Run Report', publishOutputs.run_report_json],
+    ['发布目录', publishOutputs.episode_dir || publishDir],
+  ].filter(([, value]) => Boolean(value))), [finalAudioPath, publishDir, publishOutputs, rssPath])
   const reviewSummary = workflow?.state?.review_summary || {}
   const reviewChecks = useMemo(() => (
     Array.isArray(reviewSummary.checks) ? reviewSummary.checks : []
@@ -288,10 +300,12 @@ export default function PublishLayer({
     },
     {
       id: 'distribution-platforms',
-      title: '多平台发布未配置凭据',
-      description: '当前只执行真实本地导出与 RSS 生成；Apple Podcasts、Spotify、小宇宙、喜马拉雅会显示为未配置，不会标记成功。',
+      title: rssValidation?.ok === false ? 'RSS 校验未通过' : 'RSS 校验状态',
+      description: rssValidation?.ok === false
+        ? `错误：${(rssValidation.errors || []).join('；') || '未知错误'}`
+        : `enclosure=${rssValidation.enclosure_url || publishOutputs.enclosure_url || '未生成'}；${rssValidation.local_preview_only ? 'local-preview only' : 'public feed ready'}`,
     },
-  ], [finalAudioPath])
+  ], [finalAudioPath, publishOutputs.enclosure_url, rssValidation])
 
   const riskSuggestions = useMemo<AgentSuggestion[]>(() => {
     if (!reviewChecks.length) {
@@ -1122,9 +1136,33 @@ export default function PublishLayer({
           gap: 10,
         }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)' }}>本地产物</div>
-          <div style={{ fontSize: 12, color: 'var(--text-tertiary)', wordBreak: 'break-all' }}>音频：{finalAudioPath || '未生成'}</div>
-          <div style={{ fontSize: 12, color: 'var(--text-tertiary)', wordBreak: 'break-all' }}>RSS：{rssPath || '未生成'}</div>
-          <div style={{ fontSize: 12, color: 'var(--text-tertiary)', wordBreak: 'break-all' }}>目录：{publishDir || '未生成'}</div>
+          {artifactRows.map(([label, value]) => (
+            <div key={label} style={{ fontSize: 12, color: 'var(--text-tertiary)', wordBreak: 'break-all' }}>
+              {label}：{value}
+            </div>
+          ))}
+          <div style={{
+            marginTop: 8,
+            padding: '8px 10px',
+            borderRadius: 8,
+            background: rssValidation?.ok === false ? 'var(--error-bg)' : 'var(--success-bg)',
+            color: rssValidation?.ok === false ? 'var(--error-color)' : 'var(--success-color)',
+            fontSize: 12,
+          }}>
+            RSS 校验：{rssValidation?.ok === false ? '失败' : '通过'}
+            {rssValidation?.local_preview_only ? ' / local-preview only' : ' / public enclosure'}
+            {rssValidation?.enclosure_url ? ` / ${rssValidation.enclosure_url}` : ''}
+          </div>
+          {Array.isArray(rssValidation?.errors) && rssValidation.errors.length > 0 && (
+            <div style={{ fontSize: 12, color: 'var(--error-color)', lineHeight: 1.6 }}>
+              {rssValidation.errors.join('；')}
+            </div>
+          )}
+          {Array.isArray(rssValidation?.warnings) && rssValidation.warnings.length > 0 && (
+            <div style={{ fontSize: 12, color: 'var(--warning-color)', lineHeight: 1.6 }}>
+              {rssValidation.warnings.join('；')}
+            </div>
+          )}
         </div>
 
         {/* Platform statuses */}

@@ -13,7 +13,7 @@ import WorkflowSidebar from './components/WorkflowSidebar'
 import EpisodeManager from './components/EpisodeManager'
 import { STAGES } from './components/workflowStages'
 import type { Workflow, WorkflowSummary, ContentItem } from './types/workflow'
-import { getErrorMessage, isViewMode, toCandidateItems, toNumberArray, toStructureBlocks } from './utils'
+import { getErrorMessage, isViewMode, toCandidateItems, toNumberArray } from './utils'
 
 const { Header, Content } = Layout
 const { Title } = Typography
@@ -842,8 +842,13 @@ function App() {
             ? organizeCandidates
             : (workflow?.state?.raw_contents || [])}
           selectedTopic={workflow?.state?.selected_topic}
-          initialBlocks={toStructureBlocks(workflow?.state?.episode_brief?.blocks)}
+          initialFacts={workflow?.state?.facts || []}
+          initialSelectedTopics={workflow?.state?.selected_topics || []}
+          selectedMaterials={workflow?.state?.selected_materials || []}
           isAutoExecute={isAutoExecute}
+          onRunNodes={async (nodes) => {
+            await runWorkflowNodes(nodes)
+          }}
           onStateChange={(structure) => {
             void updateWorkflowPatch({
               selected_topic: {
@@ -851,6 +856,8 @@ function App() {
                 description: structure?.topic?.description || workflow?.state?.selected_topic?.description || '',
               },
               selected_materials: structure?.materials || workflow?.state?.selected_materials || [],
+              facts: structure?.facts || workflow?.state?.facts || [],
+              selected_topics: structure?.selected_topics || workflow?.state?.selected_topics || [],
               episode_brief: structure,
             })
           }}
@@ -861,6 +868,8 @@ function App() {
                 description: structure?.topic?.description || workflow?.state?.selected_topic?.description || '',
               },
               selected_materials: organizeCandidates.length > 0 ? organizeCandidates : workflow?.state?.selected_materials || [],
+              facts: structure?.facts || workflow?.state?.facts || [],
+              selected_topics: structure?.selected_topics || workflow?.state?.selected_topics || [],
               episode_brief: structure,
             })
             closeAllPanels()

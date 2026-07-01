@@ -66,6 +66,7 @@ export interface CreatorPreferencesSettings {
 export interface SystemSettings {
   defaultPlatforms: string[]
   retentionPolicy: RetentionPolicy
+  publishPublicBaseUrl: string
 }
 
 export interface NodeAPIConfig {
@@ -181,6 +182,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   system: {
     defaultPlatforms: ['rss'],
     retentionPolicy: 'local',
+    publishPublicBaseUrl: '',
   },
   apiConfig: {
     global: {

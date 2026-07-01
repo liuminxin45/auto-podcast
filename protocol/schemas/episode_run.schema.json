@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://podflow.local/schemas/episode_run.schema.json",
+  "title": "PodFlow Studio EpisodeRun",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema_version",
+    "episode_id",
+    "preset",
+    "source_inputs",
+    "facts",
+    "selected_topics",
+    "script",
+    "edited_script",
+    "voice_segments",
+    "audio_outputs",
+    "publish_outputs",
+    "run_report"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "episode_id": { "type": "string", "minLength": 1 },
+    "preset": {
+      "type": "object",
+      "required": ["id", "content_type", "num_hosts"],
+      "additionalProperties": true,
+      "properties": {
+        "id": { "const": "morning_news_brief" },
+        "content_type": { "const": "news_brief" },
+        "num_hosts": { "const": 1 }
+      }
+    },
+    "source_inputs": { "type": "array", "items": { "type": "object" } },
+    "facts": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/factCard" }
+    },
+    "selected_topics": { "type": "array", "items": { "type": "object" } },
+    "script": { "$ref": "#/$defs/script" },
+    "edited_script": { "$ref": "#/$defs/script" },
+    "voice_segments": { "type": "array", "items": { "type": "object" } },
+    "audio_outputs": { "type": "object", "additionalProperties": true },
+    "publish_outputs": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "rss_validation": { "$ref": "#/$defs/rssValidation" }
+      }
+    },
+    "run_report": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "schema_validation": { "type": "object" },
+        "rss_validation": { "$ref": "#/$defs/rssValidation" },
+        "migration_warnings": { "type": "array", "items": { "type": "string" } },
+        "tts_live_validation": { "type": "object" }
+      }
+    }
+  },
+  "$defs": {
+    "factCard": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "id",
+        "title",
+        "summary",
+        "source_title",
+        "source_url",
+        "published_at",
+        "claim",
+        "confidence",
+        "used_in_segments"
+      ],
+      "properties": {
+        "id": { "type": "string", "pattern": "^fact_[0-9]{3}$" },
+        "title": { "type": "string" },
+        "summary": { "type": "string" },
+        "source_title": { "type": "string" },
+        "source_url": { "type": "string" },
+        "published_at": { "type": "string" },
+        "claim": { "type": "string" },
+        "confidence": { "enum": ["high", "medium", "low"] },
+        "used_in_segments": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "script": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "content_type": { "const": "news_brief" },
+        "preset_id": { "const": "morning_news_brief" },
+        "num_hosts": { "const": 1 },
+        "segments": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/scriptSegment" }
+        }
+      }
+    },
+    "scriptSegment": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id", "type", "text", "source_fact_ids", "estimated_seconds"],
+      "properties": {
+        "id": { "type": "string" },
+        "type": {
+          "enum": ["opening", "news_item", "context", "transition", "closing", "custom"]
+        },
+        "title": { "type": "string" },
+        "text": { "type": "string" },
+        "source_fact_ids": { "type": "array", "items": { "type": "string" } },
+        "estimated_seconds": { "type": "integer", "minimum": 0 },
+        "speaker": { "type": "string" }
+      }
+    },
+    "rssValidation": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["ok", "errors", "warnings", "enclosure_url", "local_preview_only"],
+      "properties": {
+        "ok": { "type": "boolean" },
+        "errors": { "type": "array", "items": { "type": "string" } },
+        "warnings": { "type": "array", "items": { "type": "string" } },
+        "enclosure_url": { "type": "string" },
+        "local_preview_only": { "type": "boolean" }
+      }
+    }
+  }
+}

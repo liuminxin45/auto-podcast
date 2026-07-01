@@ -180,22 +180,22 @@ def test_topic_selection_node_cluster():
 
 
 # ---------------------------------------------------------------------------
-# Script Node (without real LLM — will error but should not crash)
+# Script Node (without real LLM — should use deterministic fallback)
 # ---------------------------------------------------------------------------
 
 
 def test_script_node_no_api():
-    """Script node without API key should add an error but not crash."""
+    """Script node without API key should generate a source-grounded fallback script."""
     state = create_state_for_node("script")
     # Ensure no api_key is set to test error handling
     os.environ.pop("OPENAI_API_KEY", None)
     result = _run_node("script", state)
     _assert_no_crash(result, "script")
-    # Should have an error about missing API key
-    script_errors = [
-        e for e in result["errors"] if isinstance(e, dict) and e.get("node") == "script"
-    ]
-    assert len(script_errors) > 0, "Should report missing API key error"
+    assert result["preset"]["id"] == "morning_news_brief"
+    assert result["script"]["content_type"] == "news_brief"
+    assert result["script"]["num_hosts"] == 1
+    assert result["facts"], "Should generate fact cards from selected materials"
+    assert result["script"]["segments"], "Should generate structured script segments"
 
 
 # ---------------------------------------------------------------------------
@@ -280,19 +280,28 @@ def test_review_node():
 def test_publish_node():
     """Publish node generates RSS and stores files."""
     import tempfile
+    import wave
 
     state = create_state_for_node("publish")
     from nodes.publish.config import PublishConfig
 
     with tempfile.TemporaryDirectory() as tmpdir:
+        audio_path = os.path.join(tmpdir, "final.wav")
+        with wave.open(audio_path, "wb") as wav:
+            wav.setnchannels(1)
+            wav.setsampwidth(2)
+            wav.setframerate(16000)
+            wav.writeframes(b"\x00" * 1600)
+        state["final_audio_path"] = audio_path
         config = PublishConfig(
-            local_base_dir=tmpdir,
+            local_base_dir=os.path.join(tmpdir, "dist", "episodes"),
             rss_output_dir=os.path.join(tmpdir, "rss"),
         )
         result = _run_node("publish", state, config)
     _assert_no_crash(result, "publish")
     assert "publish_status" in result
     assert result["publish_status"].get("rss_generated") is True
+    assert result["publish_status"].get("local_preview_only") is True
 
 
 # ---------------------------------------------------------------------------

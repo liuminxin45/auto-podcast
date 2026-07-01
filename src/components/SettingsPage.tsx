@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react'
-import { Button, Slider, Tooltip, message } from 'antd'
+import { Button, Input, Slider, Tooltip, message } from 'antd'
 import {
   CloseOutlined,
   SoundOutlined,
@@ -100,9 +100,9 @@ function resolveApiSettings(settings: AppSettings, stageId: StageId) {
 
 function buildNodeConfigs(settings: AppSettings): Record<string, Record<string, any>> {
   const durationToMinutes: Record<DurationPreference, number> = {
-    short: 8,
-    medium: 15,
-    long: 30,
+    short: 5,
+    medium: 6,
+    long: 8,
   }
   const qualityToFormat: Record<AudioQuality, string> = {
     standard: 'mp3',
@@ -141,8 +141,14 @@ function buildNodeConfigs(settings: AppSettings): Record<string, Record<string, 
     },
     script: {
       ...resolveApiSettings(settings, 'write'),
+      preset_id: 'morning_news_brief',
+      content_type: 'news_brief',
       target_duration_minutes: durationToMinutes[settings.creatorPreferences.durationPreference],
       dialogue_style: settings.creatorPreferences.toneStyle === 'rational' ? 'formal' : 'conversational',
+      num_hosts: 1,
+      news_item_count: 4,
+      tone: 'clear, concise, commute-friendly',
+      language: 'zh-CN',
       require_approval: settings.nodeBehavior.assistLevel !== 'deep',
       words_per_minute: 150,
     },
@@ -158,7 +164,6 @@ function buildNodeConfigs(settings: AppSettings): Record<string, Record<string, 
       default_voice: audioProvider === 'openai-compatible' ? 'alloy' : ttsVoice,
       voice_mapping: {
         'Host A': audioProvider === 'openai-compatible' ? 'alloy' : ttsVoice,
-        'Host B': audioProvider === 'openai-compatible' ? 'alloy' : ttsVoice,
       },
       output_format: 'mp3',
       rate: settings.capability.audio.quality === 'standard' ? '+0%' : '-5%',
@@ -173,10 +178,11 @@ function buildNodeConfigs(settings: AppSettings): Record<string, Record<string, 
     },
     publish: {
       storage_type: 'local',
-      local_base_dir: 'out/published',
+      local_base_dir: 'dist/episodes',
       rss_output_dir: 'out/rss',
-      podcast_title: 'PodFlow Studio',
-      podcast_description: 'AI assisted local podcast production',
+      public_base_url: settings.system.publishPublicBaseUrl,
+      podcast_title: '通勤早咖啡',
+      podcast_description: '单人新闻早报播客',
       podcast_author: 'PodFlow Studio',
       podcast_language: settings.capability.search.language === 'en' ? 'en-US' : 'zh-CN',
       enabled_platforms: settings.system.defaultPlatforms,
@@ -912,9 +918,9 @@ export default function SettingsPage({ visible, workflow, onClose }: Props) {
       <SubsectionBlock title="节目时长偏好" desc="影响内容节奏与结构建议">
         <div style={{ display: 'flex', gap: 10 }}>
           {([
-            { key: 'short' as DurationPreference, icon: '快', title: '短节目', desc: '5-10 分钟，快节奏要点播报' },
-            { key: 'medium' as DurationPreference, icon: '听', title: '中等时长', desc: '15-30 分钟，深入但不冗长', badge: '推荐' },
-            { key: 'long' as DurationPreference, icon: '播', title: '长节目', desc: '45-60 分钟，沉浸式深度内容' },
+            { key: 'short' as DurationPreference, icon: '快', title: '短早报', desc: '约 5 分钟，快速扫过要点' },
+            { key: 'medium' as DurationPreference, icon: '听', title: '标准早报', desc: '约 6 分钟，覆盖 3-5 条新闻', badge: '推荐' },
+            { key: 'long' as DurationPreference, icon: '播', title: '加长早报', desc: '约 8 分钟，保留更多背景' },
           ]).map(opt => (
             <OptionCard
               key={opt.key}
@@ -997,7 +1003,23 @@ export default function SettingsPage({ visible, workflow, onClose }: Props) {
         </div>
       </SubsectionBlock>
 
-      {/* 2. Retention Policy */}
+      {/* 2. RSS Public URL */}
+      <SubsectionBlock title="RSS 公网地址" desc="用于生成可订阅的 enclosure URL">
+        <Input
+          value={settings.system.publishPublicBaseUrl}
+          onChange={e => updateSettings('system', c => ({
+            ...c,
+            publishPublicBaseUrl: e.target.value.trim(),
+          }))}
+          placeholder="https://podcast.example.com"
+          style={{ marginBottom: 8 }}
+        />
+        <div style={{ fontSize: 11, color: 'var(--text-tertiary)', lineHeight: 1.6 }}>
+          留空时仍会生成 feed.xml，但发布层会标记为 local-preview only，并提示 enclosure URL 不能直接用于公开订阅。
+        </div>
+      </SubsectionBlock>
+
+      {/* 3. Retention Policy */}
       <SubsectionBlock title="发布记录保留策略" desc="管理历史发布记录的保存方式">
         <div style={{ display: 'flex', gap: 10 }}>
           {([

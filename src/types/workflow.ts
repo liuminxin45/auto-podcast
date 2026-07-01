@@ -9,6 +9,9 @@ export interface DiscoverUiState {
 export interface PodcastState {
   episode_id: string
   created_at: string
+  schema_version: number
+  preset: Record<string, any>
+  source_inputs: ContentItem[]
   runtime_config: Record<string, any>
   logs: string[]
   errors: ErrorInfo[]
@@ -17,21 +20,31 @@ export interface PodcastState {
   raw_contents: ContentItem[]
   cleaned_contents: ContentItem[]
   researched_contents: ContentItem[]
+  facts: FactCard[]
   selected_topic: Topic
+  selected_topics: Array<{ id?: string; title?: string; fact_id?: string }>
   selected_materials: ContentItem[]
   script: Script
+  edited_script: Script
   stages: Stage[]
+  voice_segments: VoiceSegment[]
   audio_segments: string[]
   recording_segments?: RecordingSegment[]
   final_audio_path: string
   audio_metadata: Record<string, any>
+  audio_outputs: Record<string, any>
+  audio_report_path: string
   cover_path: string
   intro_outro_paths: Record<string, string>
   review_summary: Record<string, any>
   storage_info: Record<string, any>
   rss_path: string
   publish_status: Record<string, any>
+  publish_outputs: Record<string, any>
   subtitle_path: string
+  run_report: Record<string, any>
+  migration_warnings: string[]
+  tts_source: string
   discover_meta?: Record<string, any>
   discover_ui?: DiscoverUiState
   organize_ui?: Record<string, any>
@@ -84,6 +97,18 @@ export interface Topic {
   keywords?: string[]
 }
 
+export interface FactCard {
+  id: string
+  title: string
+  summary: string
+  source_title: string
+  source_url: string
+  published_at: string
+  claim: string
+  confidence: 'high' | 'medium' | 'low'
+  used_in_segments?: string[]
+}
+
 export type ContentCreationType = 'story' | 'news_brief'
 
 export function isContentCreationType(value: unknown): value is ContentCreationType {
@@ -99,19 +124,38 @@ export interface ScriptSourceReference {
 
 export interface ScriptSection {
   id?: string
-  type: 'opening' | 'mainline' | 'discussion' | 'news_item' | 'closing' | 'custom'
+  type: 'opening' | 'mainline' | 'discussion' | 'news_item' | 'context' | 'transition' | 'closing' | 'custom'
   label?: string
   text?: string
+  source_fact_ids?: string[]
   source_refs?: ScriptSourceReference[]
   references?: string[]
+  estimated_seconds?: number
 }
 
 export interface Script {
+  id?: string
   title?: string
   description?: string
   content_type?: ContentCreationType
+  preset_id?: string
+  num_hosts?: number
+  language?: string
+  segments?: ScriptSegment[]
   sections?: ScriptSection[]
   dialogue?: DialogueLine[]
+  edited_from?: string
+  edit_mode?: string
+}
+
+export interface ScriptSegment {
+  id: string
+  type: 'opening' | 'news_item' | 'context' | 'transition' | 'closing' | 'custom'
+  title: string
+  text: string
+  source_fact_ids: string[]
+  estimated_seconds: number
+  speaker?: string
 }
 
 export interface DialogueLine {
@@ -125,8 +169,27 @@ export interface Stage {
   speaker: string
   text: string
   label?: string
+  source_fact_ids?: string[]
   duration?: number
   estimated_duration?: number
+}
+
+export interface VoiceSegment {
+  segment_id: string
+  path: string
+  text: string
+  speaker: string
+  source_fact_ids?: string[]
+  engine: string
+  voice: string
+}
+
+export interface RssValidation {
+  ok: boolean
+  errors: string[]
+  warnings: string[]
+  enclosure_url: string
+  local_preview_only: boolean
 }
 
 export interface RecordingSegment {

@@ -5,6 +5,7 @@ const NODE_EXPECTED_OUTPUTS = {
   'preprocess': ['cleaned_contents'],
   'research': ['researched_contents'],
   'topic_selection': ['selected_topic', 'selected_materials'],
+  'facts': ['facts', 'selected_topics'],
   'script': ['script', 'stages'],
   'tts': ['audio_segments'],
   'audio_postprocess': ['final_audio_path'],

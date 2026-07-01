@@ -31,7 +31,6 @@ function buildTTSConfig(payload, baseTtsConfig) {
 
   const voiceMapping = { ...(baseTtsConfig.voice_mapping || baseTtsConfig.voiceMapping || {}) }
   if (!voiceMapping['Host A']) voiceMapping['Host A'] = 'zh-CN-XiaoxiaoNeural'
-  if (!voiceMapping['Host B']) voiceMapping['Host B'] = 'zh-CN-YunxiNeural'
   config.voice_mapping = voiceMapping
 
   return config
@@ -71,7 +70,7 @@ function buildStages(segments) {
       return {
         index,
         order: index,
-        speaker: index % 2 === 0 ? 'Host A' : 'Host B',
+        speaker: seg?.speaker || 'Host A',
         text,
         estimated_duration: Math.max(5, Number(seg?.estimatedSeconds) || 30),
       }

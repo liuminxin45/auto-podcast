@@ -49,6 +49,7 @@ let currentWorkflow = null
 let appCloseConfirmed = false
 const WORKFLOW_DIR = path.join(__dirname, '..', 'out', 'workflows')
 const PROJECT_ROOT = path.join(__dirname, '..')
+const EPISODE_SCHEMA_VERSION = 1
 
 function broadcastWorkflowUpdate() {
   if (mainWindow) {
@@ -81,6 +82,19 @@ function createInitialState(episodeId, runtimeConfig) {
   return {
     episode_id: episodeId,
     created_at: new Date().toISOString(),
+    schema_version: EPISODE_SCHEMA_VERSION,
+    preset: {
+      id: 'morning_news_brief',
+      content_type: 'news_brief',
+      num_hosts: 1,
+      target_duration_minutes: 6,
+      target_duration_minutes_range: '5-8',
+      news_item_count: 4,
+      news_item_count_range: '3-5',
+      tone: 'clear, concise, commute-friendly',
+      language: 'zh-CN'
+    },
+    source_inputs: [],
     runtime_config: runtimeConfig || {},
     logs: [],
     errors: [],
@@ -89,27 +103,101 @@ function createInitialState(episodeId, runtimeConfig) {
     raw_contents: [],
     cleaned_contents: [],
     researched_contents: [],
+    facts: [],
     selected_topic: {},
+    selected_topics: [],
     selected_materials: [],
     script: {},
+    edited_script: {},
     stages: [],
+    voice_segments: [],
     audio_segments: [],
     recording_segments: [],
     final_audio_path: '',
     audio_metadata: {},
+    audio_outputs: {},
+    audio_report_path: '',
     cover_path: '',
     intro_outro_paths: {},
     review_summary: {},
     storage_info: {},
     rss_path: '',
     publish_status: {},
+    publish_outputs: {},
     subtitle_path: '',
+    run_report: {},
     discover_meta: {},
     discover_ui: {},
     organize_ui: {},
     episode_brief: {},
     writing_meta: {}
   }
+}
+
+function migrateEpisodeState(state) {
+  state.schema_version = EPISODE_SCHEMA_VERSION
+  state.migration_warnings = Array.isArray(state.migration_warnings) ? state.migration_warnings : []
+  state.preset = state.preset || createInitialState(state.episode_id || `ep_${Date.now()}`, {}).preset
+  state.source_inputs = Array.isArray(state.source_inputs) ? state.source_inputs : []
+  state.facts = Array.isArray(state.facts) ? state.facts : []
+  state.selected_topics = Array.isArray(state.selected_topics) ? state.selected_topics : []
+  state.edited_script = state.edited_script && typeof state.edited_script === 'object' ? state.edited_script : {}
+  state.voice_segments = Array.isArray(state.voice_segments) ? state.voice_segments : []
+  state.audio_outputs = state.audio_outputs && typeof state.audio_outputs === 'object' ? state.audio_outputs : {}
+  state.publish_outputs = state.publish_outputs && typeof state.publish_outputs === 'object' ? state.publish_outputs : {}
+  state.run_report = state.run_report && typeof state.run_report === 'object' ? state.run_report : {}
+  state.audio_report_path = state.audio_report_path || ''
+  state.tts_source = state.tts_source || ''
+
+  if (state.source_inputs.length === 0) {
+    const source = state.selected_materials || state.cleaned_contents || state.raw_contents || state.fetch_contents || state.manual_contents || []
+    state.source_inputs = Array.isArray(source) ? source : []
+  }
+
+  const hasEditedSegments = Array.isArray(state.edited_script?.segments) && state.edited_script.segments.length > 0
+  const legacyStages = Array.isArray(state.stages) ? state.stages : []
+  const legacyDialogue = Array.isArray(state.script?.dialogue) ? state.script.dialogue : []
+  if (!hasEditedSegments && (legacyStages.length > 0 || legacyDialogue.length > 0)) {
+    const source = legacyStages.length > 0
+      ? legacyStages
+      : legacyDialogue.map((line, index) => ({ id: `seg_${index + 1}`, text: line?.text || '', speaker: line?.speaker || 'Host A' }))
+    state.edited_script = {
+      id: `${state.episode_id || 'episode'}_edited_migrated`,
+      title: state.script?.title || state.selected_topic?.title || '',
+      description: state.script?.description || state.selected_topic?.description || '',
+      content_type: 'news_brief',
+      preset_id: 'morning_news_brief',
+      num_hosts: 1,
+      language: 'zh-CN',
+      segments: source
+        .map((item, index) => {
+          const text = String(item?.text || '').trim()
+          if (!text) return null
+          const type = item?.type || (index === 0 ? 'opening' : index === source.length - 1 ? 'closing' : 'news_item')
+          return {
+            id: String(item?.id || `seg_${index + 1}`),
+            type: ['opening', 'news_item', 'context', 'transition', 'closing', 'custom'].includes(type) ? type : 'news_item',
+            title: String(item?.title || item?.label || ''),
+            text,
+            source_fact_ids: Array.isArray(item?.source_fact_ids) ? item.source_fact_ids : [],
+            estimated_seconds: Number(item?.estimated_seconds || item?.estimated_duration || 0),
+            speaker: String(item?.speaker || 'Host A'),
+          }
+        })
+        .filter(Boolean),
+      edited_from: state.script?.id || 'legacy_script',
+      edit_mode: 'migration',
+    }
+    state.migration_warnings.push('legacy script.dialogue/stages migrated to edited_script.segments')
+  }
+
+  state.run_report.schema_validation = {
+    ok: true,
+    errors: [],
+    schema_version: EPISODE_SCHEMA_VERSION,
+  }
+  state.run_report.migration_warnings = state.migration_warnings
+  return state
 }
 
 function ensureWorkflowDir() {
@@ -126,6 +214,8 @@ function normalizeWorkflow(workflow) {
   }
   const state = workflow.state || createInitialState(workflow.state?.episode_id, {})
   state.runtime_config = state.runtime_config || {}
+  state.preset = state.preset || createInitialState(state.episode_id, {}).preset
+  state.source_inputs = state.source_inputs || []
   state.logs = state.logs || []
   state.errors = state.errors || []
   state.fetch_contents = state.fetch_contents || []
@@ -133,17 +223,25 @@ function normalizeWorkflow(workflow) {
   state.raw_contents = state.raw_contents || []
   state.cleaned_contents = state.cleaned_contents || []
   state.researched_contents = state.researched_contents || []
+  state.facts = state.facts || []
   state.selected_topic = state.selected_topic || {}
+  state.selected_topics = state.selected_topics || []
   state.selected_materials = state.selected_materials || []
   state.script = state.script || {}
+  state.edited_script = state.edited_script || {}
   state.stages = state.stages || []
+  state.voice_segments = state.voice_segments || []
   state.audio_segments = state.audio_segments || []
   state.recording_segments = state.recording_segments || []
   state.audio_metadata = state.audio_metadata || {}
+  state.audio_outputs = state.audio_outputs || {}
+  state.audio_report_path = state.audio_report_path || ''
   state.intro_outro_paths = state.intro_outro_paths || {}
   state.review_summary = state.review_summary || {}
   state.storage_info = state.storage_info || {}
   state.publish_status = state.publish_status || {}
+  state.publish_outputs = state.publish_outputs || {}
+  state.run_report = state.run_report || {}
   state.discover_meta = state.discover_meta || {}
   state.discover_ui = state.discover_ui || {}
   state.organize_ui = state.organize_ui || {}
@@ -151,6 +249,7 @@ function normalizeWorkflow(workflow) {
   state.writing_meta = state.writing_meta || {}
   state.episode_id = state.episode_id || `ep_${workflow.id || Date.now()}`
   state.created_at = state.created_at || new Date().toISOString()
+  migrateEpisodeState(state)
 
   return {
     id: String(workflow.id || Date.now()),

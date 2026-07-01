@@ -9,12 +9,14 @@ Provides:
 import sys
 import json
 import time
+import re
 from datetime import datetime
 from typing import Any
 
 from collections.abc import Callable
 from protocol.config_base import NodeConfigBase
 from protocol.manifest import PipelineManifest
+from protocol.migration import migrate_episode_state
 
 type RunFunc = Callable[[dict[str, Any], Any], dict[str, Any]]
 
@@ -36,6 +38,7 @@ class NodeContext:
     """
 
     def __init__(self, label: str, state: dict[str, Any]):
+        migrate_episode_state(state)
         self.label = label
         self.logs: list[str] = state.get("logs", [])
         self.errors: list[str] = state.get("errors", [])
@@ -66,7 +69,7 @@ class NodeContext:
         self.log(f"完成时间: {datetime.now().isoformat()} | 耗时: {elapsed:.2f}s")
         if detail:
             self.log(detail)
-        node_name = self.label.replace("Node", "").lower()
+        node_name = _label_to_node_name(self.label)
         err_count = sum(
             1 for error in self.errors if isinstance(error, dict) and error.get("node") == node_name
         )
@@ -89,12 +92,17 @@ class NodeContext:
         state["logs"] = self.logs
         state["errors"] = self.errors
         # Record completion in pipeline manifest
-        node_name = self.label.replace("Node", "").lower()
+        node_name = _label_to_node_name(self.label)
         err_count = sum(
             1 for error in self.errors if isinstance(error, dict) and error.get("node") == node_name
         )
         PipelineManifest.record(state, node_name, self.elapsed, error_count=err_count)
         return state
+
+
+def _label_to_node_name(label: str) -> str:
+    base = label.removesuffix("Node")
+    return re.sub(r"(?<!^)(?=[A-Z])", "_", base).lower()
 
 
 def run_node_cli(

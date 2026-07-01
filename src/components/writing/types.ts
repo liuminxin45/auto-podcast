@@ -24,6 +24,7 @@ export interface WritingSegment {
   type: SegmentType
   label: string
   content: string
+  sourceFactIds?: string[]
   tone: SegmentTone
   estimatedSeconds: number
   status: SegmentStatus

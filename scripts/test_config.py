@@ -50,6 +50,7 @@ def main():
     configs = [
         ("fetch", "FetchConfig"),
         ("preprocess", "PreprocessConfig"),
+        ("facts", "FactsConfig"),
         ("script", "ScriptConfig"),
     ]
 

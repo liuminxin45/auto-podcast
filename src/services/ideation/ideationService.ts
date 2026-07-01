@@ -167,12 +167,12 @@ class IdeationService {
         detectionReason = detection.reason
         onLog?.(`✓ 检测到内容类型: ${contentType}`)
       } else {
-        contentType = 'story' // 默认
-        onLog?.('使用默认类型: story')
+        contentType = 'news_brief'
+        onLog?.('使用默认类型: news_brief')
       }
     }
 
-    if (!contentType) contentType = 'story'
+    if (!contentType) contentType = 'news_brief'
 
     const startTime = Date.now()
 

@@ -103,7 +103,7 @@ def test_review_node():
     state["script"] = {"title": "Test Episode", "description": "Test"}
     state["stages"] = [
         {"order": 0, "speaker": "Host A", "text": "Hello world " * 20, "estimated_duration": 30},
-        {"order": 1, "speaker": "Host B", "text": "Welcome back " * 20, "estimated_duration": 30},
+        {"order": 1, "speaker": "Host A", "text": "Welcome back " * 20, "estimated_duration": 30},
     ]
     state["final_audio_path"] = "out/episodes/test.mp3"
     state["cover_path"] = "out/assets/test_cover.png"

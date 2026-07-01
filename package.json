@@ -1,13 +1,14 @@
 {
   "name": "podflow-studio",
   "version": "2.4.0",
-  "description": "AI-powered podcast generation with visual workflow editor",
+  "description": "Local-first solo morning news podcast pipeline",
   "author": "PodFlow Studio Contributors",
   "license": "MIT",
   "main": "electron/main.js",
   "scripts": {
     "setup": "npm run setup:python",
     "setup:python": "node scripts/python313.js --setup",
+    "demo:news": "node scripts/python313.js scripts/run_demo_news.py",
     "dev": "node scripts/dev.js",
     "dev:react": "vite --host 127.0.0.1 --port 5174 --strictPort",
     "dev:electron": "wait-on http://127.0.0.1:5174 && cross-env NODE_ENV=development VITE_DEV_SERVER_URL=http://127.0.0.1:5174 electron .",
@@ -25,10 +26,13 @@
     "test:coverage": "vitest --coverage",
     "verify:nodes": "node scripts/python313.js scripts/verify_nodes.py",
     "verify:config": "node scripts/python313.js scripts/test_config.py",
+    "verify:tts-live": "node scripts/python313.js scripts/live_tts_smoke.py --engine edge-tts",
+    "verify:tts-openai-live": "node scripts/python313.js scripts/live_tts_smoke.py --engine openai-compatible",
     "verify:build": "node scripts/python313.js scripts/build_check.py",
     "test:nodes": "node scripts/python313.js scripts/test_all_nodes.py",
     "test:integration": "node scripts/python313.js scripts/integration_test.py",
-    "verify": "npm run verify:config && npm run verify:nodes"
+    "verify:offline": "npm run verify:config && npm run verify:nodes",
+    "verify": "npm run verify:offline && npm run verify:tts-live"
   },
   "dependencies": {
     "@ant-design/icons": "^5.2.6",

@@ -79,6 +79,7 @@ def check_node_structure() -> tuple[bool, str]:
         # ideate
         "research",
         "topic_selection",
+        "facts",
         # write
         "script",
         # produce

@@ -31,6 +31,7 @@ NODES = [
     # ideate
     "research",
     "topic_selection",
+    "facts",
     # write
     "script",
     # produce
@@ -59,7 +60,9 @@ def test_node(node_name: str) -> bool:
         "raw_contents": [],
         "cleaned_contents": [],
         "researched_contents": [],
+        "facts": [],
         "selected_topic": {},
+        "selected_topics": [],
         "selected_materials": [],
         "script": {},
         "stages": [],

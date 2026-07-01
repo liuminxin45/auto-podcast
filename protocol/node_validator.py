@@ -62,6 +62,7 @@ NODE_EXPECTED_OUTPUTS = {
     # ideate
     "research": ["researched_contents"],
     "topic_selection": ["selected_topic", "selected_materials"],
+    "facts": ["facts", "selected_topics"],
     # write
     "script": ["script", "stages"],
     # produce

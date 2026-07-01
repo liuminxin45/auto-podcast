@@ -1,17 +1,27 @@
 # PodFlow Studio 配置示例
-# 复制此文件为 config.yaml 并根据需要修改
+# 默认路径固定为：单人新闻早报 / 通勤早咖啡式内容生产。
+# 复制为 config.yaml 后可按需替换真实 LLM / TTS provider。
+
+preset:
+  id: "morning_news_brief"
+  content_type: "news_brief"
+  num_hosts: 1
+  target_duration_minutes: 6
+  target_duration_minutes_range: "5-8"
+  news_item_count: 4
+  news_item_count_range: "3-5"
+  tone: "clear, concise, commute-friendly"
+  language: "zh-CN"
 
 fetch:
   sources:
     - type: rss
       url: "https://hnrss.org/frontpage"
-    - type: rss
-      url: "https://www.reddit.com/r/technology/.rss"
   max_items_per_source: 10
   timeout: 30
 
 preprocess:
-  min_content_length: 100
+  min_content_length: 80
   max_content_length: 50000
   remove_duplicates: true
   similarity_threshold: 0.85
@@ -20,45 +30,53 @@ research:
   enable_web_search: false
   max_search_results: 5
   llm_model: "gpt-4o-mini"
-  api_key: ""           # 留空则 fallback 到环境变量 OPENAI_API_KEY
-  api_base: ""          # 留空则 fallback 到环境变量 OPENAI_API_BASE
+  api_key: ""
+  api_base: ""
   temperature: 0.5
 
 topic_selection:
-  min_cluster_size: 3
+  min_cluster_size: 2
   max_topics: 1
-  use_llm_scoring: true
+  use_llm_scoring: false
   llm_model: "gpt-4o-mini"
   api_key: ""
   api_base: ""
   temperature: 0.3
 
 script:
+  preset_id: "morning_news_brief"
+  content_type: "news_brief"
+  target_duration_minutes: 6
+  dialogue_style: "formal"
+  num_hosts: 1
+  news_item_count: 4
+  tone: "clear, concise, commute-friendly"
+  language: "zh-CN"
+  require_approval: true
   llm_model: "gpt-4o"
   api_key: ""
   api_base: ""
-  temperature: 0.7
-  target_duration_minutes: 15
-  dialogue_style: "conversational"
-  num_hosts: 2
-
-stages:
-  words_per_minute: 150
-  max_segment_duration: 120
+  temperature: 0.5
 
 tts:
-  engine: "edge-tts"
+  # mock 会生成本地 WAV 片段，保证无外部 key 时 demo 可跑通。
+  # 可改为 edge-tts 或 openai-compatible 走真实语音。
+  engine: "mock"
   voice_mapping:
-    主持人A: "zh-CN-XiaoxiaoNeural"
-    主持人B: "zh-CN-YunxiNeural"
+    Host A: "zh-CN-XiaoxiaoNeural"
   default_voice: "zh-CN-XiaoxiaoNeural"
   output_dir: "out/audio_segments"
+  output_format: "wav"
   rate: "+0%"
   volume: "+0%"
 
 audio_postprocess:
   output_dir: "out/episodes"
   output_format: "mp3"
+  final_basename: "final"
+  segment_pause_ms: 600
+  normalize_loudness: true
+  trim_silence: false
   add_bgm: false
 
 assets:
@@ -66,18 +84,12 @@ assets:
   generate_cover: true
   cover_size: [1400, 1400]
 
-store:
-  storage_type: "local"
-  local_base_dir: "out/published"
-  generate_metadata: true
-
 publish:
+  local_base_dir: "dist/episodes"
   rss_output_dir: "out/rss"
-  podcast_title: "AI 科技播客"
-  podcast_description: "AI 自动生成的科技播客节目"
+  public_base_url: ""
+  podcast_title: "通勤早咖啡"
+  podcast_description: "单人新闻早报播客"
   podcast_author: "PodFlow Studio"
   podcast_language: "zh-CN"
-  podcast_category: "Technology"
-
-# subtitles: (not yet implemented)
-#   enabled: false
+  podcast_category: "News"

@@ -1,83 +1,113 @@
-import os
-import json
-import shutil
 import mimetypes
-from datetime import datetime, UTC
+import os
+import shutil
+from datetime import UTC, datetime
 from email.utils import format_datetime
 from html import escape
 from pathlib import Path
 from typing import Any
+
 from nodes.publish.config import PublishConfig
+from protocol.morning_news import build_run_report, write_json
+from protocol.rss_validator import validate_rss_feed
 
 
 def run(state: dict[str, Any], config: PublishConfig = None) -> dict[str, Any]:
     config = config or PublishConfig()
     logs = state.get("logs", [])
     errors = state.get("errors", [])
-
-    # === Phase 1: Store files locally (merged from store node) ===
-    logs.append("[PublishNode] Phase 1: Storing files")
     episode_id = state.get("episode_id", "unknown")
 
+    logs.append("[PublishNode] Phase 1: Building publish package")
     try:
-        episode_dir = os.path.join(config.local_base_dir, episode_id)
-        Path(episode_dir).mkdir(parents=True, exist_ok=True)
-        stored_files = {}
+        episode_dir = Path(config.local_base_dir) / episode_id
+        episode_dir.mkdir(parents=True, exist_ok=True)
 
-        audio_path = state.get("final_audio_path", "")
-        if audio_path and os.path.exists(audio_path):
-            dest = os.path.join(episode_dir, os.path.basename(audio_path))
-            shutil.copy2(audio_path, dest)
-            stored_files["audio"] = dest
+        audio_path = Path(state.get("final_audio_path", ""))
+        stored_audio = ""
+        if audio_path.exists() and audio_path.is_file():
+            stored_audio_path = episode_dir / f"final{audio_path.suffix or '.mp3'}"
+            shutil.copy2(audio_path, stored_audio_path)
+            stored_audio = str(stored_audio_path)
+        else:
+            errors.append(
+                {
+                    "node": "publish",
+                    "message": "No final audio artifact found for publish package.",
+                    "detail": str(audio_path),
+                }
+            )
 
-        cover_path = state.get("cover_path", "")
-        if cover_path and os.path.exists(cover_path):
-            dest = os.path.join(episode_dir, os.path.basename(cover_path))
-            shutil.copy2(cover_path, dest)
-            stored_files["cover"] = dest
+        cover_path = Path(state.get("cover_path", ""))
+        stored_cover = ""
+        if cover_path.exists() and cover_path.is_file():
+            stored_cover_path = episode_dir / cover_path.name
+            shutil.copy2(cover_path, stored_cover_path)
+            stored_cover = str(stored_cover_path)
 
-        if config.generate_metadata:
-            meta = {
-                "episode_id": episode_id,
-                "title": state.get("script", {}).get("title", ""),
-                "description": state.get("script", {}).get("description", ""),
-                "audio_metadata": state.get("audio_metadata", {}),
-                "created_at": state.get("created_at", ""),
-            }
-            meta_path = os.path.join(episode_dir, "metadata.json")
-            with open(meta_path, "w", encoding="utf-8") as f:
-                json.dump(meta, f, ensure_ascii=False, indent=2)
-            stored_files["metadata"] = meta_path
+        episode_json = _episode_payload(state, config, stored_audio, stored_cover)
+        episode_json_path = episode_dir / "episode.json"
+        write_json(episode_json_path, episode_json)
 
+        local_preview_only = not bool((config.public_base_url or "").strip())
+        enclosure_url = _build_enclosure_url(stored_audio, episode_dir, config, local_preview_only)
+        state["publish_outputs"] = {
+            "episode_dir": str(episode_dir),
+            "audio_path": stored_audio,
+            "episode_json": str(episode_json_path),
+            "enclosure_url": enclosure_url,
+            "local_preview_only": local_preview_only,
+        }
+
+        report = build_run_report(state)
+        run_report_path = episode_dir / "run_report.json"
+        write_json(run_report_path, report)
+        state["publish_outputs"]["run_report_json"] = str(run_report_path)
+
+        feed_content = _generate_rss(state, config, enclosure_url, stored_audio)
+        rss_validation = validate_rss_feed(
+            feed_content,
+            public_base_url=config.public_base_url,
+            expected_enclosure_url=enclosure_url,
+        )
+        state["publish_outputs"]["rss_validation"] = rss_validation
+        feed_in_package = episode_dir / "feed.xml"
+        feed_in_package.write_text(feed_content, encoding="utf-8")
+        state["publish_outputs"]["feed_xml"] = str(feed_in_package)
+
+        rss_output_dir = Path(config.rss_output_dir)
+        rss_output_dir.mkdir(parents=True, exist_ok=True)
+        rss_path = rss_output_dir / "feed.xml"
+        rss_path.write_text(feed_content, encoding="utf-8")
+
+        state["rss_path"] = str(rss_path)
         state["storage_info"] = {
             "type": config.storage_type,
-            "base_dir": episode_dir,
-            "files": stored_files,
+            "base_dir": str(episode_dir),
+            "files": {
+                "audio": stored_audio,
+                "episode_json": str(episode_json_path),
+                "feed_xml": str(feed_in_package),
+                "run_report_json": str(run_report_path),
+                **({"cover": stored_cover} if stored_cover else {}),
+            },
         }
-        logs.append(f"[PublishNode] Stored: {episode_dir}")
-    except Exception as e:
-        errors.append({"node": "publish", "message": f"Storage failed: {str(e)}", "detail": str(e)})
-
-    # === Phase 2: Generate RSS and publish ===
-    logs.append("[PublishNode] Phase 2: Publishing")
-
-    try:
-        Path(config.rss_output_dir).mkdir(parents=True, exist_ok=True)
-
-        rss_path = os.path.join(config.rss_output_dir, "feed.xml")
-        rss_content = _generate_rss(state, config)
-
-        with open(rss_path, "w", encoding="utf-8") as f:
-            f.write(rss_content)
-
-        state["rss_path"] = rss_path
         state["publish_status"] = {
             "rss_generated": True,
-            "rss_path": rss_path,
-            "storage_dir": state.get("storage_info", {}).get("base_dir", ""),
+            "rss_path": str(rss_path),
+            "storage_dir": str(episode_dir),
             "published_at": datetime.now(UTC).isoformat(),
             "platforms": {"local": "success", "rss": "success"},
+            "local_preview_only": local_preview_only,
+            "rss_validation_ok": rss_validation.get("ok", False),
+            "warning": "RSS is local-preview only, not publicly subscribable."
+            if local_preview_only
+            else "",
         }
+        build_run_report(state)
+        state["run_report"]["rss_validation"] = rss_validation
+        write_json(run_report_path, state["run_report"])
+        logs.append(f"[PublishNode] Package: {episode_dir}")
         logs.append(f"[PublishNode] RSS: {rss_path}")
     except Exception as e:
         errors.append({"node": "publish", "message": str(e), "detail": str(e)})
@@ -87,20 +117,75 @@ def run(state: dict[str, Any], config: PublishConfig = None) -> dict[str, Any]:
     return state
 
 
-def _generate_rss(state: dict, config: PublishConfig) -> str:
-    script = state.get("script", {})
+def _episode_payload(
+    state: dict[str, Any],
+    config: PublishConfig,
+    stored_audio: str,
+    stored_cover: str,
+) -> dict[str, Any]:
+    script = state.get("edited_script") or state.get("script", {})
+    return {
+        "episode_id": state.get("episode_id", ""),
+        "preset": state.get("preset", {}),
+        "title": script.get("title", config.podcast_title),
+        "description": script.get("description", config.podcast_description),
+        "facts": state.get("facts", []),
+        "selected_topics": state.get("selected_topics", []),
+        "script": state.get("script", {}),
+        "edited_script": state.get("edited_script", {}),
+        "audio": {
+            "final_audio_path": stored_audio,
+            "cover_path": stored_cover,
+            "metadata": state.get("audio_metadata", {}),
+        },
+        "created_at": state.get("created_at", ""),
+    }
+
+
+def _build_enclosure_url(
+    stored_audio: str,
+    episode_dir: Path,
+    config: PublishConfig,
+    local_preview_only: bool,
+) -> str:
+    if not stored_audio:
+        return ""
+    audio_path = Path(stored_audio)
+    if local_preview_only:
+        rss_dir = Path(config.rss_output_dir)
+        try:
+            return os.path.relpath(audio_path, start=rss_dir).replace("\\", "/")
+        except ValueError:
+            return audio_path.name
+    audio_relative = f"episodes/{episode_dir.name}/{audio_path.name}"
+    return f"{config.public_base_url.rstrip('/')}/{audio_relative}"
+
+
+def _generate_rss(
+    state: dict[str, Any],
+    config: PublishConfig,
+    enclosure_url: str,
+    stored_audio: str,
+) -> str:
+    script = state.get("edited_script") or state.get("script", {})
     title = script.get("title", config.podcast_title)
     desc = script.get("description", config.podcast_description)
-    audio_path = state.get("final_audio_path", "")
     episode_id = state.get("episode_id", "unknown")
     created_at = state.get("created_at", "")
     pub_date = _format_pub_date(created_at)
-    mime_type = mimetypes.guess_type(audio_path)[0] or "audio/mpeg"
-    audio_size = os.path.getsize(audio_path) if audio_path and os.path.exists(audio_path) else 0
+    mime_type = mimetypes.guess_type(stored_audio)[0] or "audio/mpeg"
+    audio_size = os.path.getsize(stored_audio) if stored_audio and os.path.exists(stored_audio) else 0
     duration = state.get("audio_metadata", {}).get("duration_seconds", "")
+    preview_note = (
+        "\n      <podflow:preview>RSS is local-preview only, not publicly subscribable.</podflow:preview>"
+        if not config.public_base_url
+        else ""
+    )
 
     return f"""<?xml version="1.0" encoding="UTF-8"?>
-<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd">
+<rss version="2.0"
+     xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"
+     xmlns:podflow="https://podflow.local/rss">
   <channel>
     <title>{escape(config.podcast_title)}</title>
     <description>{escape(config.podcast_description)}</description>
@@ -113,7 +198,7 @@ def _generate_rss(state: dict, config: PublishConfig) -> str:
       <description>{escape(desc)}</description>
       <pubDate>{escape(pub_date)}</pubDate>
       <itunes:duration>{escape(_format_duration(duration))}</itunes:duration>
-      <enclosure url="{escape(audio_path)}" length="{audio_size}" type="{escape(mime_type)}"/>
+      <enclosure url="{escape(enclosure_url)}" length="{audio_size}" type="{escape(mime_type)}"/>{preview_note}
     </item>
   </channel>
 </rss>"""

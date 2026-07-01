@@ -7,12 +7,18 @@ Provides standardized mock data for testing all nodes.
 from typing import Any
 from datetime import datetime
 
+from protocol.presets import get_default_preset
+from protocol.episode_models import SCHEMA_VERSION
+
 
 def create_base_state() -> dict[str, Any]:
     """Create base state with all required fields"""
     return {
         "episode_id": "test_ep_001",
         "created_at": datetime.now().isoformat(),
+        "schema_version": SCHEMA_VERSION,
+        "preset": get_default_preset(),
+        "source_inputs": [],
         "runtime_config": {},
         "logs": [],
         "errors": [],
@@ -21,19 +27,29 @@ def create_base_state() -> dict[str, Any]:
         "raw_contents": [],
         "cleaned_contents": [],
         "researched_contents": [],
+        "facts": [],
         "selected_topic": {},
+        "selected_topics": [],
         "selected_materials": [],
         "script": {},
+        "edited_script": {},
         "stages": [],
+        "voice_segments": [],
         "audio_segments": [],
         "final_audio_path": "",
         "audio_metadata": {},
+        "audio_outputs": {},
+        "audio_report_path": "",
         "cover_path": "",
         "intro_outro_paths": {},
         "storage_info": {},
         "rss_path": "",
         "publish_status": {},
+        "publish_outputs": {},
         "subtitle_path": "",
+        "run_report": {},
+        "migration_warnings": [],
+        "tts_source": "",
     }
 
 
@@ -113,38 +129,70 @@ def create_mock_script() -> dict[str, Any]:
     return {
         "title": "Tech Frontiers: AI and Quantum Breakthroughs",
         "description": "Exploring the latest advances in AI and quantum computing",
+        "content_type": "news_brief",
+        "preset_id": "morning_news_brief",
+        "num_hosts": 1,
+        "segments": [
+            {
+                "id": "seg_001",
+                "type": "opening",
+                "title": "开场",
+                "text": "大家好，欢迎来到本期科技早报。今天我们快速看几条科技进展。",
+                "source_fact_ids": ["fact_001"],
+                "estimated_seconds": 8,
+                "speaker": "Host A",
+            },
+            {
+                "id": "seg_002",
+                "type": "news_item",
+                "title": "AI Breakthrough",
+                "text": "第一条，AI 自然语言处理有了新突破，研究人员提出了新的架构。",
+                "source_fact_ids": ["fact_001"],
+                "estimated_seconds": 10,
+                "speaker": "Host A",
+            },
+            {
+                "id": "seg_003",
+                "type": "closing",
+                "title": "结尾",
+                "text": "今天的新闻早报就到这里，发布前请继续核对来源。",
+                "source_fact_ids": ["fact_001"],
+                "estimated_seconds": 8,
+                "speaker": "Host A",
+            },
+        ],
         "dialogue": [
             {
-                "speaker": "主持人A",
+                "speaker": "Host A",
                 "text": "大家好，欢迎来到本期科技前沿播客。今天我们要聊聊人工智能和量子计算的最新突破。",
             },
             {
-                "speaker": "主持人B",
+                "speaker": "Host A",
                 "text": "是的，最近在自然语言处理领域有一个重大突破，研究人员开发了一种新的 Transformer 架构。",
             },
-            {"speaker": "主持人A", "text": "这个新架构有什么特别之处呢？"},
+            {"speaker": "Host A", "text": "这个新架构有什么特别之处呢？"},
             {
-                "speaker": "主持人B",
+                "speaker": "Host A",
                 "text": "它使用了一种新颖的注意力机制，在保持高准确度的同时降低了计算复杂度。",
             },
             {
-                "speaker": "主持人A",
+                "speaker": "Host A",
                 "text": "另外，量子计算方面也有好消息。科学家们成功展示了 100 量子比特处理器的量子优势。",
             },
             {
-                "speaker": "主持人B",
+                "speaker": "Host A",
                 "text": "这标志着实用量子计算应用迈出了重要一步。他们能够解决经典计算机需要数千年才能完成的复杂优化问题。",
             },
-            {"speaker": "主持人A", "text": "这些技术进步将如何影响我们的未来呢？"},
+            {"speaker": "Host A", "text": "这些技术进步将如何影响我们的未来呢？"},
             {
-                "speaker": "主持人B",
+                "speaker": "Host A",
                 "text": "AI 的进步将使机器更好地理解和处理人类语言，而量子计算将解决以前无法解决的问题。",
             },
             {
-                "speaker": "主持人A",
+                "speaker": "Host A",
                 "text": "好的，今天的节目就到这里。感谢大家收听，我们下期再见！",
             },
-            {"speaker": "主持人B", "text": "再见！"},
+            {"speaker": "Host A", "text": "再见！"},
         ],
     }
 
@@ -221,9 +269,18 @@ def create_state_for_node(node_name: str) -> dict[str, Any]:
         state["researched_contents"] = create_mock_researched_contents()
         return state
 
+    if node_name == "facts":
+        state["selected_materials"] = create_mock_materials()
+        state["cleaned_contents"] = create_mock_cleaned_contents()
+        return state
+
     if node_name == "script":
         state["selected_topic"] = create_mock_topic()
         state["selected_materials"] = create_mock_materials()
+        from protocol.morning_news import build_fact_cards, select_news_topics
+
+        state["facts"] = build_fact_cards(state["selected_materials"])
+        state["selected_topics"] = select_news_topics(state["facts"])
         return state
 
     if node_name == "tts":

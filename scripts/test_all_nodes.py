@@ -27,6 +27,7 @@ NODES = [
     # ideate
     "research",
     "topic_selection",
+    "facts",
     # write
     "script",
     # produce

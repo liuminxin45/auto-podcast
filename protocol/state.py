@@ -9,6 +9,9 @@ from typing import Any, Self
 from datetime import datetime
 import json
 
+from protocol.episode_models import SCHEMA_VERSION
+from protocol.presets import get_default_preset
+
 
 @dataclass
 class PodcastState:
@@ -16,23 +19,32 @@ class PodcastState:
 
     episode_id: str = field(default_factory=lambda: f"ep_{datetime.now().strftime('%Y%m%d_%H%M')}")
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    schema_version: int = SCHEMA_VERSION
 
+    preset: dict[str, Any] = field(default_factory=get_default_preset)
+    source_inputs: list[dict[str, Any]] = field(default_factory=list)
     fetch_contents: list[dict[str, Any]] = field(default_factory=list)
     manual_contents: list[dict[str, Any]] = field(default_factory=list)
     raw_contents: list[dict[str, Any]] = field(default_factory=list)
     cleaned_contents: list[dict[str, Any]] = field(default_factory=list)
     researched_contents: list[dict[str, Any]] = field(default_factory=list)
+    facts: list[dict[str, Any]] = field(default_factory=list)
 
     selected_topic: dict[str, Any] = field(default_factory=dict)
+    selected_topics: list[dict[str, Any]] = field(default_factory=list)
     selected_materials: list[dict[str, Any]] = field(default_factory=list)
 
     script: dict[str, Any] = field(default_factory=dict)
+    edited_script: dict[str, Any] = field(default_factory=dict)
     stages: list[dict[str, Any]] = field(default_factory=list)
 
+    voice_segments: list[dict[str, Any]] = field(default_factory=list)
     audio_segments: list[str] = field(default_factory=list)
     recording_segments: list[dict[str, Any]] = field(default_factory=list)
     final_audio_path: str = ""
     audio_metadata: dict[str, Any] = field(default_factory=dict)
+    audio_outputs: dict[str, Any] = field(default_factory=dict)
+    audio_report_path: str = ""
 
     cover_path: str = ""
     intro_outro_paths: dict[str, str] = field(default_factory=dict)
@@ -42,7 +54,11 @@ class PodcastState:
 
     rss_path: str = ""
     publish_status: dict[str, Any] = field(default_factory=dict)
+    publish_outputs: dict[str, Any] = field(default_factory=dict)
     subtitle_path: str = ""
+    run_report: dict[str, Any] = field(default_factory=dict)
+    migration_warnings: list[str] = field(default_factory=list)
+    tts_source: str = ""
 
     runtime_config: dict[str, Any] = field(default_factory=dict)
     errors: list[dict[str, Any]] = field(default_factory=list)

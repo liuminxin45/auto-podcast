@@ -4,7 +4,7 @@ from typing import Any
 
 @dataclass
 class TTSConfig:
-    engine: str = "edge-tts"
+    engine: str = "mock"
     api_key: str = ""
     api_base: str = ""
     model: str = ""
@@ -13,7 +13,6 @@ class TTSConfig:
     voice_mapping: dict[str, str] = field(
         default_factory=lambda: {
             "Host A": "zh-CN-XiaoxiaoNeural",
-            "Host B": "zh-CN-YunxiNeural",
         }
     )
     default_voice: str = "zh-CN-XiaoxiaoNeural"
@@ -30,7 +29,7 @@ class TTSConfig:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "TTSConfig":
         defaults = {
-            "engine": "edge-tts",
+            "engine": "mock",
             "api_key": "",
             "api_base": "",
             "model": "",
@@ -42,7 +41,6 @@ class TTSConfig:
             "volume": "+0%",
             "voice_mapping": {
                 "Host A": "zh-CN-XiaoxiaoNeural",
-                "Host B": "zh-CN-YunxiNeural",
             },
             "request_timeout_sec": 60,
             "doubao_app_id": "",

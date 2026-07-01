@@ -48,6 +48,8 @@ const SECTION_TO_SEGMENT_TYPE: Record<ScriptSection['type'], SegmentType> = {
   mainline: 'mainline',
   discussion: 'discussion',
   news_item: 'news_item',
+  context: 'mainline',
+  transition: 'discussion',
   closing: 'closing',
   custom: 'custom',
 }

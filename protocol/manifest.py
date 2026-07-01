@@ -29,6 +29,7 @@ PIPELINE_ORDER = [
     "preprocess",
     "research",
     "topic_selection",
+    "facts",
     "script",
     "tts",
     "audio_postprocess",
@@ -45,12 +46,13 @@ NODE_OUTPUT_KEYS: dict[str, list[str]] = {
     "preprocess": ["cleaned_contents"],
     "research": ["researched_contents"],
     "topic_selection": ["selected_topic", "selected_materials"],
-    "script": ["script", "stages"],
-    "tts": ["audio_segments"],
-    "audio_postprocess": ["final_audio_path"],
+    "facts": ["facts", "selected_topics", "run_report"],
+    "script": ["script", "edited_script", "stages", "run_report"],
+    "tts": ["voice_segments", "audio_segments"],
+    "audio_postprocess": ["final_audio_path", "audio_outputs", "audio_report_path"],
     "assets": ["cover_path"],
     "review": ["review_summary"],
-    "publish": ["publish_status"],
+    "publish": ["publish_status", "publish_outputs", "rss_path"],
 }
 
 

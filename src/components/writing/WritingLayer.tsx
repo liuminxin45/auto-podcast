@@ -140,7 +140,25 @@ function VersionPanel({
 // Main Component
 // ============================================================
 
-const segmentTypes = ['opening', 'main_1', 'main_2', 'discussion', 'closing'] as const
+const segmentTypes = ['opening', 'news_item', 'news_item', 'news_item', 'closing'] as const
+
+function normalizeWritingSegmentType(type: unknown, index: number): WritingSegment['type'] {
+  const value = String(type || '')
+  if (['opening', 'mainline', 'discussion', 'news_item', 'closing', 'custom'].includes(value)) {
+    return value as WritingSegment['type']
+  }
+  return segmentTypes[index] || 'news_item'
+}
+
+function normalizeScriptSegmentType(type: WritingSegment['type'], index: number, total: number): 'opening' | 'news_item' | 'context' | 'transition' | 'closing' | 'custom' {
+  if (type === 'opening') return 'opening'
+  if (type === 'closing') return 'closing'
+  if (type === 'discussion') return 'transition'
+  if (type === 'custom') return 'custom'
+  if (index === 0) return 'opening'
+  if (index === total - 1) return 'closing'
+  return 'news_item'
+}
 
 export default function WritingLayer({
   visible,
@@ -158,11 +176,11 @@ export default function WritingLayer({
 
   // Segments
   const [segments, setSegments] = useState<WritingSegment[]>([
-    { id: 'seg_opening', type: 'opening', label: '开场', content: '', tone: 'default', estimatedSeconds: 0, status: 'draft', collapsed: false },
-    { id: 'seg_main1', type: 'main_1', label: '主线一', content: '', tone: 'default', estimatedSeconds: 0, status: 'draft', collapsed: false },
-    { id: 'seg_main2', type: 'main_2', label: '主线二', content: '', tone: 'default', estimatedSeconds: 0, status: 'draft', collapsed: false },
-    { id: 'seg_discuss', type: 'discussion', label: '延伸讨论', content: '', tone: 'default', estimatedSeconds: 0, status: 'draft', collapsed: false },
-    { id: 'seg_closing', type: 'closing', label: '结尾', content: '', tone: 'default', estimatedSeconds: 0, status: 'draft', collapsed: false },
+    { id: 'seg_opening', type: 'opening', label: '开场导语', content: '', sourceFactIds: [], tone: 'default', estimatedSeconds: 0, status: 'draft', collapsed: false },
+    { id: 'seg_news_1', type: 'news_item', label: '新闻一', content: '', sourceFactIds: [], tone: 'default', estimatedSeconds: 0, status: 'draft', collapsed: false },
+    { id: 'seg_news_2', type: 'news_item', label: '新闻二', content: '', sourceFactIds: [], tone: 'default', estimatedSeconds: 0, status: 'draft', collapsed: false },
+    { id: 'seg_news_3', type: 'news_item', label: '新闻三', content: '', sourceFactIds: [], tone: 'default', estimatedSeconds: 0, status: 'draft', collapsed: false },
+    { id: 'seg_closing', type: 'closing', label: '结尾总结', content: '', sourceFactIds: [], tone: 'default', estimatedSeconds: 0, status: 'draft', collapsed: false },
   ])
 
   // Active segment
@@ -228,12 +246,22 @@ export default function WritingLayer({
 
   const buildWorkflowPatch = useCallback(() => {
     const cleanSegments = segments.filter(s => s.content.trim().length > 0)
+    const editedSegments = cleanSegments.map((segment, index) => ({
+      id: segment.id,
+      type: normalizeScriptSegmentType(segment.type, index, cleanSegments.length),
+      title: segment.label,
+      text: segment.content.trim(),
+      source_fact_ids: segment.sourceFactIds || [],
+      estimated_seconds: segment.estimatedSeconds,
+      speaker: 'Host A',
+    }))
     const stages = cleanSegments.map((segment, index) => ({
       id: segment.id,
       order: index + 1,
-      speaker: 'Host',
+      speaker: 'Host A',
       text: segment.content.trim(),
       label: segment.label,
+      source_fact_ids: segment.sourceFactIds || [],
       estimated_duration: segment.estimatedSeconds,
     }))
 
@@ -243,14 +271,22 @@ export default function WritingLayer({
         title,
         description: desc,
       },
-      script: {
-        ...(workflow?.state?.script || {}),
+      edited_script: {
+        ...(workflow?.state?.edited_script || {}),
+        id: workflow?.state?.edited_script?.id || `${workflow?.state?.episode_id || 'episode'}_script_edited`,
         title,
         description: desc,
+        content_type: 'news_brief',
+        preset_id: 'morning_news_brief',
+        num_hosts: 1,
+        language: 'zh-CN',
+        segments: editedSegments,
         dialogue: cleanSegments.map(segment => ({
-          speaker: 'Host',
+          speaker: 'Host A',
           text: segment.content.trim(),
         })),
+        edited_from: workflow?.state?.script?.id || workflow?.state?.edited_script?.edited_from || 'script.generated',
+        edit_mode: 'manual_ui',
       },
       stages,
       writing_meta: {
@@ -262,34 +298,61 @@ export default function WritingLayer({
 
   useEffect(() => {
     if (!visible) return
+    const editedSegments = workflow?.state?.edited_script?.segments || []
+    const generatedSegments = workflow?.state?.script?.segments || []
     const sourceStages = workflow?.state?.stages?.length ? workflow.state.stages : []
     const dialogue = workflow?.state?.script?.dialogue || []
+    const titleSource = workflow?.state?.edited_script?.title || workflow?.state?.script?.title || episodeTitle
+    const descSource = workflow?.state?.edited_script?.description || workflow?.state?.script?.description || episodeDesc
 
-    if (workflow?.state?.script?.title || episodeTitle) setTitle(workflow?.state?.script?.title || episodeTitle)
-    if (workflow?.state?.script?.description || episodeDesc) setDesc(workflow?.state?.script?.description || episodeDesc)
+    if (titleSource) setTitle(titleSource)
+    if (descSource) setDesc(descSource)
 
-    const source = sourceStages.length > 0
+    const source = editedSegments.length > 0
+      ? editedSegments.map((segment: any, index: number) => ({
+          id: String(segment.id || `seg_${index + 1}`),
+          type: normalizeWritingSegmentType(segment.type, index),
+          label: segment.title || segment.label || SEGMENT_TYPE_CONFIG[normalizeWritingSegmentType(segment.type, index)].label,
+          content: String(segment.text || ''),
+          sourceFactIds: Array.isArray(segment.source_fact_ids) ? segment.source_fact_ids : [],
+          estimatedSeconds: Number(segment.estimated_seconds || estimateReadingSeconds(String(segment.text || ''))),
+        }))
+      : generatedSegments.length > 0
+        ? generatedSegments.map((segment: any, index: number) => ({
+            id: String(segment.id || `seg_${index + 1}`),
+            type: normalizeWritingSegmentType(segment.type, index),
+            label: segment.title || segment.label || SEGMENT_TYPE_CONFIG[normalizeWritingSegmentType(segment.type, index)].label,
+            content: String(segment.text || ''),
+            sourceFactIds: Array.isArray(segment.source_fact_ids) ? segment.source_fact_ids : [],
+            estimatedSeconds: Number(segment.estimated_seconds || estimateReadingSeconds(String(segment.text || ''))),
+          }))
+        : sourceStages.length > 0
       ? sourceStages.map((stage: any, index: number) => ({
           id: String(stage.id || `seg_${index + 1}`),
-          label: stage.label || SEGMENT_TYPE_CONFIG[segmentTypes[index] || 'discussion'].label,
+          type: normalizeWritingSegmentType(stage.type, index),
+          label: stage.label || SEGMENT_TYPE_CONFIG[normalizeWritingSegmentType(stage.type, index)].label,
           content: String(stage.text || ''),
+          sourceFactIds: Array.isArray(stage.source_fact_ids) ? stage.source_fact_ids : [],
           estimatedSeconds: Number(stage.estimated_duration || stage.duration || estimateReadingSeconds(String(stage.text || ''))),
         }))
       : dialogue.map((line: any, index: number) => ({
           id: `seg_${index + 1}`,
-          label: SEGMENT_TYPE_CONFIG[segmentTypes[index] || 'discussion'].label,
+          type: segmentTypes[index] || 'news_item',
+          label: SEGMENT_TYPE_CONFIG[segmentTypes[index] || 'news_item'].label,
           content: String(line.text || ''),
+          sourceFactIds: [],
           estimatedSeconds: estimateReadingSeconds(String(line.text || '')),
         }))
 
     if (source.length > 0) {
       setSegments(source.map((item: any, index: number) => {
-        const type = segmentTypes[index] || 'discussion'
+        const type = item.type || segmentTypes[index] || 'news_item'
         return {
           id: item.id,
           type,
           label: item.label,
           content: item.content,
+          sourceFactIds: item.sourceFactIds || [],
           tone: 'default',
           estimatedSeconds: item.estimatedSeconds,
           status: item.content.length > 0 ? 'editing' : 'draft',
@@ -303,8 +366,12 @@ export default function WritingLayer({
     episodeTitle,
     visible,
     workflow?.state?.episode_id,
+    workflow?.state?.edited_script?.description,
+    workflow?.state?.edited_script?.segments,
+    workflow?.state?.edited_script?.title,
     workflow?.state?.script?.description,
     workflow?.state?.script?.dialogue,
+    workflow?.state?.script?.segments,
     workflow?.state?.script?.title,
     workflow?.state?.stages,
   ])
@@ -935,6 +1002,7 @@ export default function WritingLayer({
                   type: 'discussion',
                   label: '自定义段落',
                   content: '',
+                  sourceFactIds: [],
                   tone: 'default',
                   estimatedSeconds: 0,
                   status: 'draft',

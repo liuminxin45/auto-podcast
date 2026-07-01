@@ -1,5 +1,6 @@
 from typing import Any
 from nodes.review.config import ReviewConfig
+from protocol.morning_news import active_script_for_tts
 
 # Each check: (condition_ok, fail_level, fail_msg, pass_msg)
 # fail_level is "error" or "warning"
@@ -14,12 +15,18 @@ MIN_AVG_SEGMENT_CHARS = 20  # average chars per segment; below this suggests pla
 
 def _build_checks(state: dict[str, Any]) -> list[CheckSpec]:
     """Define all pre-publish checks as data. Easy to extend."""
-    script = state.get("script", {})
+    _, script = active_script_for_tts(state)
+    if not script:
+        script = state.get("script", {})
     stages = state.get("stages", [])
     audio_path = state.get("final_audio_path", "")
     cover_path = state.get("cover_path", "")
     audio_metadata = state.get("audio_metadata", {})
-    actual_duration = audio_metadata.get("duration", 0) if isinstance(audio_metadata, dict) else 0
+    actual_duration = (
+        audio_metadata.get("duration_seconds") or audio_metadata.get("duration") or 0
+        if isinstance(audio_metadata, dict)
+        else 0
+    )
 
     avg_chars = sum(len(s.get("text", "")) for s in stages) / len(stages) if stages else 0
 
@@ -76,7 +83,9 @@ def run(state: dict[str, Any], config: ReviewConfig = None) -> dict[str, Any]:
 
     config = config or ReviewConfig()
     ctx = NodeContext("ReviewNode", state)
-    script = state.get("script", {})
+    _, script = active_script_for_tts(state)
+    if not script:
+        script = state.get("script", {})
     stages = state.get("stages", [])
     audio_path = state.get("final_audio_path", "")
     cover_path = state.get("cover_path", "")

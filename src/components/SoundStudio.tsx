@@ -1157,7 +1157,6 @@ export default function SoundStudio({
         default_voice: voice,
         voice_mapping: {
           'Host A': voice,
-          'Host B': voice,
         },
       }
     }
@@ -1176,7 +1175,6 @@ export default function SoundStudio({
       default_voice: VOICE_TO_OPENAI_VOICE[voiceStyle],
       voice_mapping: {
         'Host A': VOICE_TO_OPENAI_VOICE[voiceStyle],
-        'Host B': VOICE_TO_OPENAI_VOICE[voiceStyle],
       },
       output_format: 'mp3',
     }

@@ -25,6 +25,7 @@ from nodes.merge.node import run as merge_run
 from nodes.preprocess.node import run as preprocess_run
 from nodes.research.node import run as research_run
 from nodes.topic_selection.node import run as topic_selection_run
+from nodes.facts.node import run as facts_run
 from nodes.script.node import run as script_run
 from nodes.tts.node import run as tts_run
 from nodes.audio_postprocess.node import run as audio_postprocess_run
@@ -103,42 +104,48 @@ def test_full_pipeline_no_external_services():
         f"materials={len(state.get('selected_materials', []))}",
     )
 
-    # ---- 7. Script (no API key — should error gracefully) ----
-    state = script_run(state)
-    # Script node adds error when no API key, but doesn't crash
-    script_errors = [
-        e for e in state.get("errors", []) if isinstance(e, dict) and e.get("node") == "script"
-    ]
+    # ---- 7. Facts ----
+    state = facts_run(state)
     check(
-        "script (no api, graceful)",
-        len(script_errors) > 0 or state.get("script", {}).get("title", "") != "",
-        f"errors={len(script_errors)}, script.title='{state.get('script', {}).get('title', '')}'",
+        "facts",
+        len(state.get("facts", [])) > 0,
+        f"facts={len(state.get('facts', []))}",
     )
 
-    # ---- Inject mock script/stages for downstream nodes ----
-    from tests.mock_data import create_mock_script, create_mock_stages
+    # ---- 8. Script (no API key — deterministic fallback) ----
+    state = script_run(state)
+    check(
+        "script (no api, fallback)",
+        state.get("script", {}).get("content_type") == "news_brief"
+        and len(state.get("facts", [])) > 0
+        and len(state.get("script", {}).get("segments", [])) > 0,
+        f"facts={len(state.get('facts', []))}, segments={len(state.get('script', {}).get('segments', []))}",
+    )
 
-    state["script"] = create_mock_script()
-    state["stages"] = create_mock_stages()
-
-    # ---- 8. TTS (no engine available — should error gracefully) ----
+    # ---- 9. TTS (mock engine, no external services) ----
     state = tts_run(state)
-    # TTS will fail without edge-tts installed or configured, that's OK
-    check("tts (graceful)", True)  # Just verify no crash
+    check(
+        "tts (mock)",
+        len(state.get("voice_segments", [])) > 0,
+        f"voice_segments={len(state.get('voice_segments', []))}",
+    )
 
-    # ---- 9. Audio Postprocess (no segments — should handle gracefully) ----
+    # ---- 10. Audio Postprocess ----
     state = audio_postprocess_run(state)
-    check("audio_postprocess", True)  # Verify no crash
+    check(
+        "audio_postprocess",
+        state.get("final_audio_path", "") != "",
+        f"final_audio_path={state.get('final_audio_path', '')}",
+    )
 
-    # ---- 10. Assets (skip cover generation flag) ----
+    # ---- 11. Assets (skip cover generation flag) ----
     from nodes.assets.config import AssetsConfig
 
     assets_config = AssetsConfig(skip_cover=True)
     state = assets_run(state, config=assets_config)
     check("assets (skip_cover)", True)
 
-    # ---- 11. Review ----
-    state["final_audio_path"] = "out/episodes/test_ep_001.mp3"
+    # ---- 12. Review ----
     state = review_run(state)
     check(
         "review",
@@ -146,11 +153,9 @@ def test_full_pipeline_no_external_services():
         f"review_summary keys={list(state.get('review_summary', {}).keys())}",
     )
 
-    # ---- 12. Publish ----
+    # ---- 13. Publish ----
     state = publish_run(state)
     check("publish", "publish_status" in state)
-
-    return state
 
 
 def test_manifest_tracking():
@@ -223,7 +228,7 @@ def test_manifest_resume_detection():
 # ============================================================
 if __name__ == "__main__":
     print("\n=== E2E Pipeline Test (no external services) ===\n")
-    state = test_full_pipeline_no_external_services()
+    test_full_pipeline_no_external_services()
 
     print("\n=== Manifest Tracking Test ===\n")
     test_manifest_tracking()

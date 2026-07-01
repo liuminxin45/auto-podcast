@@ -190,12 +190,12 @@ async function runCdpAcceptance({ app, mainWindow, projectRoot }) {
           description: '通过 Electron CDP 自验收生成的测试节目',
           dialogue: [
             { speaker: 'Host A', text: '这是第一段 CDP 自验收脚本。' },
-            { speaker: 'Host B', text: '这是第二段，用于确认 stages 与 script 会写入真实 workflow state。' }
+            { speaker: 'Host A', text: '这是第二段，用于确认 stages 与 script 会写入真实 workflow state。' }
           ]
         },
         stages: [
           { id: 'cdp-stage-1', order: 0, speaker: 'Host A', label: '开场', text: '这是第一段 CDP 自验收脚本。', estimated_duration: 3 },
-          { id: 'cdp-stage-2', order: 1, speaker: 'Host B', label: '验证', text: '这是第二段，用于确认 stages 与 script 会写入真实 workflow state。', estimated_duration: 4 }
+          { id: 'cdp-stage-2', order: 1, speaker: 'Host A', label: '验证', text: '这是第二段，用于确认 stages 与 script 会写入真实 workflow state。', estimated_duration: 4 }
         ]
       }
       await window.electronAPI.updateWorkflowState(id, patch)

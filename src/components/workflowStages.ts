@@ -14,8 +14,8 @@ export interface StageDefinition {
 export const STAGES: StageDefinition[] = [
   { id: 'discover', label: '发现', subtitle: '世界在发生什么', icon: '发', subNodes: ['fetch', 'manual', 'merge'], color: '#3b82f6' },
   { id: 'organize', label: '整理', subtitle: '去噪、筛选、归类', icon: '理', subNodes: ['preprocess'], color: '#06b6d4' },
-  { id: 'ideate', label: '构思', subtitle: '决定讲什么、怎么讲', icon: '想', subNodes: ['research', 'topic_selection'], color: '#8b5cf6' },
-  { id: 'write', label: '写作', subtitle: '把想法变成对话', icon: '写', subNodes: ['script'], color: '#f59e0b' },
+  { id: 'ideate', label: '构思', subtitle: '生成事实卡片与早报条目', icon: '想', subNodes: ['research', 'topic_selection', 'facts'], color: '#8b5cf6' },
+  { id: 'write', label: '写作', subtitle: '把事实卡片变成早报稿', icon: '写', subNodes: ['script'], color: '#f59e0b' },
   { id: 'produce', label: '制作', subtitle: '让文字变成声音', icon: '声', subNodes: ['tts', 'audio_postprocess', 'assets'], color: '#10b981' },
   { id: 'publish', label: '发布', subtitle: '检查并发给世界', icon: '布', subNodes: ['review', 'publish'], color: '#ef4444' },
 ]
@@ -36,7 +36,9 @@ function isStageCompletedByState(stage: StageDefinition, workflow: Workflow): bo
     case 'organize':
       return hasItems(state.cleaned_contents)
     case 'ideate':
-      return hasObjectData((state as any).episode_brief) ||
+      return hasItems((state as any).facts) ||
+        hasItems((state as any).selected_topics) ||
+        hasObjectData((state as any).episode_brief) ||
         Boolean(state.selected_topic?.title || state.selected_topic?.description)
     case 'write':
       return hasItems(state.stages) ||

@@ -47,6 +47,7 @@ docs/**/*.jpg
 docs/**/*.png
 docs/**/*.svg
 docs/**/*.webp
+examples/demo-news/output/
 *.test.json
 script_schema*.json
 fetch_stderr.log

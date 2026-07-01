@@ -71,6 +71,7 @@ export default function SegmentCard({
   const cfg = SEGMENT_TYPE_CONFIG[segment.type]
   const statusCfg = STATUS_CONFIG[segment.status]
   const hints = getSegmentHints(segment, totalSeconds, allSegments)
+  const sourceFactIds = segment.sourceFactIds || []
   const [showToneMenu, setShowToneMenu] = useState(false)
   const toneRef = useRef<HTMLDivElement>(null)
   const textAreaRef = useRef<HTMLTextAreaElement>(null)
@@ -215,6 +216,24 @@ export default function SegmentCard({
 
           {segment.type === 'news_item' && (
             <div style={{ marginTop: 10 }}>
+              {sourceFactIds.length === 0 ? (
+                <div style={{
+                  marginBottom: 8,
+                  padding: '7px 9px',
+                  borderRadius: 8,
+                  background: 'var(--warning-bg)',
+                  color: 'var(--warning-color)',
+                  fontSize: 11,
+                }}>
+                  缺少 source_fact_ids，发布报告会标记来源警告。
+                </div>
+              ) : (
+                <div style={{ marginBottom: 8, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {sourceFactIds.map(factId => (
+                    <Tag key={factId} bordered={false} color="blue" style={{ margin: 0 }}>{factId}</Tag>
+                  ))}
+                </div>
+              )}
               <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
                 来源清单（每行一条）
               </div>
